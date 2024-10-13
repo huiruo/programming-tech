@@ -1,0 +1,285 @@
+## 各大货币交易平台提币到冷钱包手续费怎么算?
+trc20为例，不管是不同交易所之间充值/提现，还是交易所-钱包/钱包-交易所，手续费都是1USDT（之前0手续费），且转账速度极快，因此基于波场的trc20对于小宗资金交易很受欢迎。
+
+除TRC20外的两种链类型：
+
+## Omni：充币地址是BTC地址
+充提币走BTC网络。因为转账需要通过BTC网络，因此每一笔转账需要支付少量的比特币作为矿工费。Omni-USDT于比特币网络的链上，黑客攻击的成本很高，所以资产相对安全性较高。但是其交易速度非常慢，已经无法满足当今加密交易市场的需求，但很多大宗交易还是会倾向于Omni-USDT。
+
+## ERC20
+基于以太坊网络。USDT-ERC20需要支付GAS（也就是ETH）作为转账手续费。与USDT-Omni相比，USDT-ERC20的转账速度有了明显提升。由于安全性好、转账速度快等特点，USDT-ERC20开始被市场广泛接受。
+
+USDT-TRC20安全性较低，转账速度最快，没有手续费，推荐小额转账时使用。
+USDT-ERC20安全性与转账速度中等，手续费中等，推荐在中等额度转账时使用。
+USDT-Omni安全性最好，转账速度慢，手续费高，推荐在大额转账时使用。
+
+
+## 冷钱包
+冷钱包是指存储私钥的硬件设备永不联网。
+
+冷钱包是需要和另一个在线设备进行一场不泄私钥的通讯。
+>假设A是一个通过二维码通讯的冷钱包， B是一个在线设备， 有一个X地址上存有100块钱， 想把X上的钱转到另一个人的Y地址上。
+B建一个指令【把X的钱转到Y上】把这个指令用二维码的形式展示出来了。A通过扫码把【把X的钱转到Y上】这个指令用私钥进行签名 并把新的指令【签名M 】通过二维码展示出来。
+B 通过扫码得到【签名M】， 并把这个 【把X的钱转到Y上】+【签名M 】组合起来， 广播到比特币/莱特币网络上， 就实现了将钱花费出去。
+
+这个过程中，A存储私钥但不连接到网络。 B连接到网络但不存储私钥。
+
+假设有一个病毒感染了B， 但是B上面没有私钥 ， 所以病毒拿不到私钥也就没办法盗钱。而A完全不能联网，病毒没有机会感染A， 即使感染了A也没有办法向黑客发送任何数据。
+
+现在的冷钱包有二维码通讯的，也有USB通讯的。  NFC、蓝牙这些通讯方案都是可以的， 只要这个冷钱包通过物理或其他方式能可靠的限制住其连接互联网能力就可以了。
+
+本质上只要防止住以下问题可以：
+
+1、冷钱包不受病毒感染，比如冷钱包硬件根本就不具备执行其他代码的能力。
+
+2、即使受病毒感染的冷钱包中的病毒无法自己寻找到网络并泄露私钥给黑客
+
+### 怎么确定签名M里不包含私钥？ 设备B扫码后解密，再通过网络传输？
+你只能信任钱包生产商，除非你有能力自己从晶圆开始打造一个钱包出来，还得具备超凡的代码能力，能够直接通过代码操作钱包，而不是使用其他人开发的人机交互系统。这对于普通人来说是不可能的，所以找一个历史久、客户多、没有任何被盗不良记录的大厂购买冷钱包是重中之重 
+
+1. 快递包装完整性，拿到你购买的硬件钱包首先检查快递包装是否完整，是否被人拆开做过手脚，其次是要检查一下钱包的发货地址是不是为官方发货地址。
+2. 打开了快递包装内部包装是否完整，塑封和不可逆封口贴是否完整无损，一旦发现塑封和不可逆封口贴破损第一时间找商家联系退换新的硬件钱包。
+3. 拆开包装后第一次打开硬件钱包检查是否使用过，全新的 imKey 硬件钱包第一次打开使用会有一个激活认证过程。无论你购买的是什么品牌硬件钱包，如果里面已经存在了一个已经创建好的钱包地址请不要使用该硬件钱包！请不要使用该硬件钱包！请不要使用该硬件钱包！
+4. 在确认了这是一个全新的安全的硬件钱包后，第一次创建的钱包并备份了助记词后请先不要着急使用。请先将钱包恢复出厂设置，在将刚才备份的助记词通过导入钱包的方式导入硬件钱包，并确认恢复出来的地址是否和刚才记录的一致，如果一致则可以使用。（此处主要是为了确保用户备份的助记词正确无误的恢复，防止关键时刻发现备份的单词抄写错误。）
+5. 转入小额资产进行转账体验，确保能够顺利的转入转出数字资产后再将大额资产保存在该硬件钱包中
+
+助记词是发生意外时候的最后一根救命稻草，希望大家都能妥善保管并备份。常见的保管方式：
+1. 抄写在一个安全的笔记本中，并将笔记本妥善保管。
+2. 生成助记词断网，把浏览器插件关掉
+3. 将助记词拆成 2-3 份，抄写在纸张后妥善保管在不同的地方。
+4. 购买防火、耐高温的金属助记词密盒或钢板备份后放置于保险箱等安全可靠的地方。
+
+
+## 钱包购买
+https://zhuanlan.zhihu.com/p/443009485
+
+trezor 购买
+https://zhuanlan.zhihu.com/p/443168298
+
+https://www.ledger.com/
+https://zhuanlan.zhihu.com/p/443009485
+
+trezor和 LEDGER
+
+
+## 每次签名的时候会有弹窗帮你识别签名是否安全
+https://chromewebstore.google.com/detail/pocket-universe/gacgndbocaddlemdiaadajmlggabdeod
+
+目前应该是只支持以太和马蹄链
+
+## 指纹浏览器
+* [morelogin](https://blog.browserscan.net/),
+教程：https://www.youtube.com/watch?v=2YdPcOqd5rc
+
+* [bitbrowser](https://www.bitbrowser.cn/)
+
+### C 端用户典型安全问题
+* 错误授权：用户在与 dapp 交互时通常需要进行合约授权，某些恶意地址会发起转移资产的授权请求，若用户点击授权，则资产可以被直接转走；
+* 机制改动：合约开发者可通过一系列手段更改代币机制，进行增发、销毁、改变交易税等操作；
+* 貔貅合约：用户的买卖行为被限制，常见方式为自由买入，对卖出进行限制。
+
+## 十大避坑工具
+针对以上问题，我们整理了十大避坑工具，帮助 Web3 用户守护好自己的资产和账户。以下工具除了 Harpie 在发生追回财产事件时需要付 0.01ETH 的固定费用，以及 MistTrack 在一个月免费试用期后需要付费订阅，其他工具均为免费。
+
+## 钱包防钓鱼插件
+* Pocket Universe
+官网：https://www.pocketuniverse.app/
+
+https://chromewebstore.google.com/detail/pocket-universe/gacgndbocaddlemdiaadajmlggabdeod
+
+* Scam Sniffer,不是很好用？
+官网：https://scamsniffer.io
+
+功能：下载安装插件后当连接钱包发起交互时，安全插件会对交互逻辑进行扫描，并弹窗告知安全扫描结果，提示风险。
+
+使用场景：某些钓鱼合约会通过空投等方式引导用户授权签名，当用户收到陌生空投想变现时，发起的交互将会被识别，并告知用户交互风险程度。
+
+项目对比:
+支持钱包：均为 MetaMask
+
+## 授权查看与取消
+* Revoke
+官网：
+https://revoke.cash/
+
+* Approved.zone
+官网：https://approved.zone/
+
+功能：查看授权的 NFT 和 Token，可以取消授权
+
+使用场景：许多钓鱼智能合约会通过各种场景引导用户授权自己的签名，某些授权可能会涉及财产转移，资产有随时被转走的风险，通过该类工具，用户可以查看自己进行了哪些授权，并可以取消授权
+
+## 链上防火墙
+Harpie
+官网：https://harpie.io
+
+功能：对资产的交易进行限制，用户可以提前设置受信任的网络、应用或朋友的地址，如果有资产被转到受信任地址之外的地址，Harpie 会在执行过程中阻止交易。
+
+使用场景：当用户想进一步降低资产被转移的风险时，可通过 Harpie 选择要保护的资产，并设置该资产可以转移的白名单地址，当该资产被转向白名单之外的地址时，交易会被阻断。
+
+支持公链：以太坊
+
+项目背景：2022 年 9 月底，Harpie 完成 450 万美元种子轮融资，Dragonfly Capital 领投，Coinbase Ventures 和 OpenSea 等参投
+
+## 合约风险扫描
+* Go+ Security
+官网：https://gopluslabs.io/
+```
+以太坊、BSC、Polygon、Arbitrum、 Avalanche、Heco、Fantom、OKC、Harmony、Cronos、
+KCC,
+```
+
+* StaySafu
+官网：https://app.staysafu.org/
+```
+BSC
+```
+
+* Token Sniffer
+官网：https://tokensniffer.com/
+```
+官方称支持12条链，目前仅支持以太坊、BSC
+```
+
+功能：检测合约地址风险，快速获得简易审计报告。
+
+使用场景：在与某个 dApp 交互、或在 dex 上输入地址购买长尾代币时，如不确定其智能合约是否存在漏洞及其他风险，可在以上工具的扫描功能中输入要交互的智能合约地址，查看风险检测结果。
+
+总结：
+Go+ Security：覆盖的公链最多，且涵盖的风险指标更多，可更加全面了解潜在风险
+Tokensiffer：同样有较多覆盖指标，同时每个指标有详细解释，可以更加深入理解风险点
+StaySafu：风险指标和支持公链较少
+
+# ETF
+## E-1.潜在的好处
+1. 市场合法化：比特币现货 ETF 将有助于进一步使比特币作为公认的合法化的资产类别。这可能会提高传统投资者和金融机构对其的接受度。
+
+2. 增加流动性：通过向更广泛的投资者开放比特币投资，比特币现货 ETF 可以增加比特币市场的流动性。这可以减少波动性并使价格变动更可预测。
+
+3. 价格升值：比特币 ETF 的创建可能会导致比特币需求增加，因为 ETF 提供商需要购买实际的比特币来支持 ETF 份额。这可能会推高比特币的价格。
+
+4. 提高透明度和安全性：ETF 受到监管，这需要透明度和标准化报告。这可以为那些可能对直接投资比特币持谨慎态度的投资者提供更多的安全性和确定性。
+
+5. 易于使用：比特币 ETF 允许投资者获得比特币的投资，而无需直接购买和管理数字钱包。这大大降低了机构投资者和不太懂技术的投资者的进入门槛。
+
+6. 受监管的风险敞口：由于 ETF 是受监管的金融产品，投资比特币 ETF 可以以符合证券法的方式接触加密货币市场，从而可能降低欺诈或盗窃的风险。
+
+## E-2.潜在的不利因素或风险
+1. 市场操纵：有人担心比特币大户可能会操纵比特币的价格，从而影响了 ETF 的价值，尽管这种风险也存在于比特币直接市场中。
+
+2. 监管风险：比特币 ETF 的存在将使比特币市场与监管决策更加紧密地联系在一起。负面监管行动或政策可能会对 ETF 的价值产生不利影响，进而影响比特币的价格。
+
+3. 投资置换：一些投资者可能会选择投资 ETF，而不是直接购买比特币，这可能会影响比特币直接市场的动态。
+
+4. 费用：ETF 附带管理费，随着时间的推移，管理费可能会侵蚀您的回报。除了交易费用和安全存储的潜在成本之外，直接拥有比特币不存在这个问题。
+
+5. 错误定价的可能性：虽然比特币 ETF 的目的是跟踪比特币的价格，但实际上，由于市场力量，ETF 的价格可能会与比特币的价格产生偏差。这可能会导致 ETF 相对于标的资产定价过高或过低。
+
+6. 缺乏所有权：当您购买比特币 ETF 时，您实际上并不拥有基础比特币。这意味着您将无法使用比特币进行直接交易，并且您没有拥有去中心化数字资产的潜在好处。
+
+
+
+# F.术语
+## 1.FOMO（惧怕错失机会）
+FOMO 是惧怕错失机会的缩写，可用于日常生活。 它指的是当其他人都在谈论比特币时，产生的购买比特币的紧迫感。
+
+## 2.Shill（不断推广吹捧）
+Shilling 是指为自己的个人利益而推广加密货币。 尽管这个术语并非起源于加密货币，但它在该领域的使用却广为流行。
+
+Shill 的人可能是投资了某种加密货币，但其表现却不尽如人意，因此他们会试图说服其他人购买这种加密货币，促使其价格上涨。 归根结底，都是为了个人利益。
+
+## 3.FUD（恐惧、犹豫和怀疑）
+FUD 是恐惧、犹豫和怀疑的缩写，指的是人们散播关于比特币的负面感受。
+
+## 4.HODL（长期持有）
+HODL 可能是比特币圈中最流行的俚语。 它指的是无论价格如何波动，都持续持有自己的 BTC。 这个术语的使用源于一个拼写错误，用户本打算输入“hold”但却不小心拼错了——可能因为太兴奋。 然后，人们将错就错，把它变成了 hold on for Dear life（为美好的生活持有下去）的缩略词。
+
+## 5. Rekt（毁坏）
+Rekt 指的是人们因加密货币价值暴跌而遭受重大损失时的最低谷感受。
+
+该术语来自 wrecked 这个词，通常用于游戏玩家被完全摧毁的情景。 因此，当有人在加密货币中损失大量资金时，他们就会被 rekt。
+
+## 6. Going to the moon（登月）
+登月是指相信比特币的价格将在未来出现大幅飙升。
+
+如果您说比特币即将登月，就是说您相信自己的投资在未来会有很好的回报。
+
+## 7. Whale（巨鲸）
+巨鲸是指拥有大额（通常是总供应量的5%或以上）加密货币的人。
+
+## 8.Sats（聪）
+Sats 是 satoshis 的缩写，是比特币的最小单位。 一聪相当于 0.00000001 BTC。
+
+## 9.No-coiner（非投币者）
+No-coiner 是指认为比特币要么注定要失败、今后价值微乎其微的人。 在这种信念下，他们自己并不持有任何货币。
+
+## 10.Cryptosis
+Cryptosis 指的是对加密货币知识永无止境的渴望。 虽然听起来像是一种疾病，但请不要担心——它不会危及生命。 其症状包括搜索论坛、迫使朋友讨论加密货币，以及在交易时将风险降至最低。
+
+## 11.ICO（初始代币发行）
+初始代币发行即 ICO，相当于加密货币领域的首次公开募股 (IPO) ，即通过首次向公众出售证券或股票来筹集资金。
+
+基本来说，它是指加密货币公司的筹款项目。 公司会公开该加密货币的相关信息、背后的团队，并筹集投资来帮助打造。 作为奖励，他们会向投资者提供新的代币，其中有些可能在项目中有实际功用，而有一些则仅代表公司的股份。
+
+## 12.NFT（非同质化代币）
+非同质化代币或 NFT，是独一无二的一对一加密资产，拥有内置的特殊识别码。 NFT 的形态大小各异，包括推文、数字艺术作品、音频等等。
+
+## 13.Buy the dip (BTD)（逢低买入）
+逢低买入或 BTD 是指在资产价格下跌后买入。 它背后的信念与您在商场打折时购物相同。
+
+逢低买入代表以较低的价格买入比特币，希望它在未来再次上涨。
+
+## dApps
+去中心化应用程序:decentralized applications (dApps)
+
+The Solana blockchain platform itself is developed primarily using Rust. Rust is a systems programming language that offers high performance, memory safety, and concurrency. The core components of Solana, such as the Solana Protocol, validator nodes, and client libraries, are implemented in Rust.
+
+Rust's emphasis on memory safety and low-level control makes it well-suited for building high-performance blockchain systems like Solana. Rust's ownership and borrowing system helps prevent common programming errors, such as memory leaks and data races, which are critical for the security and reliability of a blockchain network.
+
+However, it's worth noting that while the core infrastructure of Solana is developed using Rust, developers can create decentralized applications (dApps) on Solana using various programming languages supported by the Solana SDK, such as JavaScript through Solana Web3.js. This provides developers with flexibility and choice when building applications on the Solana blockchain.
+
+Solana 区块链平台本身主要使用 Rust 开发。 Rust 是一种系统编程语言，提供高性能、内存安全和并发性。 Solana 的核心组件，例如 Solana 协议、验证器节点和客户端库，都是用 Rust 实现的。
+
+Rust 对内存安全和低级控制的重视使其非常适合构建像 Solana 这样的高性能区块链系统。 Rust 的所有权和借用系统有助于防止常见的编程错误，例如内存泄漏和数据竞争，这对于区块链网络的安全性和可靠性至关重要。
+
+然而，值得注意的是，虽然 Solana 的核心基础设施是使用 Rust 开发的，但开发人员可以使用 Solana SDK 支持的各种编程语言（例如通过 Solana Web3.js 的 JavaScript）在 Solana 上创建去中心化应用程序 (dApp)。 这为开发人员在 Solana 区块链上构建应用程序时提供了灵活性和选择。
+
+## B.Goerli TestNet
+由于 Goerli TestNet 已经称为以太坊主流的测试网，所以接下来我主要分享下目前可以使用的 Goerli 测试网水龙头网站，如果你需要领水进行测试可以收藏备用。
+
+### B-1.Alchemy水龙头
+每天能领 0.02 个 Goerli ETH 测试代币，需要注册 Alchemy 账号。
+
+### B-2.Chainlink Faucet
+验证 Twitter 账号，每日可以领取 0.1 个 GoerliETH 和 10 个 LINK 测试币。
+
+### B-3.Paradigm Faucet
+多链水龙头领取网站，一次性领取 ETH、wETH、DAI 和 NFTs Token，覆盖 Görli、 Polygon Mumbai 和 Moonbase Alpha 等测试网（要求 Twitter 注册超过 1 个月、有 50 个粉丝，发布 1 条 推文）。
+
+### B-4.AllThatNode水龙头
+每天可以领 0.025 个 Goerli ETH 测试代币，登录后能领更多。
+
+### B-5.Goerli Authenticated Faucet
+以太坊官网推荐的水龙头，目前已经没水了。
+
+## A.Sepolia 测试网水龙头整理
+由于空投效应的存在，不得不说现在测试网越来越卷了。Goerli 测试网的水也变得非常难领，甚至 LayerZero 推出了个真 eth 换测试 eth 的跨链桥。想必以太坊开发者也注意到这个问题，于是开始部署 无限量 ETH 代币的 Sepolia 测试网，接下来我分享几个以太坊 Sepolia Fuacet 吧。
+
+
+### A-2.infura
+https://www.infura.io/faucet/sepolia
+
+小狐狸母公司旗下的，每天能领 0.05 个 ETH 测试币，需要登录 Infura 账户.
+
+条件：
+1. 地址有e
+2. 注册infura
+
+### A-3.QuickNode Faucet
+为防止机器人榨干水龙头，需要钱包在以太坊主网持有 0.001 个 ETH 真币才能领 取。每日 0.05 个 Sepolia ETH 代币，分享推特后翻倍。
+
+
+### A-4.其他
+* Alchemy水龙头：每天能领 0.5 个 Sepolia ETH 测试币，需要注册 Alchemy 账号。
+* Chainlink Faucet：验证 Twitter 账号，每日可以领取 0.1 个 SepoliaETH 和 20 个 LINK 测试币。 相关文章
+* 币售网bisell.site：可以下单购买，单次可买 10 个，适合应急的开发者使用
