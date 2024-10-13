@@ -11,13 +11,11 @@ export const sidebar: ISidebar[] = [
     href: '/dashboard',
   },
   {
-    label: 'crypto',
-    href: '/crypto',
+    label: 'trader',
+    href: '/trader',
     type: 'category',
     items: [
-      { href: "/crypto/btcAddress", label: "Btc Address" },
-      { href: "/crypto/meme", label: "Meme trade" },
-      { href: "/crypto/tech1", label: "tech1" },
+      { href: "/trader/invest", label: "invest" },
     ]
   },
 ]
