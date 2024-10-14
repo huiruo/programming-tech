@@ -1,5 +1,5 @@
 import { config } from '.'
-import { WorkspaceState, defaultFileName, defaultFiles } from '../editorSlice/typesWorkspace'
+import { WorkspaceState, defaultFileName, defaultFiles } from '../types/typesWorkspace'
 
 const CONFIG_KEY = 'workspace.state'
 

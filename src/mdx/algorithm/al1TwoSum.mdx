@@ -1,6 +1,5 @@
-import CodePannel from '../CodePannel';
 import CodeBlock from '../../components/codeBlock';
-import ReduxHydrationProvider from "@/store/reduxHydrationProvider";
+import CodePannel from '../CodePannel';
 
 export const testCode = `
 const nums = [2, 11, 15, 18, 830, 7]
@@ -63,6 +62,4 @@ console.log([...map]);  // 把map中的entries扩展为数组元素。
 ```
 </CodeBlock>
 
-<ReduxHydrationProvider>
-  <CodePannel code={testCode}/>
-</ReduxHydrationProvider>
+<CodePannel code={testCode}/>

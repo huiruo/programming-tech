@@ -1,5 +1,6 @@
-import { newVimCommandDoneAction, newVimCommandStartAction, newVimConfirmAction, newVimDisposeAction, newVimInitAction, newVimKeyDeleteAction, newVimKeyPressAction, newVimModeChangeAction } from '@/store/editorSlice/action'
-import { VimState } from '@/store/editorSlice/typesVim'
+import { editorAtom } from '@/store-jotai'
+import { VimMode, VimState } from '@/store-jotai/types/typesVim'
+import { getDefaultStore } from 'jotai'
 import { type editor, type IKeyboardEvent, KeyCode } from 'monaco-editor'
 import VimModeKeymap from 'monaco-vim/lib/cm/keymap_vim'
 
@@ -55,7 +56,8 @@ class VimModeKeymapAdapter extends VimModeKeymap {
       this.commandsAttached = true
     }
 
-    newVimInitAction()
+    // newVimInitAction()
+    console.log('%c=newVimInitAction-todo','color:red',)
     super.attach()
   }
 
@@ -96,6 +98,7 @@ export class StatusBarAdapter {
     const message = result.textContent!
     if (message.startsWith(registryOutputPrefix)) {
       // TODO: implement proper registries display
+      /*
       newVimConfirmAction({
         type: 'default',
         message: message
@@ -103,14 +106,18 @@ export class StatusBarAdapter {
           .map((v) => v.trim())
           .join(' '),
       })
+      */
       return
     }
 
     const isError = result.style.color === 'red'
+    // TODO: 
+    /*
     newVimConfirmAction({
       type: isError ? 'error' : 'default',
       message: result.textContent!,
     })
+    */
   }
 
   /**
@@ -126,7 +133,8 @@ export class StatusBarAdapter {
     // Initial character is hidden inside an array of 2 spans as content of 1 span.
     // Idk who thought that this is a good idea, but we have to deal with it.
     const commandChar = text.firstChild?.textContent
-    newVimCommandStartAction(commandChar ?? '')
+    // newVimCommandStartAction(commandChar ?? '')
+    console.log('%c=newVimCommandStartAction-test','color:red',)
   }
 
   onPromptClose(value: string) {
@@ -142,24 +150,43 @@ export class StatusBarAdapter {
   handleKeyDownEvent(e: IKeyboardEvent, currentData: string) {
     e.preventDefault()
     e.stopPropagation()
+    console.log('%c=handleKeyDownEvent-->','color:red',)
+
+    const defaultStore = getDefaultStore()
 
     switch (e.keyCode) {
       case KeyCode.Enter:
-        newVimCommandDoneAction()
+        // newVimCommandDoneAction()
         this.onPromptClose(currentData)
+
+        defaultStore.set(editorAtom, (prev) => ({
+          ...prev,
+          vim: {
+            mode: prev.vim.mode,
+            subMode: prev.vim.subMode
+          }
+        }));
         return
       case KeyCode.Escape:
-        newVimCommandDoneAction()
+        // newVimCommandDoneAction()
+        defaultStore.set(editorAtom, (prev) => ({
+          ...prev,
+          vim: {
+            mode: prev.vim.mode,
+            subMode: prev.vim.subMode
+          }
+        }));
         break
       case KeyCode.Backspace:
-        newVimKeyDeleteAction()
+        // newVimKeyDeleteAction()
         return
       default:
         break
     }
 
     if (isPrintableKey(e.browserEvent.key)) {
-      newVimKeyPressAction(e.browserEvent.key)
+      console.log('%c=newVimKeyPressAction-test','color:red',)
+      // newVimKeyPressAction(e.browserEvent.key)
     }
   }
 
@@ -181,20 +208,57 @@ export const createVimModeAdapter = (
   const statusAdapter = new StatusBarAdapter(editorInstance)
 
   vimAdapter.setStatusBar(statusAdapter)
-  vimAdapter.on('vim-mode-change', (mode: VimModeChangeArgs) => {
-    newVimModeChangeAction(mode)
+
+  const defaultStore = getDefaultStore()
+
+  vimAdapter.on('vim-mode-change', (mode: VimMode) => {
+    console.log('%c=newVimModeChangeAction-test', 'color:yellow',)
+    defaultStore.set(editorAtom, (prev) => ({
+      ...prev,
+      vim: {
+        ...prev.vim,
+        mode,
+        // subMode,
+      },
+      monaco: {
+        ...prev.monaco,
+        cursorStyle: mode === VimMode.Insert ? 'line' : 'block',
+      },
+    }));
   })
 
   vimAdapter.on('vim-keypress', (key: string) => {
-    newVimKeyPressAction(key)
+    // newVimKeyPressAction(key)
+    // console.log('%c=newVimKeyPressAction-test', 'color:red',)
+    defaultStore.set(editorAtom, (prev) => ({
+      ...prev,
+      vim: {
+        ...prev.vim,
+        commandStarted: true,
+        keyBuffer: false ? key : (prev.vim.keyBuffer + key)
+      }
+    }));
   })
 
   vimAdapter.on('vim-command-done', () => {
-    newVimCommandDoneAction()
+    // newVimCommandDoneAction()
+    // console.log('%c=newVimCommandDoneAction-test', 'color:red',)
+    defaultStore.set(editorAtom, (prev) => ({
+      ...prev,
+      vim: {
+        mode: prev.vim.mode,
+        subMode: prev.vim.subMode
+      }
+    }));
   })
 
   vimAdapter.on('dispose', () => {
-    newVimDisposeAction()
+    // newVimDisposeAction()
+    // console.log('%c=newVimDisposeAction-test', 'color:red',)
+    defaultStore.set(editorAtom, (prev) => ({
+      ...prev,
+      vim: {} as any,
+    }));
   })
 
   return [vimAdapter, statusAdapter]

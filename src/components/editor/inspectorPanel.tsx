@@ -1,3 +1,5 @@
+'use client';
+
 import { Box } from "@mui/system"
 import { Resizable } from 're-resizable'
 import { DEFAULT_PANEL_HEIGHT, DEFAULT_PANEL_WIDTH_PERCENT, LayoutType, MIN_HEIGHT, MIN_WIDTH, SizeChanges, handleClasses } from "./constants"
@@ -58,7 +60,7 @@ export interface InspectorPanelRef {
   clearLog: () => void;
 }
 
-export const InspectorPanel = forwardRef<InspectorPanelRef, Props>((props, ref) => {
+export const InspectorPanel = forwardRef<InspectorPanelRef, Props>(function InspectorPanel(props, ref) {
   const {
     language,
     maxHeight,
@@ -195,17 +197,19 @@ export const InspectorPanel = forwardRef<InspectorPanelRef, Props>((props, ref) 
       });
 
       const logText = formattedArgs.join(' ') + '\n';
-      setLogContent((prev) => prev + logText);
+      console.log('%c=','color:red',logText)
+      // setLogContent((prev) => prev + logText);
     };
 
     const originalLog = console.log;
-    console.log = customLog;
+    // console.log = customLog;
 
     try {
       // eslint-disable-next-line no-new-func
       new Function(currentCode)();
     } catch (error) {
-      customLog(String(error));
+      console.log('%c=error','color:blue',error)
+      // customLog(String(error));
     } finally {
       // Wait for all promises to resolve before restoring the original console.log
       Promise.resolve().then(() => setTimeout(() => {
@@ -222,6 +226,8 @@ export const InspectorPanel = forwardRef<InspectorPanelRef, Props>((props, ref) 
       setLogContent('')
     }
   }));
+
+  console.log('%c=logContent','color:red',logContent)
 
   return <Resizable
     className={clsx('InspectorPanel', isCollapsed && 'InspectorPanel--collapsed', `InspectorPanel--${layout}`)}

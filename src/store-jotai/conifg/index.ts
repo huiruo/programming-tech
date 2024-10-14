@@ -1,9 +1,9 @@
 'use client';
 
 import { defaultPanelProps } from "@/package/editor/constants"
-import { MonacoSettings, defaultMonacoSettings } from "../editorSlice/tpesMonaco"
-import { PanelState } from "../editorSlice/types"
-import { RunTargetConfig, defaultRunTarget } from "../editorSlice/typesRunTargetConfig"
+import { MonacoSettings, defaultMonacoSettings } from "../types/tpesMonaco"
+import { PanelState } from "../types/types"
+import { RunTargetConfig, defaultRunTarget } from "../types/typesRunTargetConfig"
 import { DarkTheme, LightTheme } from "./colors"
 import { supportsPreferColorScheme } from "./theme"
 

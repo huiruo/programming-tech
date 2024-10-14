@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { Sidebar } from "@/components/sidebar";
 import "./globals.css";
 import { NavWrapper } from "@/components/nav";
+import { Provider } from "jotai";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -27,9 +28,11 @@ export default function RootLayout({
 
           <div className='main-container'>
             <Sidebar isMobile={false} />
-            <main className="md-container">
-              {children}
-            </main>
+            <Provider>
+              <main className="md-container">
+                {children}
+              </main>
+            </Provider>
           </div>
         </div>
       </body>

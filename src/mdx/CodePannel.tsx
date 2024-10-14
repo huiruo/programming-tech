@@ -2,9 +2,12 @@
 
 import React from 'react';
 import { usePathname } from 'next/navigation'
-import { Editor } from '../components/editor';
-
 export type Language = 'javascript' | 'html'
+import dynamic from 'next/dynamic';
+// import CodeEditor from '../components/editor';
+export const CodeEditor = dynamic(() => import('../components/editor'), {
+  ssr: false,
+});
 
 interface Props {
   code: string
@@ -16,7 +19,7 @@ interface Props {
 const CodePannel: React.FC<Props> = ({ code, height, name, language = 'javascript' }) => {
   const location = usePathname()
 
-  return <Editor
+  return <CodeEditor
     code={code}
     path={`${location}/${name}`}
     height={height}

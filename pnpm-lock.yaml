@@ -35,6 +35,9 @@ dependencies:
   dexie-react-hooks:
     specifier: ^1.1.7
     version: 1.1.7(@types/react@18.3.11)(dexie@4.0.8)(react@18.3.1)
+  jotai:
+    specifier: ^2.10.0
+    version: 2.10.0(@types/react@18.3.11)(react@18.3.1)
   lucide-react:
     specifier: ^0.446.0
     version: 0.446.0(react@18.3.1)
@@ -4695,6 +4698,22 @@ packages:
       '@types/node': 20.16.11
       merge-stream: 2.0.0
       supports-color: 8.1.1
+    dev: false
+
+  /jotai@2.10.0(@types/react@18.3.11)(react@18.3.1):
+    resolution: {integrity: sha512-8W4u0aRlOIwGlLQ0sqfl/c6+eExl5D8lZgAUolirZLktyaj4WnxO/8a0HEPmtriQAB6X5LMhXzZVmw02X0P0qQ==}
+    engines: {node: '>=12.20.0'}
+    peerDependencies:
+      '@types/react': '>=17.0.0'
+      react: '>=17.0.0'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      react:
+        optional: true
+    dependencies:
+      '@types/react': 18.3.11
+      react: 18.3.1
     dev: false
 
   /js-tokens@4.0.0:
