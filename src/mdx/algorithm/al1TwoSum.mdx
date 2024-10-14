@@ -1,0 +1,68 @@
+import CodePannel from '../CodePannel';
+import CodeBlock from '../../components/codeBlock';
+import ReduxHydrationProvider from "@/store/reduxHydrationProvider";
+
+export const testCode = `
+const nums = [2, 11, 15, 18, 830, 7]
+const target = 9
+
+const twoSum = (nums, target) => {
+  const map = new Map()
+  for (let i = 0; i < nums.length; i++) {
+    const x = target - nums[i]
+    if (map.has(x)) {
+
+      return [map.get(x), i]
+    }
+
+    console.log('map', map)
+    map.set(nums[i], i)
+  }
+}
+
+const res = twoSum(nums, target)
+console.log('res',res)
+`
+
+给定一个整数数组 nums 和一个整数目标值 target，请你在该数组中找出 `和 = 目标值target` 的那两个整数，并返回它们的数组下标。
+
+你可以假设每种输入只会对应一个答案。但是，数组中同一个元素在答案里不能重复出现。
+
+你可以按任意顺序返回答案。
+
+<CodeBlock>
+```text
+输入：nums = [2,7,11,15], target = 9
+输出：[0,1]
+解释：因为 nums[0] + nums[1] == 9 ，返回 [0, 1] 。
+```
+</CodeBlock>
+
+## 思路1
+1. 用 hashMap 存储遍历过的元素和对应的索引。
+2. 每遍历一个元素，看看 hashMap 中是否存在满足要求的目标数字。
+3. 所有事情在一次遍历中完成（用了空间换取时间）
+
+
+## 扩展map
+<CodeBlock>
+```js
+const map = new Map();
+map.set(1, "111");
+map.set(2, "222");
+map.set(3, "333");
+
+// map -> array
+const arr = Array.from(map); // 二维数组
+console.log({arr});
+console.log(arr.flat());   // 压平(成为一维数组)
+// (6) [1, "111", 2, "222", 3, "333"]
+
+// 或：使用...rest运算符
+console.log([...map]);  // 把map中的entries扩展为数组元素。
+```
+</CodeBlock>
+
+<ReduxHydrationProvider>
+  <CodePannel code={testCode}/>
+</ReduxHydrationProvider>

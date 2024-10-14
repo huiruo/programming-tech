@@ -18,4 +18,12 @@ export const sidebar: ISidebar[] = [
       { href: "/trader/invest", label: "invest" },
     ]
   },
+  {
+    label: 'Algorithm',
+    href: '/algorithm',
+    type: 'category',
+    items: [
+      { href: "/algorithm/twoSum", label: "twoSum" },
+    ]
+  },
 ]
