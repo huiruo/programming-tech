@@ -70,8 +70,6 @@ export const InspectorPanel = forwardRef<InspectorPanelRef, Props>(function Insp
     collapsed,
     onResize,
     path,
-    // onLayoutChange,
-    // onCollapsed,
   } = props
 
   const isCollapsed = collapsed && layout === LayoutType.Vertical
@@ -160,7 +158,7 @@ export const InspectorPanel = forwardRef<InspectorPanelRef, Props>(function Insp
     if (language === 'html' && currentCode !== '') {
       runhtml()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentCode, language])
 
   const runhtml = () => {
@@ -178,43 +176,38 @@ export const InspectorPanel = forwardRef<InspectorPanelRef, Props>(function Insp
 
   const runCode = () => {
     if (language === 'html') {
-      runhtml()
+      runhtml();
       return;
     }
 
-    const customLog = (...args: any[]) => {
-      const formattedArgs = args.map((arg) => {
-        if (arg instanceof Map) {
-          return `Map(${arg.size}) { ${[...(arg as any).entries()].map(([k, v]) => `${JSON.stringify(k)} => ${JSON.stringify(v)}`).join(', ')} }`;
-        } else if (typeof arg === 'object' && arg !== null) {
-          try {
-            return JSON.stringify(arg, null, 2);
-          } catch (error) {
-            return '[Circular]';
-          }
-        }
-        return String(arg);
-      });
-
-      const logText = formattedArgs.join(' ') + '\n';
-      console.log('%c=','color:red',logText)
-      // setLogContent((prev) => prev + logText);
-    };
-
+    // 保存原始的 console.log
     const originalLog = console.log;
-    // console.log = customLog;
 
     try {
+      console.log = (...args: any[]) => {
+        const logMessage = args.map(arg => {
+          if (arg instanceof Map) {
+            // 如果是 Map，手动将其转换为键值对的字符串表示
+            // return `Map(${arg.size}) { ${[...arg.entries()].map(([k, v]) => `${String(k)} => ${String(v)}`).join(', ')} }`;
+            return `Map(${arg.size}) ${JSON.stringify(Array.from(arg), null, 2)}`;
+          } else if (typeof arg === 'object') {
+            return JSON.stringify(arg, null, 2); // 对象和数组格式化为 JSON 字符串
+          } else {
+            return String(arg); // 其他类型直接转换为字符串
+          }
+        }).join(' ');
+
+        // 更新 logContent 显示 log
+        setLogContent(prev => prev + logMessage + '\n');
+      };
+
       // eslint-disable-next-line no-new-func
       new Function(currentCode)();
     } catch (error) {
-      console.log('%c=error','color:blue',error)
-      // customLog(String(error));
+      console.log(`Error: ${String(error)}`);
     } finally {
-      // Wait for all promises to resolve before restoring the original console.log
-      Promise.resolve().then(() => setTimeout(() => {
-        console.log = originalLog;
-      }, 0));
+      // 恢复 console.log 到原始状态
+      console.log = originalLog;
     }
   };
 
@@ -227,7 +220,7 @@ export const InspectorPanel = forwardRef<InspectorPanelRef, Props>(function Insp
     }
   }));
 
-  console.log('%c=logContent','color:red',logContent)
+  // console.log('%c=logContent','color:red',logContent)
 
   return <Resizable
     className={clsx('InspectorPanel', isCollapsed && 'InspectorPanel--collapsed', `InspectorPanel--${layout}`)}

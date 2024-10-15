@@ -17,7 +17,6 @@ interface Props {
   height?: string;
 }
 
-// export const Editor = (prop: Props) => {
 const Editor = (prop: Props) => {
   const { path, code, height, language } = prop;
   const editorcontainerRef = useRef<HTMLDivElement>(null);
