@@ -1,0 +1,917 @@
+import CodePannel from '../CodePannel';
+import CodeBlock from '../../components/codeBlock';
+import HighlightText from '../HighlightText';
+
+## history browser
+react-router官方推荐，需要服务器支持（因为是SPA项目，url切换时需要服务器始终返回index.html）
+<CodeBlock>
+```js
+server {
+    listen 8099;
+    server_name localhost;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+</CodeBlock>
+
+为什么这样配就可访问BrowserRouter?
+
+这个配置可以让 BrowserRouter 正常工作的原因是因为它确保了所有的请求都会被重定向到 index.html。让我来解释一下这个配置的工作原理：
+
+* listen 8099;这一行指定了 nginx 监听的端口，也就是你的 React 应用所运行的端口。
+
+* server_name localhost;：这一行指定了服务器的域名，这个配置适用于在本地环境下部署。如果你需要在其他环境中部署，你可能需要修改这个值。
+
+* root /usr/share/nginx/html;：这一行指定了 nginx 的根目录，即 nginx 应该从哪个目录下提供文件。在这个配置中，它被设置为你的 React 应用的构建目录 /usr/share/nginx/html。
+
+* index index.html;：这一行指定了默认的索引文件是 index.html，如果请求的路径是一个目录，则会尝试查找该目录下的 index.html 文件。
+
+* `location / { try_files $uri $uri/ /index.html; }`这个 location 块是最重要的部分。它表示 nginx 对于所有的请求都会尝试查找对应的文件或目录，如果找到了就直接返回，如果没有找到则重定向到 index.html 文件。这样的配置使得当用户访问除了已经存在的文件或目录外的路径时，都能够被重定向到 React 应用的入口文件 index.html。
+
+因此，当用户访问 http://localhost:8099/editor 时，即使 /editor 这个路径实际上在服务器上并不存在，但是由于 nginx 配置中的`try_files $uri $uri/ /index.html;`指令，nginx 会将请求重定向到 index.html 文件，然后由 React Router 来处理这个路径，使得 BrowserRouter 正常工作。
+
+### 部署参考
+[部署参考](https://blog.csdn.net/qq_38433300/article/details/103984865)
+
+注意点：
+
+* 代码中加：
+<CodeBlock>
+```text
+basename="/app/"，这里的 /app/ 和nginx中的location /app/ 一致
+```
+</CodeBlock>
+
+* homepage
+<CodeBlock>
+```text
+</CodeBlock>
+"homepage":"http://a.yeashian.com/app"，此处为域名(域名为nginx中配置的)，ip不行
+```
+</CodeBlock>
+
+* 跳转不能使用`window.location.href="xxxx"`,必须使用react路由跳转
+
+nginx中加:
+<CodeBlock>
+```text
+location /app/ {
+
+  try_files $uri /app/index.html;
+
+  index index.html;
+
+}
+```
+</CodeBlock>
+
+### 实战
+conf.d/default.conf
+
+<CodeBlock>
+```text
+server {
+    listen 8099;
+    server_name localhost;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+
+|
+|
+V
+
+server {
+    listen       80;
+    listen  [::]:80;
+    server_name  localhost;
+
+    #access_log  /var/log/nginx/host.access.log  main;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    #error_page  404              /404.html;
+
+    # redirect server error pages to the static page /50x.html
+    #
+    error_page   500 502 503 504  /50x.html;
+    location = /50x.html {
+        root   /usr/share/nginx/html;
+    }
+
+    # proxy the PHP scripts to Apache listening on 127.0.0.1:80
+    #
+    #location ~ \.php$ {
+    #    proxy_pass   http://127.0.0.1;
+    #}
+
+    # pass the PHP scripts to FastCGI server listening on 127.0.0.1:9000
+    #
+    #location ~ \.php$ {
+    #    root           html;
+    #    fastcgi_pass   127.0.0.1:9000;
+    #    fastcgi_index  index.php;
+    #    fastcgi_param  SCRIPT_FILENAME  /scripts$fastcgi_script_name;
+    #    include        fastcgi_params;
+    #}
+
+    # deny access to .htaccess files, if Apache's document root
+    # concurs with nginx's one
+    #
+    #location ~ /\.ht {
+    #    deny  all;
+    #}
+}
+```
+</CodeBlock>
+
+## B.v6 api
+<HighlightText>
+**1.获取当前路由**
+</HighlightText>
+```js
+import { useLocation } from "react-router-dom";
+
+const Header =()=>{
+  const { pathname } = useLocation()
+  ...
+}
+```
+
+
+<HighlightText>
+**实现来回导航(使用 go、goBack、goForward)**
+</HighlightText>
+```js
+import { useHistory,useNavigate } from 'react-router-dom';
+
+function App() {
+  const { go, goBack, goForward } = useHistory();
+  const navigate = useNavigate()
+
+  function handleClick() {
+    navigate('/home', { replace: true });
+  }
+
+  return (
+    <>
+      <button onClick={() => go(-2)}>Go 2 pages back</button>
+      <button onClick={goBack}>Go back</button>
+      <button onClick={goForward}>Go forward</button>
+      <button onClick={() => go(2)}>Go 2 pages forward</button>
+    </>
+  );
+}
+```
+
+<HighlightText>
+1.params参数
+</HighlightText>
+* 1.params传参:路由表配置：参数地址栏显示;动态路由,推荐使用
+* 2.search传参：会暴露在url中，刷新页面不会消失，但取数据时，需处理
+* 3.query传参:参数地址栏不显示，刷新地址栏，参数丢失,类似于表单中的get方法，传递参数为明文
+* 4.state传参,类似于post方式，使用方式和query类似
+```
+state传参：BrowserRouter(history)模式下，刷新页面不消失；
+
+而HashRouter(hash)模式下，刷新页面会消失，但都不会暴露在url中
+```
+```js
+// 需要在Route上显示写明 :params
+<BrowserRouter>
+  <Routes>
+      <Route path={'/class/:id/:grade'} element={<ToPage/>} />
+  </Routes>
+</BrowserRouter>
+
+// 跳转
+import { useNavigate } from "react-router-dom";
+const goTo = () => {
+  navigate(`/class/${id}/${grade}`)
+}
+
+// 接收
+import { useParams } from "react-router-dom";
+const ToPages = () => {
+  const { id, grade } = useParams();
+  return (<h1>id : {id}, grade : {grade}</h1>)}
+}
+```
+
+<HighlightText>
+2.search参数
+</HighlightText>
+如果传递的是search参数（例如：detail?id=1&name=李四）需要使用useSearchParams获取search参数
+<CodeBlock>
+```js
+// 接收
+import {useSearchParams} from "react-router-dom"
+const [searchParams] = useSearchParams();
+const id = searchParams.get("id");
+
+// 1.直接拼接
+const Pages = () => {
+  const navigate = useNavigate();
+  const id = "1";
+  const grade = "2";
+  const goTo = () => {
+    navigate(`/class?id=${id}&grade=${grade}`)
+  }
+}
+
+// 1.2 pathname + 拼接search
+const Pages = () => {
+  const navigate = useNavigate();
+  const id = "1";
+  const grade = "2";
+  const goTo = () => {
+      navigate({
+        pathname: "/class",
+        search: `?id=${id}&grade=${grade}`
+    })
+  }
+}
+
+// 1.3 pathname + 创建search (推荐)
+const Pages = () => {
+  const navigate = useNavigate();
+  const params = { id: '1', grade: '2' };
+  const goTo = () => {
+      navigate({
+        pathname: "/class",
+        search: `?${createSearchParams(params)}`
+    })
+  }
+}
+```
+</CodeBlock>
+
+
+<HighlightText>
+**3.state 传参**
+</HighlightText>
+```js
+import { useNavigate } from "react-router-dom";
+const goTo = () => {
+  navigate(`/class`, { state: {id, grade} } )
+}
+
+// 如果传递的是state参数需要使用useLocation获取参数
+import {useLocation} from "react-router-dom";
+const location = useLocation();
+const {id} = location.state;
+```
+
+## C.History API
+* history.go(0) 是刷新当前页面。
+* history.go(1) 是前进一个，相当于 history.forward()
+* history.go(-1) 是后退一个，相当于 history.back()
+* history.replaceState 来替换当前 history,第一个参数是 state、第二个参数是 title，第三个是替换的 url
+
+<CodeBlock>
+```js
+// 效果:前后 history 都没变，只有当前的变了
+history.replaceState({test:1}, '', 'https://www.baidu.com?#/aaa')
+```
+</CodeBlock>
+
+* 用 history.pushState 来添加一个新的 history
+<CodeBlock>
+```text
+// 效果:前后 history 都没变，只有当前的变了
+history.pushState({test:1}, '', 'https://www.baidu.com?#/aaa');
+
+history.pushState 的时候，和后面的 history 冲突了，也就是分叉了：这时候自然只能保留一个分支，也就是最新的那个。
+```
+</CodeBlock>
+* history.scrollRestoration 保留滚动位置,默认auto会自动定位到上次滚动位置
+
+* hashchange 事件,监听 hash 的变化
+
+* 与 history 相关的事件：popstate,添加、修改 history 不会触发 popstate，只有在 history 之间导航才会触发
+当你在 history 中导航时，popstate 就会触发，比如**history.forwad、history.back、history.go。**
+但是 history.pushState、history.replaceState 这种并不会触发 popstate。
+
+export const testCode = `
+window.addEventListener('popstate', event => {console.log('test:',event)});
+history.back();
+`
+
+<CodePannel code={testCode} height='200px'/>
+
+## D.react Router
+总结： React Router 的实现原理:
+- 首次渲染的时候，会根据 location 和配置的 routes 做匹配，渲染匹配的组件。
+
+- 点击 link 链接也会进行 location 和 routes 的匹配，然后 history.pushState 修改 history，之后通过 react 的 setState 触发重新渲染。
+`<Link />`的核心就是渲染`<a>`标签，拦截`<a>`标签的点击事件，然后通过`<Router />`共享的`router`对`history`进行路由操作，进而通知`<Router />`重新渲染。
+
+- 前进后退的时候，也就是执行 history.go、history.back、history.forward 的时候，会触发 popstate，这时候也是同样的处理，location 和 routes 的匹配，之后通过 react 的 setState 触发重新渲染。
+**核心是为子组件提供一个带有router属性的Context，同时监听history，一旦history发生变化，便通过setState()触发组件重新渲染。**
+
+- 渲染时会用到 Outlet组件 渲染子路由，用到 useXxx 来取一些匹配信息，这些都是通过 context 来传递的。
+<CodeBlock>
+```js
+// dist/react-router-dom.development.js
+function BrowserRouter({
+  basename,
+  children,
+  future,
+  window
+}) {
+  let historyRef = React.useRef();
+  if (historyRef.current == null) {
+    historyRef.current = createBrowserHistory({
+      window,
+      v5Compat: true
+    });
+  }
+
+  // ...
+}
+
+|
+|
+V
+function createBrowserRouter(routes, opts) {
+  return createRouter({
+    basename: opts?.basename,
+    future: {
+      ...opts?.future,
+      v7_prependBasename: true
+    },
+    // 这里传入了 history。
+    history: createBrowserHistory({
+      window: opts?.window
+    }),
+    hydrationData: opts?.hydrationData || parseHydrationData(),
+    routes,
+    mapRouteProperties: UNSAFE_mapRouteProperties,
+    unstable_dataStrategy: opts?.unstable_dataStrategy,
+    unstable_patchRoutesOnNavigation: opts?.unstable_patchRoutesOnNavigation,
+    window: opts?.window
+  }).initialize();
+}
+
+// 这个不是原生的 history api，而是包装了一层之后的：
+```
+</CodeBlock>
+
+<CodeBlock>
+```js
+// https://github.com/remix-run/react-router/blob/9afac15d8cbe30b37d0f9e8b89c9f1e430dfe35a/packages/router/history.ts#L326
+export function createBrowserHistory(
+  options: BrowserHistoryOptions = {}
+): BrowserHistory {
+  function createBrowserLocation(
+    window: Window,
+    globalHistory: Window["history"]
+  ) {
+    let { pathname, search, hash } = window.location;
+    return createLocation(
+      "",
+      { pathname, search, hash },
+      // state defaults to `null` because `window.history.state` does
+      (globalHistory.state && globalHistory.state.usr) || null,
+      (globalHistory.state && globalHistory.state.key) || "default"
+    );
+  }
+
+  function createBrowserHref(window: Window, to: To) {
+    return typeof to === "string" ? to : createPath(to);
+  }
+
+  return getUrlBasedHistory(
+    createBrowserLocation,
+    createBrowserHref,
+    null,
+    options
+  );
+}
+
+  |
+  |
+  V
+
+// 关注 listen、push、replace、go 4个方法：
+function getUrlBasedHistory(
+  getLocation: (window: Window, globalHistory: Window["history"]) => Location,
+  createHref: (window: Window, to: To) => string,
+  validateLocation: ((location: Location, to: To) => void) | null,
+  options: UrlHistoryOptions = {}
+): UrlHistory {
+
+  // 省略
+
+  function push(to: To, state?: any) {
+    action = Action.Push;
+    let location = createLocation(history.location, to, state);
+    if (validateLocation) validateLocation(location, to);
+
+    index = getIndex() + 1;
+    let historyState = getHistoryState(location, index);
+    let url = history.createHref(location);
+
+    // try...catch because iOS limits us to 100 pushState calls :/
+    try {
+      globalHistory.pushState(historyState, "", url);
+    } catch (error) {
+      // If the exception is because `state` can't be serialized, let that throw
+      // outwards just like a replace call would so the dev knows the cause
+      // https://html.spec.whatwg.org/multipage/nav-history-apis.html#shared-history-push/replace-state-steps
+      // https://html.spec.whatwg.org/multipage/structured-data.html#structuredserializeinternal
+      if (error instanceof DOMException && error.name === "DataCloneError") {
+        throw error;
+      }
+      // They are going to lose state here, but there is no real
+      // way to warn them about it since the page will refresh...
+      window.location.assign(url);
+    }
+
+    if (v5Compat && listener) {
+      listener({ action, location: history.location, delta: 1 });
+    }
+  }
+
+  function replace(to: To, state?: any) {
+    action = Action.Replace;
+    let location = createLocation(history.location, to, state);
+    if (validateLocation) validateLocation(location, to);
+
+    index = getIndex();
+    let historyState = getHistoryState(location, index);
+    let url = history.createHref(location);
+    globalHistory.replaceState(historyState, "", url);
+
+    if (v5Compat && listener) {
+      listener({ action, location: history.location, delta: 0 });
+    }
+  }
+
+  function createURL(to: To): URL {
+    // window.location.origin is "null" (the literal string value) in Firefox
+    // under certain conditions, notably when serving from a local HTML file
+    // See https://bugzilla.mozilla.org/show_bug.cgi?id=878297
+    let base =
+      window.location.origin !== "null"
+        ? window.location.origin
+        : window.location.href;
+
+    let href = typeof to === "string" ? to : createPath(to);
+    // Treating this as a full URL will strip any trailing spaces so we need to
+    // pre-encode them since they might be part of a matching splat param from
+    // an ancestor route
+    href = href.replace(/ $/, "%20");
+    invariant(
+      base,
+      `No window.location.(origin|href) available to create URL for href: ${href}`
+    );
+    return new URL(href, base);
+  }
+
+  let history: History = {
+    get action() {
+      return action;
+    },
+    get location() {
+      return getLocation(window, globalHistory);
+    },
+    listen(fn: Listener) {
+      if (listener) {
+        throw new Error("A history only accepts one active listener");
+      }
+      window.addEventListener(PopStateEventType, handlePop);
+      listener = fn;
+
+      return () => {
+        window.removeEventListener(PopStateEventType, handlePop);
+        listener = null;
+      };
+    },
+    createHref(to) {
+      return createHref(window, to);
+    },
+    createURL,
+    encodeLocation(to) {
+      // Encode a Location the same way window.location would
+      let url = createURL(to);
+      return {
+        pathname: url.pathname,
+        search: url.search,
+        hash: url.hash,
+      };
+    },
+    push,
+    replace,
+    go(n) {
+      return globalHistory.go(n);
+    },
+  };
+
+  return history;
+}
+
+```
+</CodeBlock>
+
+### 1.如上代码，listen 方法listen 就是监听 popstate 事件
+**前进后退的时候，也就是执行 history.go、history.back、history.forward 的时候，会触发 popstate，这时候也是同样的处理，location 和 routes 的匹配，之后通过 react 的 setState 触发重新渲染。**
+<HighlightText>
+window.addEventListener(PopStateEventType, handlePop);
+
+handlePop 就是传进来的 `fn: Listener`
+</HighlightText>
+<CodeBlock>
+```js
+listen(fn: Listener) {
+  if (listener) {
+    throw new Error("A history only accepts one active listener");
+  }
+  window.addEventListener(PopStateEventType, handlePop);
+  listener = fn;
+
+  return () => {
+    window.removeEventListener(PopStateEventType, handlePop);
+    listener = null;
+  };
+}
+
+function handlePop() {
+  action = Action.Pop;
+  let nextIndex = getIndex();
+  let delta = nextIndex == null ? null : nextIndex - index;
+  index = nextIndex;
+  if (listener) {
+    listener({ action, location: history.location, delta });
+  }
+}
+```
+</CodeBlock>
+### 2.push、replace、go 是对 history 的 api 的封装：
+<CodeBlock>
+```js
+function replace(to: To, state?: any) {
+  // 省略
+  push,
+  replace,
+  go(n) {
+    return globalHistory.go(n);
+  },
+}
+
+function push(to: To, state?: any) {
+  action = Action.Push;
+  let location = createLocation(history.location, to, state);
+  if (validateLocation) validateLocation(location, to);
+
+  index = getIndex() + 1;
+  let historyState = getHistoryState(location, index);
+  let url = history.createHref(location);
+
+  // try...catch because iOS limits us to 100 pushState calls :/
+  try {
+    globalHistory.pushState(historyState, "", url);
+  } catch (error) {
+    // If the exception is because `state` can't be serialized, let that throw
+    // outwards just like a replace call would so the dev knows the cause
+    // https://html.spec.whatwg.org/multipage/nav-history-apis.html#shared-history-push/replace-state-steps
+    // https://html.spec.whatwg.org/multipage/structured-data.html#structuredserializeinternal
+    if (error instanceof DOMException && error.name === "DataCloneError") {
+      throw error;
+    }
+    // They are going to lose state here, but there is no real
+    // way to warn them about it since the page will refresh...
+    window.location.assign(url);
+  }
+
+  if (v5Compat && listener) {
+    listener({ action, location: history.location, delta: 1 });
+  }
+}
+
+
+function replace(to: To, state?: any) {
+  action = Action.Replace;
+  let location = createLocation(history.location, to, state);
+  if (validateLocation) validateLocation(location, to);
+
+  index = getIndex();
+  let historyState = getHistoryState(location, index);
+  let url = history.createHref(location);
+
+  // history 还封装了 location 属性，不用自己从 window 取
+  globalHistory.replaceState(historyState, "", url);
+
+  if (v5Compat && listener) {
+    listener({ action, location: history.location, delta: 0 });
+  }
+}
+```
+</CodeBlock>
+
+## 路由匹配
+- matchRoutes 会把嵌套路由拍平，然后和 location 匹配
+
+- 然后就匹配到了要渲染的组件以及它包含的子路由：
+<CodeBlock>
+```js
+matches = matchRouteBranch<string, RouteObjectType>(
+  branches[i],
+  decoded,
+  allowPartial
+);
+```
+</CodeBlock>
+
+<CodeBlock>
+```js
+// https://github.com/remix-run/react-router/blob/9afac15d8cbe30b37d0f9e8b89c9f1e430dfe35a/packages/router/utils.ts#L536
+export function matchRoutes<
+  RouteObjectType extends AgnosticRouteObject = AgnosticRouteObject
+>(
+  routes: RouteObjectType[],
+  locationArg: Partial<Location> | string,
+  basename = "/"
+): AgnosticRouteMatch<string, RouteObjectType>[] | null {
+  return matchRoutesImpl(routes, locationArg, basename, false);
+}
+
+export function matchRoutesImpl<
+  RouteObjectType extends AgnosticRouteObject = AgnosticRouteObject
+>(
+  routes: RouteObjectType[],
+  locationArg: Partial<Location> | string,
+  basename: string,
+  allowPartial: boolean
+): AgnosticRouteMatch<string, RouteObjectType>[] | null {
+  let location =
+    typeof locationArg === "string" ? parsePath(locationArg) : locationArg;
+
+  let pathname = stripBasename(location.pathname || "/", basename);
+
+  if (pathname == null) {
+    return null;
+  }
+
+  let branches = flattenRoutes(routes);
+  rankRouteBranches(branches);
+
+  let matches = null;
+  for (let i = 0; matches == null && i < branches.length; ++i) {
+    // Incoming pathnames are generally encoded from either window.location
+    // or from router.navigate, but we want to match against the unencoded
+    // paths in the route definitions.  Memory router locations won't be
+    // encoded here but there also shouldn't be anything to decode so this
+    // should be a safe operation.  This avoids needing matchRoutes to be
+    // history-aware.
+    let decoded = decodePath(pathname);
+    matches = matchRouteBranch<string, RouteObjectType>(
+      branches[i],
+      decoded,
+      allowPartial
+    );
+  }
+
+  return matches;
+}
+```
+</CodeBlock>
+
+- 这样当组件树渲染的时候，就知道渲染什么组件了,就是把 match 的这个结果渲染出来。这样就完成了路由对应的组件渲染
+<CodeBlock>
+```js
+// https://github.com/remix-run/react-router/blob/9afac15d8cbe30b37d0f9e8b89c9f1e430dfe35a/packages/react-router/lib/hooks.tsx#L766
+
+let matches = matchRoutes(routes, { pathname: remainingPathname });
+
+let renderedMatches = _renderMatches(
+  matches &&
+    matches.map((match) =>
+      Object.assign({}, match, {
+        params: Object.assign({}, parentParams, match.params),
+        pathname: joinPaths([
+          parentPathnameBase,
+          // Re-encode pathnames that were decoded inside matchRoutes
+          navigator.encodeLocation
+            ? navigator.encodeLocation(match.pathname).pathname
+            : match.pathname,
+        ]),
+        pathnameBase:
+          match.pathnameBase === "/"
+            ? parentPathnameBase
+            : joinPaths([
+                parentPathnameBase,
+                // Re-encode pathnames that were decoded inside matchRoutes
+                navigator.encodeLocation
+                  ? navigator.encodeLocation(match.pathnameBase).pathname
+                  : match.pathnameBase,
+              ]),
+      })
+    ),
+  parentMatches,
+  dataRouterState,
+  future
+);
+```
+</CodeBlock>
+
+### 场景2:当点击 link 切换路由的时候：
+<CodeBlock>
+```js
+export const Link = React.forwardRef<HTMLAnchorElement, LinkProps>(
+  function LinkWithRef(
+    {
+      onClick,
+      relative,
+      reloadDocument,
+      replace,
+      state,
+      target,
+      to,
+      preventScrollReset,
+      unstable_viewTransition,
+      ...rest
+    },
+    ref
+  ) {
+    // 省略
+
+    function handleClick(
+      event: React.MouseEvent<HTMLAnchorElement, MouseEvent>
+    ) {
+      if (onClick) onClick(event);
+      if (!event.defaultPrevented) {
+        internalOnClick(event);
+      }
+    }
+
+    let internalOnClick = useLinkClickHandler(to, {
+      replace,
+      state,
+      target,
+      preventScrollReset,
+      relative,
+      unstable_viewTransition,
+    });
+
+    return (
+      // eslint-disable-next-line jsx-a11y/anchor-has-content
+      <a
+        {...rest}
+        href={absoluteHref || href}
+        onClick={isExternal || reloadDocument ? onClick : handleClick}
+        ref={ref}
+        target={target}
+      />
+    );
+  }
+);
+
+
+|
+|
+V
+
+// 执行 navigate 方法：
+// https://github.com/remix-run/react-router/blob/9afac15d8cbe30b37d0f9e8b89c9f1e430dfe35a/packages/react-router-dom/index.tsx#L1431
+export function useLinkClickHandler<E extends Element = HTMLAnchorElement>(
+  to: To,
+  {
+    target,
+    replace: replaceProp,
+    state,
+    preventScrollReset,
+    relative,
+    unstable_viewTransition,
+  }: {
+    target?: React.HTMLAttributeAnchorTarget;
+    replace?: boolean;
+    state?: any;
+    preventScrollReset?: boolean;
+    relative?: RelativeRoutingType;
+    unstable_viewTransition?: boolean;
+  } = {}
+): (event: React.MouseEvent<E, MouseEvent>) => void {
+  let navigate = useNavigate();
+  let location = useLocation();
+  let path = useResolvedPath(to, { relative });
+
+  return React.useCallback(
+    (event: React.MouseEvent<E, MouseEvent>) => {
+      if (shouldProcessLinkClick(event, target)) {
+        event.preventDefault();
+
+        // If the URL hasn't changed, a regular <a> will do a replace instead of
+        // a push, so do the same here unless the replace prop is explicitly set
+        let replace =
+          replaceProp !== undefined
+            ? replaceProp
+            : createPath(location) === createPath(path);
+
+        navigate(to, {
+          replace,
+          state,
+          preventScrollReset,
+          relative,
+          unstable_viewTransition,
+        });
+      }
+    },
+    [
+      location,
+      navigate,
+      path,
+      replaceProp,
+      state,
+      target,
+      to,
+      preventScrollReset,
+      relative,
+      unstable_viewTransition,
+    ]
+  );
+}
+
+|
+V
+最后也是调用 matchRoutes 的流程：
+```
+</CodeBlock>
+
+### match之后
+- match之后 pushState 或者 replaceState 修改 history
+- 最后调用updateState()触发了 setState，组件树会重新渲染：
+    
+<CodeBlock>
+```js
+  function completeNavigation(
+    location: Location,
+    newState: Partial<Omit<RouterState, "action" | "location" | "navigation">>,
+    { flushSync }: { flushSync?: boolean } = {}
+  ): void {
+
+    // 省略
+
+    if (isUninterruptedRevalidation) {
+      // If this was an uninterrupted revalidation then do not touch history
+    } else if (pendingAction === HistoryAction.Pop) {
+      // Do nothing for POP - URL has already been updated
+    } else if (pendingAction === HistoryAction.Push) {
+      init.history.push(location, location.state);
+    } else if (pendingAction === HistoryAction.Replace) {
+      init.history.replace(location, location.state);
+    }
+
+    // 省略
+
+    // 然后触发了 setState，组件树会重新渲染：
+    updateState(
+      {
+        ...newState, // matches, errors, fetchers go through as-is
+        actionData,
+        loaderData,
+        historyAction: pendingAction,
+        location,
+        initialized: true,
+        navigation: IDLE_NAVIGATION,
+        revalidation: "idle",
+        restoreScrollPosition: getSavedScrollPosition(
+          location,
+          newState.matches || state.matches
+        ),
+        preventScrollReset,
+        blockers,
+      },
+      {
+        viewTransitionOpts,
+        flushSync: flushSync === true,
+      }
+    );
+
+    // Reset stateful navigation vars
+    pendingAction = HistoryAction.Pop;
+    pendingPreventScrollReset = false;
+    pendingViewTransitionEnabled = false;
+    isUninterruptedRevalidation = false;
+    isRevalidationRequired = false;
+    cancelledDeferredRoutes = [];
+  }
+```
+</CodeBlock>

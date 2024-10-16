@@ -1,0 +1,25 @@
+import CodePannel from '../CodePannel';
+import CodeBlock from '../../components/codeBlock';
+
+## for
+<CodeBlock>
+```js
+const testArr =  [1,2,3,4,5,6,7,8,9,10]
+
+// 正向遍历
+for (let i = 0; i < testArr.length; i++) {
+    console.log('for:', i, 'val:', arr[i]);
+}
+
+// 反向遍历
+for (let dynamicLength = testArr.length - 1; dynamicLength >= 0; dynamicLength--) {
+  const element = testArr[dynamicLength];
+  console.log('element:',element) 
+  // if(element === 5){
+  //   console.log('break:') 
+
+  //   break
+  // }
+}
+```
+</CodeBlock>

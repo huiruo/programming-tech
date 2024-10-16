@@ -1,0 +1,440 @@
+import CodePannel from '../CodePannel';
+
+## string.search
+search() 方法用于检索字符串中指定的子字符串，或检索与正则表达式相匹配的子字符串。
+
+如果没有找到任何匹配的子串，则返回 -1。
+
+export const testStr1 = `
+const asset= "LDUSDT"
+const isInclude = asset.search(new RegExp('LD'))
+if (isInclude !== -1) {
+  console.log('是理财', asset, '-', isInclude)
+} else {
+  console.log('不是是理财', asset, '-', isInclude)
+}
+`
+
+<CodePannel code={testStr1} name='testStr1' height='300px' />
+
+## 合并数组-concat-apply
+* 方法1.array.push.apply()进⾏数组合并,改变原数组
+函数的apply⽅法有⼀个特性，那就是obj.func.apply(obj,argv)，argv是⼀个数组。
+
+用apply将数组添加到另一个数组，调用数组的push函数的apply()
+
+* 方法2：concat()进⾏数组合并,有返回值，并不会改变原数组
+使用concat方法时会将新数组的成员,添加到原数组的尾部,然后返回一个新数组,
+原数组是不会改变
+
+* 方法3： 在ES6新标准中，新增扩展运算符，可以用来合并数组
+
+export const arrMerge1 = `
+// 方法1
+const arr1 = [1, 2];
+const arr2 = [3, 4, 5];
+
+arr2.push.apply(arr2, arr1);
+console.log("合并之后:",'arr2',arr2,'arr1',arr1);
+
+// 方法2
+const arr1C = [1, 2];
+const arr2C = [3, 4, 5];
+console.log("concat:", arr1.concat(arr2));
+
+// 方法3
+const arr3_1 = [1, 2];
+const arr3_2 = [3, 4, 5];
+console.log('方法3:', [...arr3_1, ...arr3_2]);
+`
+
+<CodePannel code={arrMerge1} name='arrMerge1' height='400px' />
+
+## 其他-ECMAScript 6和数组的新功能
+* 方法1.`@@iterator`返回一个包含数组键值对的迭代器对象，可以通过同步调用得到数组元素的键值对
+* 方法2.copyWithin复制数组中一系列元素到同一数组指定的起始位置
+* 方法3.entries返回包含数组所有键值对的`@@iterator`
+* 方法4.includes如果数组中存在某个元素则返回true，否则返回false。E2016新增
+* 方法5.find根据回调函数给定的条件从数组中查找元素，如果找到则---------->返回该元素
+* 方法6.findIndex根据回调函数给定的条件从数组中查找元素，如果找到则------------->返回该元素在数组中的索引
+* 方法7.fill用静态值填充数组
+* 方法8.from根据已有数组创建一个新数组
+    * Array.from方法根据已有的数组创建一个新数组。比如，要复制(浅拷贝)numbers数组，可以如下这样做。
+    * 还可以传过滤的函数
+* 方法9.keys返回包含数组所有索引的`@@iterator`
+* 方法10.of根据传入的参数创建一个新数组
+
+export const arrEs6New1 = `
+const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+
+// 方法                描述
+// 方法1.@@iterator返回一个包含数组键值对的迭代器对象，可以通过同步调用得到数组元素的键值对
+// 需要通过Symbol.iterator 来访问
+let iterator = numbers[Symbol.iterator]();
+console.log('iterator.next().value', iterator.next().value); // 1
+console.log('iterator.next().value', iterator.next().value); // 2
+console.log('iterator.next().value', iterator.next().value); // 3
+console.log('iterator.next().value', iterator.next().value); // 4
+console.log('iterator.next().value', iterator.next().value); // 5
+
+// 方法2.copyWithin复制数组中一系列元素到同一数组指定的起始位置
+
+// 方法3.entries返回包含数组所有键值对的@@iterator
+let aEntries = numbers.entries(); // retrieve iterator of key/value
+console.log('aEntries.next().value', aEntries.next().value); // [0, 1] - position 0, value 1
+console.log('aEntries.next().value', aEntries.next().value); // [1, 2] - position 1, value 2
+console.log('aEntries.next().value', aEntries.next().value); // [2, 3] - position 2, value 3
+// or use code below
+aEntries = numbers.entries();
+for (const n of aEntries) {
+    console.log('entry of', n);
+}
+
+// 方法4.includes如果数组中存在某个元素则返回true，否则返回false。E2016新增
+
+
+// 方法5.find根据回调函数给定的条件从数组中查找元素，如果找到则---------->返回该元素
+const numbers2 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+function multipleOf13(element) {
+    return element % 13 === 0;
+}
+console.log('numbers.find(multipleOf13)', numbers2.find(multipleOf13));
+
+// 方法6.findIndex根据回调函数给定的条件从数组中查找元素，如果找到则------------->返回该元素在数组中的索引
+console.log('numbers.findIndex(multipleOf13)', numbers2.findIndex(multipleOf13));
+
+// 方法7.fill用静态值填充数组
+
+// 方法8.from根据已有数组创建一个新数组
+console.log('Array.from(numbers)', Array.from(numbers2));
+// 还可以传过滤的函数
+const numbers3 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+const evens = Array.from(numbers3, x => x % 2 === 0);
+console.log('Array.from(numbers, x => x % 2 === 0)', evens);
+
+
+// 方法9.keys返回包含数组所有索引的@@iterator
+const numbers4 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+const aKeys = numbers4.keys(); // retrieve iterator of keys
+console.log("keys", aKeys)
+console.log('aKeys.next()', aKeys.next()); // {value: 0, done: false } done false means iterator has more values
+console.log('aKeys.next()', aKeys.next()); // {value: 1, done: false }
+console.log('aKeys.next()', aKeys.next()); // {value: 2, done: false }
+
+// 方法10.of根据传入的参数创建一个新数组
+/*
+创建一个可变数量参数的新数组，而不考虑参数的类型和数量;
+Array.of()和Array构造函数的区别：在于处理整数参数;
+var arr1 = Array(10)
+console.log(arr1); // [empty × 10] 是一个长度为10的空数组
+var arr2 = Array.of(10)
+console.log(arr2); // [10] 是一个有单个元素10的数组，它的长度为1
+* */
+const numbers3A = Array.of(1);
+const numbers4A = Array.of(1, 2, 3, 4, 5, 6);
+const numbersCopy = Array.of(...numbers4A);
+console.log('Array.of(1)', numbers3A);
+console.log('Array.of(1, 2, 3, 4, 5, 6)', numbers4A);
+console.log('Array.of(...numbers4)', numbersCopy);
+`
+
+<CodePannel code={arrEs6New1} name='arrEs6New1' height='800px' />
+
+## Set 特点是不能存放相同的元素
+* 1.成员唯一、无序且不重复
+* 2.`[value, value]`，键值与键名是一致的（或者说只有键值，没有键名）
+* 3.可以遍历，方法有：add、delete、has
+
+WeakSet：
+* 1.成员都是对象。
+* 2.成员都是弱引用，可以被垃圾回收机制回收，可以用来保存DOM节点，不容易造成内存泄漏。
+* 3.不能遍历，方法有add、delete、has。
+
+set方法和使用
+* set 有add添加
+* delete删除
+* clear清楚所有
+* size长度
+* 将set转换为数组对象`set=Array.from(set)`
+* array ---> set: `new Set([1, 2, 3, 4])`
+
+export const arrSet1 = `
+// 1.对象数组指定过滤-运用set
+const id1 = [
+  { 
+    value: '集合',
+    id: '1351055116569181209',
+  },
+  { 
+    value: '集合',
+    id: '1351055116569181201',
+  },
+  {
+    value: '集合',
+    id: '1351055116569181202',
+  },
+  {
+    value: '集合',
+    id: '1351055116569181203',
+  },
+];
+
+const id2 = new Set([
+  '1351055116569181209',
+  '1351055116569181201',
+]);
+
+const filteredId1 = id1.filter(item => id2.has(item.id));
+
+console.log(filteredId1);
+
+// 2.简单数组去重
+const unique = (arr) => Array.from(new Set(arr));
+console.log('简单数组去重:', unique(['apple', 'banana', 'apple', 'pear', 'strawberry']));
+
+// 1-2.array ---> set
+console.log('array ---> set:', new Set([1, 2, 3, 4]))
+
+// 1-3.set --->arr
+console.log('set --->arr:', Array.from(new Set([1, 2, 3, 4])))
+
+// 并集
+const aBing = new Set([1, 2, 3]);
+const bBing = new Set([4, 3, 2]);
+const union = new Set([...aBing, ...bBing]);
+console.log("union:", union);
+// union: Set(4) {1, 2, 3, 4}
+
+// 交集
+const aArr = new Set([1, 2, 3]);
+const bArr = new Set([4, 3, 2]);
+const intersect = new Set([...aArr].filter(x => bArr.has(x)));
+console.log("intersect:", intersect);
+// intersect: Set(2) {2, 3}
+
+// 差集
+const aCha = new Set([1, 2, 3]);
+const bCha = new Set([4, 3, 2]);
+const difference = new Set([...aCha].filter(x => !bCha.has(x)));
+console.log("difference:", difference);
+// difference: Set(1) {1}
+`
+
+<CodePannel code={arrSet1} name='arrSet1' height='300px' />
+
+## A.Map
+### A-1哈希表概述
+散列表（Hash table，也叫哈希表），是根据关键值(Key)而直接进行访问的数据结构。
+
+也就是说，它通过把关键值key映射到表中一个位置来访问记录，以加快查找的速度。
+
+这个映射函数叫做散列函数(哈希函数)，存放记录的数组叫做散列表。（哈希表一般用数组来存储）
+
+向哈希表中存数据：
+根据数据的key值和哈希函数，得到一个数组下标，这个下标的含义是数据在哈希表中的存放的位置。若发生了冲突，则再根据冲突的处理方法来解决冲突。找到最终存放的位置后，将数据存放进去。
+
+在哈希表中查找数据：
+根据数据的key值和哈希函数，以及解决冲突的方法来找。
+所以哈希表查询某个数据的时间复杂度为o(1)
+
+在时间复杂度为o(1),最差的时候 o(n)。
+
+
+* 1.`Map是一种数据结构，由键值对组成。Map看起来像一个二维数组，存放着一对对键值对，可通过键名获取对应的键值。`
+JavaScript 的对象（Object），本质上是键值对的集合（Hash 结构），但是传统上只能用字符串当作键，这给它的使用带来了很大的限制。
+
+Object 结构提供了'字符串—值'的对应，Map 结构提供了'值—值'的对应，是一种更完善的 Hash 结构实现。
+
+* 2.需要增删key时，使用map也会比obj方便
+
+* 3.相对obj于map 遍历
+常规对象里，为了遍历keys、values和entries，你必须将它们转换为数组，如使用Object.keys()、Object.values()和Object.entries()，
+或使用for ... in，另外for ... in循环还有一些限制：它仅仅遍历可枚举属性、非Symbol属性，并且遍历的顺序是任意的。
+
+在map 中：
+for of遍历可迭代对象——Map。区别for in与for of，for in遍历可迭代对象的key，或数组的下标；
+使用for…of或forEach来遍历。这点不同的优点是为你的程序带来更高的执行效率
+Map结构是一个二维数组，通过ES6数组解构获取元素值
+
+### A-2.方法
+* 1.clear 从映射中移除所有元素。
+* 2.delete 从映射中移除指定的元素。
+* 3.forEach 对映射中的每个元素执行指定操作。
+* 4.get 返回映射中的指定元素。
+* 5.has 如果映射包含指定元素，则返回 true。
+* 6.set 添加一个新建元素到映射。
+* 7.toString 返回映射的字符串表示形式。
+* 8.valueOf 返回指定对象的原始值
+
+export const testMap1 = `
+// 基础使用场景
+const codeMessage = new Map([
+    [200, '请求返回成功'],
+    [201, '新建或修改数据成功'],
+    [202, '一个请求已经进入后台排队'],
+    [204, '删除数据成功'],
+    [400, '请求错误(InvalidParameter)'],
+    [401, '用户没有权限'],
+    [403, '用户得到授权，但是访问是被禁止的'],
+    [404, 'Not found'],
+    [408, '请求超时'],
+    [410, '请求的资源被永久删除'],
+    [500, '服务器内部错误(InternalError)'],
+    [502, '网关错误'],
+    [503, '服务不可用，服务器暂时过载或维护'],
+    [504, '请求超时(Gateway Timeout)'],
+]);
+
+console.log('map test:', codeMessage.get(504))
+
+
+console.log('<============>map遍历->start')
+// map遍历
+const myMap = new Map();
+myMap.set('name', 'John');
+myMap.set('age', 30);
+myMap.set('city', 'New York');
+
+myMap.forEach((value, key) => {
+  console.log('使用forEach:',key, value);
+});
+
+for(let [key, value] of myMap) {
+    console.log('使用for of:',key, value);
+}
+
+// values() 方法:和keys方法对应，values方法返回的就是Map对象中的value集合。
+const myMap2 = new Map([['Electronic Gadget', 'Smart Phone'], ['Input Devices', 'Mouse']]);
+console.log('values():', myMap2.values());
+// output: {"Smart Phone", "Mouse"}
+
+console.log('<============>map遍历->end')
+
+// 使用map去重
+const mergeArraysFn =(arr1, arr2)=>{
+  const mergedArray = [...arr1, ...arr2];
+
+  const map = new Map();
+  mergedArray.forEach(item => {
+      map.set(item.key, item);
+  });
+  
+  // 不排序
+  // return Array.from(map.values());
+
+  // 排序
+  const sortedArray = Array.from(map.values()).sort((a, b) => parseInt(a.key) - parseInt(b.key));
+
+  return sortedArray
+}
+
+const arr1 = [
+    { "key": "1", "show_name": "1天" },
+    { "key": "3", "show_name": "3天" },
+    { "key": "7", "show_name": "7天" },
+    { "key": "30", "show_name": "30天" }
+];
+
+const arr2 = [
+    { "key": "1", "show_name": "1天" },
+    { "key": "9", "show_name": "9天" },
+    { "key": "90", "show_name": "90天" }
+];
+
+console.log('test:',mergeArraysFn(arr1, arr2))
+
+console.log('<============>数组转map')
+
+// 数组转map
+const viewColumnsIndexes = [
+  "ac2f8e32-e153-46b0-9df7-ce1ea7a397b5",
+  "9129e001-4aa5-4969-8c4a-0afbe05214dd"
+]
+
+const viewColumnsMap = viewColumnsIndexes.reduce((map, val) => {
+  map.set(val, val)
+  return map
+}, new Map())
+
+console.log('数组转map:', viewColumnsMap)
+`
+
+<CodePannel code={testMap1} name='testMap1' height='400px' />
+
+## 数组去重
+* filter
+* set
+* 对象数组去重
+
+export const arrRemoveDuplicates = `
+
+const strArr = [
+  "1350142984379867701",
+  "1350074195264053803",
+  "1348709718386975263",
+  "1350142984379867701",
+  "1350074195264053803"
+]
+
+const uniqueStrArr1 = strArr.filter((value, index, array) => 
+  array.indexOf(value) === index
+);
+
+console.log('1.简单数组去重,filter:',uniqueStrArr1)
+console.log('2.简单数组去重,set:',[...new Set(strArr)])
+const uniqueStrArr2 = strArr.reduce((accumulator, current) => {
+  if (!accumulator.includes(current)) {
+    accumulator.push(current);
+  }
+  return accumulator;
+}, []);
+
+console.log('3.简单数组去重,reduce:',uniqueStrArr2)
+
+const uniqueStrArr3 = [];
+strArr.forEach(item => {
+  if (!uniqueStrArr3.includes(item)) {
+    uniqueStrArr3.push(item);
+  }
+});
+
+console.log('4.简单数组去重,forEach+includes:',uniqueStrArr3)
+
+const testArr1 = [
+    {
+        "id": "1350142984379867701",
+        "value": "0825"
+    },
+    {
+        "id": "1350074195264053803",
+        "value": "测试注销人群包"
+    },
+    {
+        "id": "1348709718386975263",
+        "value": "zwz专属0809"
+    },
+    {
+        "id": "1350142984379867701",
+        "value": "0825"
+    },
+    {
+        "id": "1350074195264053803",
+        "value": "测试注销人群包"
+    }
+]
+
+const uniqueTest = testArr1.filter((obj, index, self) =>
+  index === self.findIndex((t) => t.id === obj.id)
+);
+
+console.log('使用filter对对象数组去重:',uniqueTest)
+
+function removeDuplicates(array, key) {
+  return Array.from(new Set(array.map(item => item[key]))).map(keyValue => array.find(item => item[key] === keyValue));
+}
+
+// 对 "id" 属性进行去重
+console.log('使用from-set-对对象数组去重',removeDuplicates(testArr1, "id"));
+`
+
+<CodePannel code={arrRemoveDuplicates} name='arrRemoveDuplicates' height='800px' />

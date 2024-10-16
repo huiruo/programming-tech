@@ -1,0 +1,166 @@
+import CodeBlock from '../../components/codeBlock';
+import CodePannel from '../CodePannel';
+
+## 并发控制
+
+<CodeBlock>
+```js
+import pLimit from 'p-limit';
+
+const limit = pLimit(2);
+
+const input = [
+    limit(() => fetchSomething('foo')),
+    limit(() => fetchSomething('bar')),
+    limit(() => doSomething())
+];
+
+const result = await Promise.all(input);
+console.log(result); 
+```
+</CodeBlock>
+
+<CodeBlock>
+```js
+import pLimit from 'p-limit';
+
+const limit = pLimit(2);
+
+const input = [
+    limit(() => fetchSomething('foo')),
+    limit(() => fetchSomething('bar')),
+    limit(() => doSomething())
+];
+
+const result = await Promise.all(input);
+console.log(result); 
+```
+</CodeBlock>
+
+**p-limit 的作用:**
+* p-limit(2) 创建了一个限制器 limit，该限制器确保同时最多只有两个操作在执行。
+* 当您调用 limit 时，它返回一个新的函数，该函数会将传入的异步操作包装起来，并在执行时遵循并发限制。
+* 最终，所有三个操作都会完成，但在任何时刻，最多只有两个操作在运行。
+
+### 手写代码
+一个队列来保存任务，开始的时候一次性执行最大并发数的任务，然后每执行完一个启动一个新的。
+<CodeBlock>
+```js
+const pLimit = (concurrency) => {
+  //  queue，并记录当前在进行中的异步任务。
+  const queue = [];
+  let activeCount = 0;
+
+  const generator = (fn, ...args) =>
+  new Promise((resolve) => {
+    enqueue(fn, resolve, ...args);
+  });
+      
+  return generator;
+}
+
+// enqueue 做的事情就是把一个异步任务添加到 queue 中，
+// 并且只要没达到并发上限就再执行一批任务：
+const enqueue = (fn, resolve, ...args) => {
+  queue.push(run.bind(null, fn, resolve, ...args));
+
+  if (activeCount < concurrency && queue.length > 0) {
+    queue.shift()();
+  }
+};
+
+// run,计数，运行这个函数，改变最后返回的那个 promise 的状态
+// 然后执行完之后进行下一步处理：
+const run = async (fn, resolve, ...args) => {
+  activeCount++;
+
+  const result = (async () => fn(...args))();
+
+  resolve(result);
+
+  try {
+    await result;
+  } catch {}
+
+  next();
+};
+
+// 保证并发的数量限制:把活跃任务数量减一，然后再跑一个任务：
+const next = () => {
+  activeCount--;
+
+  if (queue.length > 0) {
+    queue.shift()();
+  }
+};
+```
+</CodeBlock>
+
+export const testCode = `
+const pLimit = (concurrency) => {
+    const queue = [];
+    let activeCount = 0;
+  
+    const next = () => {
+      activeCount--;
+  
+      if (queue.length > 0) {
+        queue.shift()();
+      }
+    };
+  
+    const run = async (fn, resolve, ...args) => {
+      activeCount++;
+  
+      const result = (async () => fn(...args))();
+
+      resolve(result);
+  
+      try {
+        await result;
+      } catch {}
+
+      next();
+    };
+  
+    const enqueue = (fn, resolve, ...args) => {
+      queue.push(run.bind(null, fn, resolve, ...args));
+  
+      if (activeCount < concurrency && queue.length > 0) {
+          queue.shift()();
+      }
+    };
+  
+    const generator = (fn, ...args) =>
+      new Promise((resolve) => {
+        enqueue(fn, resolve, ...args);
+      });
+  
+    return generator;
+};
+
+// 测试代码,web打印有bug没捕获到log，注意看 Console 终端
+const limit = pLimit(2);
+  
+function asyncFun(value, delay) {
+    return new Promise((resolve) => {
+        console.log('start ' + value);
+        setTimeout(() => resolve(value), delay);
+    });
+}
+
+(async function () {
+    const arr = [
+        limit(() => asyncFun('a-->', 2000)),
+        limit(() => asyncFun('b-->', 3000)),
+        limit(() => asyncFun('c-->', 1000)),
+        limit(() => asyncFun('d-->', 1000)),
+        limit(() => asyncFun('e-->', 1000))
+    ];
+  
+    const result = await Promise.all(arr);
+    console.log(result);
+})();
+`
+
+<CodePannel code={testCode}/>

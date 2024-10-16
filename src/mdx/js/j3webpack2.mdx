@@ -1,0 +1,97 @@
+import CodeBlock from '../../components/codeBlock';
+
+## 微前端
+微前端就是可以一个页面跑多个 vue、react,jquery 等不同项目，它之间的 JS、CSS 相互隔离运行，不会相互影响，但也有通信机制可以通信。
+
+比如 single-spa，它做的就是监听路由变化，路由切换的时候加载、卸载注册的应用的代码。
+只不过 single-spa 的入口是一个 js 文件，需要代码里手动指定要加载啥 js、css 等，不方便维护。
+
+微前端：
+**当路由切换的时候，去下载对应应用的代码，然后跑在容器里。**
+
+**Qiankun 是基于 single-spa 的微前端框架**，提供了一个非常便利的方式来将多个前端应用整合到一起，并通过沙箱机制和应用隔离等特性来确保各个应用独立运行。它主要处理的是 微应用的加载和运行，使得多个应用可以在一个主应用中同时存在。
+
+核心理念：提供应用的动态加载、隔离和应用间通信的能力。
+优点：可以让多个应用分别用不同的技术栈开发，同时 Qiankun 可以管理这些应用的加载、生命周期和通信。
+
+<CodeBlock>
+```text
+qiankun 的 JS 沙箱实现方案:
+function 包裹了一层，所以代码放在了单独作用域跑，又用 with 修改了 window，所以 window 也被隔离了。
+
+其他的微前端方式实现沙箱可能用 iframe、web components 等方式。
+
+除了 JS 隔离，还有 CSS 的隔离
+
+比如：shadow dom 是 web components 技术的一部分
+```
+</CodeBlock>
+
+**和wepack项目区别：**
+Qiankun 本身并没有直接使用 Webpack 模块联邦，它们解决的问题侧重点不同。Qiankun 主要关注微前端的应用管理，而 Webpack 模块联邦关注的是模块共享。然而，它们可以结合使用，但 Qiankun 并不依赖 Webpack 模块联邦，也不是内置支持的功能。
+
+Qiankun 主要是用于微应用的动态加载和生命周期管理，它提供了沙箱机制，确保不同应用之间的隔离和安全性，通常通过 URL 加载子应用，而不依赖于模块的打包方式。Qiankun 不关心每个子应用是如何打包的，打包工具可以是 Webpack、Parcel 或其他打包器。
+
+## ModuleFederation
+Webpack 模块联邦是 Webpack 5 的一项新功能，允许多个应用共享代码模块而不必重新打包它们。它通过允许独立的 Webpack 构建之间共享模块，解决了微前端架构下的代码重复和依赖管理问题。
+
+核心理念：多个应用可以在不重新打包的情况下共享相同的依赖模块。
+优点：减小应用体积，提升加载速度，避免了每个微应用重复打包相同的依赖。
+
+Webpack 模块联邦 是 Webpack 5 的一个功能，允许在不同的应用之间共享模块，避免重复打包相同的依赖。它关心的是微前端架构下的依赖管理和代码复用问题。
+
+## 配置
+修改 webpack 配置文件，在 plugins 里添加这个插件：
+<CodeBlock>
+```js
+const { ModuleFederationPlugin } = require('webpack').container;
+
+new ModuleFederationPlugin({
+    // 创建一个 name 为 test1_app 的共享包。
+    name: 'test1_app',
+    filename: 'test1Entry.js',
+    exposes: {
+      // 这个共享包 exposes 暴露出了 Button 这个共享模块。它对应的文件名是 test1Entry.js。
+      './Button': './src/Button.jsx',
+    }
+})
+```
+</CodeBlock>
+
+别的webpack应用就使用用这个组件:
+test2 项目里同样修改 webpack 配置，引入这个插件：
+
+<CodeBlock>
+```js
+const { ModuleFederationPlugin } = require('webpack').container;
+
+new ModuleFederationPlugin({
+    remotes: {
+      // 引入的时候使用 remotes 注册，这段配置就是注册了一个运行时的 Module，名字叫 test1-app
+      'test1-app': 'test1_app@http://localhost:3001/test1Entry.js',
+    }
+})
+
+// 使用
+import './App.css';
+const RemoteButton = React. lazy(() => import ("test1-app/Button") );
+function App() {
+
+return <div className="App">
+  <header className="App-header">
+  <RemoteButton />
+  <img src={logo} className="App-logo" alt="logo" />
+  <р>
+    Edit <code>src/App. js</code> and save to reload.
+  </p>
+  </div>
+}
+```
+</CodeBlock>
+
+Module Federation 能够把一个应用的一些模块导出，供别的应用异步引入这些模块。
+方式就是一个应用通过 ModeleFederationPlugin 声明 exposes 的模块名字和路径，另一个应用通过 remotes 声明用到的一些模块来自于哪个文件的哪个变量。
+
+这样当用到这个模块的时候，就回去异步请求对应的 url，取出其中的变量值。
+
+这里要特别注意导出模块的应用需要固定 publicPath，不然加载文件的路径会有问题。

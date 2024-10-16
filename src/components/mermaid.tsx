@@ -1,3 +1,5 @@
+'use client';
+
 import React, { memo, ReactElement, useEffect, useRef } from 'react';
 import mermaid from 'mermaid';
 

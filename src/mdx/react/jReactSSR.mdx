@@ -1,0 +1,976 @@
+import CodePannel from '../CodePannel';
+import CodeBlock from '../../components/codeBlock';
+import ImageRender from '../ImageRender';
+import HighlightText from '../HighlightText';
+
+
+## 问题1-在服务端组件可以使用 useStae 吗？
+在 Next.js 中，服务端组件不能使用 useState 钩子。服务端组件默认在服务器上渲染，并且不支持与客户端状态相关的 React 钩子（如 useState 和 useEffect）。这是因为服务端组件的设计目的是用于处理数据获取和静态内容渲染，而不是处理用户交互或动态状态。
+
+<HighlightText>
+**可以在服务端组件中导入客户端组件，但反之则不行。通常，建议将服务端组件用于数据获取和静态内容渲染，而将客户端组件用于处理用户交互**
+</HighlightText>
+
+**在nextjs 中可以是组件服务端/客户端渲染**
+
+## 问题2- `use client`会使所有子组件都客户端渲染-->所以要很注重页面结构 
+`比如<Meme /> 组件`在=Next.js 应用程序中进行服务器端渲染，同时仍使用标有“使用客户端”的布局组件，您需要将客户端逻辑与服务器端渲染分开。这可以通过重组组件来实现。
+
+
+## react ssr
+React SSR 服务只能是 Node.js，因为要服务端也要执行 JS 逻辑，也就是渲染组件。
+
+同样的组件在服务端渲染了一次，在客户端渲染了一次，这种可以在双端渲染的方式，叫做同构渲染。
+
+SSR 从服务端的 renderToString 到浏览器端的 hydrate 的全流程:
+
+服务端渲染组件为 string，拼接成 html 返回，浏览器渲染出返回的 html，然后执行 hydrate，浏览器通过 hydrate 把 dom 关联到 fiber 树，加上交互逻辑和再次渲染。
+* 服务端 renderToString 就是递归拼接字符串的过程，遇到组件会传入参数执行，遇到标签会拼接对应的字符串，最终返回一段 html 给浏览器。
+* 浏览器端 hydrate 是在 reconcile 的 beginWork 阶段，依次判断 dom 是否可以复用到当前 fiber，可以的话就设置到 fiber.stateNode，然后在 completeWork 阶段就可以跳过节点的创建。
+
+为什么必须要有hydrate(水合)的过程呢，不能在服务端把html和js都准备好直接给浏览器吗？
+- 因为ssr网络返回的是第一阶段的渲染结果，客户端要重新进行vdom的构建和事件绑定，不然你看到的就是一个"静态页面了"
+<CodeBlock>
+```jsx
+// 组件
+import { useState } from 'react';
+
+export default function App() {
+  return (
+    <>
+      <h1>Hello, world!</h1>
+      <Counter />
+    </>
+  );
+}
+
+function Counter() {
+  const [count, setCount] = useState(0);
+  return (
+    <button onClick={() => setCount(count + 1)}>
+      You clicked me {count} times
+    </button>
+  );
+}
+
+// 服务端渲染
+import { renderToString } from 'react-dom/server';
+import App from './App';
+
+console.log(renderToString(<App/>));
+```
+</CodeBlock>
+
+组件 renderToString 的结果拼接成 html 返回给浏览器,
+
+现在浏览器接收到它后，要再次渲染：
+<CodeBlock>
+```js
+import React from 'react';
+import { hydrateRoot } from 'react-dom/client';
+import './index.css';
+import App from './App';
+
+hydrateRoot(document.getElementById('root'), <App/>);
+```
+</CodeBlock>
+
+注意，这里执行的不是 renderRoot 的 api，而是 hydrateRoot 的 api。
+
+hydrate 会在渲染的过程中，不创建 html 标签，而是直接关联已有的。这样就避免了没必要的渲染。
+
+因为浏览器接收到 html 就会把它渲染出来，这时候已经有标签了，只需要把它和组件关联之后，就可以更新和绑定事件了。
+
+## hydrate 的原理
+
+### 服务端
+[服务端](https://github.com/huiruo/react-ssr-demo/blob/main/service.js)
+
+服务端拼接html返回给浏览器，组件和元素分别有不同的渲染逻辑
+<CodeBlock>
+```js
+const register = require("@babel/register");
+register({
+  ignore: [/node_modules/],
+  presets: ["@babel/preset-env", "@babel/preset-react"],
+  plugins: ["@babel/plugin-transform-modules-commonjs"],
+});
+const express = require("express");
+const static = require('serve-static');
+const webpack = require("webpack");
+const newRender = require("./newRender");
+const webpackConfig = require("./webpack.config");
+
+webpack(webpackConfig, (error, status) => {
+  const statusJson = status.toJson({ assets: true });
+  const assets = statusJson.assets.reduce((item, { name }) => {
+    item[name] = `/${name}`;
+    return item;
+  }, {});
+
+  const app = express();
+  app.get("/", (req, res) => {
+    // app.get("*", (req, res) => {
+    console.log('req:', req.path);
+    newRender(req, res, assets);
+  });
+
+  app.use(static('build'));
+
+  app.listen(8200, () => {
+    console.log("http://localhost:8200");
+  });
+});
+
+|
+|
+V
+
+import React from "react";
+import { renderToPipeableStream } from "react-dom/server";
+import AppPage from "./src/page/AppPage/index.jsx";
+import { StaticRouter } from "react-router-dom/server";
+
+function newRender(req, res, assets) {
+  const { pipe } = renderToPipeableStream(
+    <StaticRouter location={req.url}>
+      <AppPage />
+    </StaticRouter>,
+    {
+      bootstrapScripts: [assets["main.js"]],
+      onShellReady() {
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.write(`<!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ssr</title>
+      </head>
+      <body>
+        <div id="root">`);
+        pipe(res);
+        res.write(`</div>
+    </body>
+    </html>`);
+      },
+    }
+  );
+}
+
+module.exports = newRender;
+```
+</CodeBlock>
+
+
+当使用方法2 `renderToString`
+<CodeBlock>
+```js
+function renderElement(request, task, type, props, ref) {
+  if (typeof type === 'function') {
+    if (shouldConstruct$1(type)) {
+      renderClassComponent(request, task, type, props);
+      return;
+    } else {
+      renderIndeterminateComponent(request, task, type, props);
+      return;
+    }
+  }
+
+  if (typeof type === 'string') {
+    renderHostElement(request, task, type, props);
+    return;
+  }
+
+  switch (type) {
+    // 省略
+  }
+
+  // 省略
+}
+```
+</CodeBlock>
+
+## 当不使用 ssr，react 的渲染： react 的渲染流程是 render + commit
+**render 阶段实现 vdom 转 fiber 的 reconcile，之后 commit 阶段执行增删改 dom，更新 ref、调用 effect 回调和生命周期函数等。**
+
+* 1. render function 执行的结果是React Element,经常把 React Element 叫做 vdom。
+<CodeBlock>
+```text
+组件里写的 jsx 会被编译成 render function，执行产生 vdom（React Element）
+经过 reconcile 的过程转为 fiber 树。
+```
+</CodeBlock>
+
+* 2. react 会把 vdom 转成 fiber 的结构，这个过程叫做 reconcile： 经过 reconcile 的过程转为 fiber 树。
+<ImageRender alt='test' path='/js/reconcile.jpg' />
+
+workLoopSync循环依次处理vdom转fiber：
+<CodeBlock>
+```js
+function workLoopSync() {
+  // Already timed out, so perform work without checking if we need to yield.
+  console.log('%c=workLoopSync-->performUnitOfWork','color:red',)
+  while (workInProgress !== null) {
+    console.log('%c=workLoopSync===>performUnitOfWork-循环,依次处理vdom转fiber','color:OliveDrab')
+    performUnitOfWork(workInProgress);
+  }
+}
+
+function workLoopConcurrent() {
+  // Perform work until Scheduler asks us to yield
+  console.log(%c=workLoopConcurrent->performUnitOfWork, 'color:yellow')
+  while (workInProgress !== null && !shouldYield()) {
+    console.log(%c=workLoopConcurrent->performUnitOfWork running, 'color:green')
+    performUnitOfWork(workInProgress);
+  }
+} 
+```
+</CodeBlock>
+
+## D.扩展： workLoopSync 和 workLoopConcurrent 
+* 在legacy模式中，更新可能为同步，也可能为异步；
+* 在concurrent模式中，一定是异步。
+
+
+<HighlightText>
+**concurrent模式**
+</HighlightText>
+通过`ReactDOM.unstable_createRoot(rootNode).render(<App />)`方式创建的应用，则为concurrent模式，这个模式目前只是一个实验阶段的产物
+
+* createRoot调用createRootImpl创建fiberRootNode和rootNode
+* 创建完Fiber节点后，调用ReactDOMRoot.prototype.render执行updateContainer，然后scheduleUpdateOnFiber异步调度performConcurrentWorkOnRoot进入render阶段和commit阶段
+
+<HighlightText>
+**legacy模式**
+</HighlightText>
+通过`ReactDOM.render(<App />, rootNode)`方式创建应用，则为 legacy 模式
+
+legacy 模式在合成事件中有自动批处理的功能，但仅限于一个浏览器任务。非 React 事件想使用这个功能必须使用 unstable_batchedUpdates
+
+legacy模式是我们常用的，它构建dom的过程是同步的，所以在render的reconciler中，如果diff的过程特别耗时，那么导致的结果就是js一直阻塞高优先级的任务(例如用户的点击事件)，表现为页面的卡顿，无法响应
+
+* render调用legacyRenderSubtreeIntoContainer，最后createRootImpl会调用到createFiberRoot创建fiberRootNode,然后调用createHostRootFiber创建rootFiber，其中fiberRootNode是整个项目的的根节点，rootFiber是当前应用挂在的节点，也就是ReactDOM.render调用后的根节点
+* 创建完Fiber节点后，legacyRenderSubtreeIntoContainer调用updateContainer创建创建Update对象挂载到updateQueue的环形链表上，然后执行scheduleUpdateOnFiber调用performSyncWorkOnRoot进入render阶段和commit阶段
+
+<HighlightText>
+**workLoopSync 和 workLoopConcurrent 是 React 中用于遍历 Fiber 树的两个主要函数，它们负责执行渲染阶段中的每个工作单元（unit of work），即 performUnitOfWork。它们的区别在于是否考虑 中断和任务调度。**
+</HighlightText>
+1. workLoopConcurrent（并发模式）
+workLoopConcurrent 是在 并发渲染模式 下使用的，它允许任务被中断和恢复，以便 React 可以处理多个任务并保持响应性。
+
+workLoopConcurrent 是异步的，它允许在执行过程中中断任务，以便让浏览器或其他高优先级任务有时间执行。
+
+2. workLoopSync（同步模式）
+workLoopSync 是在 同步渲染模式 下使用的，它会一直执行所有的任务，直到整个 Fiber 树的工作完成，没有中断的概念。
+
+关键点：
+* 无中断：workLoopSync 不会检查 shouldYield()，它在每次执行时会遍历完整个 Fiber 树，直到没有任务需要执行为止。
+* 阻塞渲染：由于没有中断机制，workLoopSync 一旦开始执行，就会将任务执行完毕，这可能会造成长时间的阻塞，尤其在任务量大时，可能导致页面卡顿。
+* 优先级：这种模式通常用于紧急的高优先级任务或需要确保立即完成的任务，比如同步事件处理或服务器端渲染（SSR）。
+
+**workLoopSync 和 workLoopConcurrent 的执行顺序取决于当前的渲染模式和任务的优先级。**通常，它们不会在同一任务中执行，但以下是一般情况：
+1. workLoopSync 先执行的情况（同步模式）
+当 React 渲染任务的优先级较高（例如用户交互事件、同步状态更新、或服务器端渲染）时，React 会首先进入同步模式。这时，React 不允许中断，因此会执行 workLoopSync。
+典型场景：
+
+同步事件处理：如点击按钮后触发的状态更新。
+
+服务器端渲染（SSR）：所有工作必须一次性完成，不能中断。
+
+高优先级任务：当某些任务具有高优先级时，React 会立即执行它们，使用同步模式来确保任务立刻完成。
+
+
+2. workLoopConcurrent 先执行的情况（并发模式）
+workLoopConcurrent 先执行的情况（并发模式）
+当 React 运行在 并发模式 下时（React 18 开始支持并发模式），并且任务可以被分段处理，React 会首先调用 workLoopConcurrent。这允许任务中断，以便保持应用的响应性。
+典型场景：
+
+低优先级任务：如后台数据处理、慢速渲染、或非关键性 UI 更新。
+
+并发模式：在 ReactDOM.createRoot 中启用了并发模式时，React 会尽可能使用异步模式渲染。
+
+**什么时候启用？**
+<CodeBlock>
+```js
+function performConcurrentWorkOnRoot(root, didTimeout) {
+    // 省略
+    var exitStatus = shouldTimeSlice ? renderRootConcurrent(root, lanes) : renderRootSync(root, lanes);
+    // 省略
+}
+```
+</CodeBlock>
+那就如果这次 setState 更新里包含了并发特性，就是用 workLoopConcurrent，否则走 workLooSync 就好了。
+
+所有能设置开启时间分片的 lane 的 api 都是基于并发的 api。
+
+* 使用 ReactDOM.createRoot 启动并发模式。
+* 使用 startTransition API 来处理低优先级任务。
+* 使用 useDeferredValue 来延迟某些更新。
+* 使用 Suspense 组件来处理异步渲染。
+* useTransition
+
+我们知道并发特性是可以给不同的 setState 标上不同的优先级的，怎么标呢？
+
+就通过 trasition 的 api：
+比如上面有两个 setState，其中一个优先级高，另一个优先级低，那就把低的那个用 startTransition 包裹起来。
+就可以实现高优先级的那个优先渲染。
+<CodeBlock>
+```js
+import { useState, useTransition } from 'react';
+
+function MyComponent() {
+  const [value, setValue] = useState('');
+  const [isPending, startTransition] = useTransition();
+
+  const handleChange = (e) => {
+    const newValue = e.target.value;
+
+    // Start a transition to update the state
+    startTransition(() => {
+      setValue(newValue);
+    });
+  };
+
+  return (
+    <div>
+      <input onChange={handleChange} value={value} />
+      {isPending ? <div>Loading...</div> : <ExpensiveComponent value={value} />}
+    </div>
+  );
+}
+```
+</CodeBlock>
+
+**useDeferredValue，它的应用场景：**
+List 里是根据输入的 text 来过滤结果展示的，现在每次输入都会触发渲染。
+
+我们希望在内容输入完了再处理通知 List 渲染，就可以这样：
+<CodeBlock>
+```js
+// 没使用api-->List 里是根据输入的 text 来过滤结果展示的，现在每次输入都会触发渲染。
+function App() {
+  const [text, setText] = useState("");
+
+  const handleChange = (e) => {
+    setText(e.target.value);
+  };
+
+  return (
+    <div>
+      <input value={text} onChange={handleChange}/>
+      <List text={text}/>
+    </div>
+  );
+};
+
+// 没使用useDeferredValue api-->
+function App() {
+  const [text, setText] = useState("");
+  const deferredText = useDeferredValue(text);
+
+  const handleChange = (e) => {
+    setText(e.target.value);
+  };
+
+  return (
+    <div>
+      <input value={text} onChange={handleChange}/>
+      <List text={deferredText}/>
+    </div>
+  );
+};
+```
+</CodeBlock>
+
+### D-1.扩展：并发
+React fiber的构建的过程以每个fiber作为一个工作单元，进行工作循环，工作循环中每次处理一个任务（工作单元）
+
+为了让高优先级的更新能先渲染，react 实现了并发模式。
+
+* 同步模式是循环处理 fiber 节点,同步不可中断更新，即使产生了更高优先级的更新，原来的更新也会继续处理
+* 并发模式多了个 shouldYield 的判断，每 5ms 打断一次，也就是时间分片。并且之后会重新调度渲染。
+    * 在构建 workInProgress 的过程中，如果有更高优先级的更新产生， React 会停止 workInProgress fiber tree 的构建，然后开始处理更高优先级的更新，重新构建 workInProgress fiber tree。
+
+通过这种打断和恢复的方式实现了并发,然后 Scheduler 可以根据优先级来对任务排序，这样就可以实现高优先级的更新先执行。
+
+总结：
+时间分片的 workLoop + 优先级调度，这就是 React 并发机制的实现原理。
+
+* react 有 Lane 的优先级机制，基于二进制设计的。它和事件的优先级机制、Scheduler 的优先级机制能够对应上。调度任务的时候先把 Lane 转事件优先级，然后转 Scheduler 的优先级。
+
+* react18 的 useTransition、useDeferredValue 都是基于并发特性实现的，useTransition 是把回调函数里的更新设置为连续事件的优先级，比离散事件的优先级低。useDeferredValue 则是延后更新 state 的值。
+这些并发特性的 api 都是通过设置 Lane 实现的，react 检测到对应的 Lane 就会开启带有时间分片的 workLoopConcurrent 循环。
+
+### D-2.setState什么时候是异步?
+由React控制内的事件处理函数(onChange、onClick等合成事件)，以及生命周期函数调用setState()为异步 。只要进入了 react 的调度流程，那就是异步的；
+
+state 链表不是hooks独有的，操作的setState也存在，正是由于这个链表存在，所以有一个经典React 面试题：
+
+setState为什么默认是异步，什么时候是同步？
+
+<HighlightText>
+**为什么是异步？**
+</HighlightText>
+setState 里的逻辑其实是同步的，但是，调用 setState 时，react 会对这一系列的 setter 做合并处理，异步更新该函数式组件对应的 hooks 链表里面的值，然后触发重渲染（re-renders），从这个角度上来说，setState 确实是一个"异步"操作；
+
++ 多次执行setState 和 useState的set函数，组件只会重新渲染一次,<br/>
+即是把一个同步代码中的多个setState合并成一次进行批量更新。
+
++ setState 和 useState中的set函数是异步执行的（不会立即更新state的结果）<br/>
+不同的是，setState会更新当前作用域下的状态，但是set函数不会更新，只能在新渲染的组件作用域中访问到。<br/>
+如果我们在同步函数或者在异步回调中调用 setCount 后，打印 count，都是旧值。
+拿更新后的值的方法:
+<CodeBlock>
+```js
+const [count, setCount] = useState(0);
+
+const handleClick = () => {
+  setCount(val => {
+    // do something
+    return val + 1
+  })
+};
+```
+</CodeBlock>
+
+<HighlightText>
+**为什么是异步？**
+</HighlightText>
+setState 里的逻辑其实是同步的，但是，调用 setState 时，react 会对这一系列的 setter 做合并处理，异步更新该函数式组件对应的 hooks 链表里面的值，然后触发重渲染（re-renders），从这个角度上来说，setState 确实是一个"异步"操作；
+* 多次执行setState 和 useState的set函数，组件只会重新渲染一次,<br/>
+即是把一个同步代码中的多个setState合并成一次进行批量更新。
+* setState 和 useState中的set函数是异步执行的（不会立即更新state的结果）<br/>
+不同的是，setState会更新当前作用域下的状态，但是set函数不会更新，只能在新渲染的组件作用域中访问到。<br/>
+如果我们在同步函数或者在异步回调中调用 setCount 后，打印 count，都是旧值。
+拿更新后的值的方法:
+<CodeBlock>
+```js
+const [count, setCount] = useState(0);
+
+const handleClick = () => {
+  setCount(val => {
+    // do something
+    return val + 1
+  })
+};
+```
+</CodeBlock>
+
+
+<HighlightText>
+**同步执行的（立即重新渲染组件）,每一次的执行都会调用一次render的情况：**
+</HighlightText>
+代码没有进入react的调度流程，那就是同步的,这些都不会走 React 的调度流程。在这种情况下调用 setState ，那这次 setState 就是同步的:
+* 1.setTimeout,setInterval
+* 2.直接在 DOM 上绑定原生事件
+* 3.Promise 的回调等
+这种情况setState是同步的，意味着每执行一次setState时，都重新diff + dom修改
+
+
+<HighlightText>
+**React17的性能优化:React17根据情况而采用不同的更新策略**
+</HighlightText>
+React17 和 React18 批量更新的策略是不同的。
+* 1.React18就统一的采用更新策略，可以不用考虑render渲染次数，带来的性能问题。
+* 2.React17根据情况而采用不同的更新策略，<br/>
+setState 同步执行的情况下， DOM也会被同步更新，也就意味着如果多次 setState ，会导致多次更新，这是毫无意义并且浪费性能的。
+
+在react17中提供了 `unstable_batchedUpdates` 函数，用来合并批量操作。在请求后台接口，返回数据时使用unstable_batchedUpdates函数来减少渲染次数，优化,
+```js
+const btn2 = () => {
+  setTimeout(() => {
+    unstable_batchedUpdates(() => {
+      setCount(prev => prev + 1)
+      setCount(prev => prev + 2)
+    })
+  }, 0)
+}
+```
+
+## 接上面（除开扩展）处理 vdom 转 fiber分为两个阶段
+**beginWork 和 completeWork**
+beginWork 里根据不同的 React Element（vdom）类型，做不同的处理：
+
+常见的几个，比如 
+* HostRoot 是fiber树的根，是 reconcile 的处理入口。
+* FunctionComponent 是函数组件
+* ClassComponent 是类组件
+* HostComponent 是原生标签
+* HostText 是原生文本节点
+<CodeBlock>
+```js
+function beginWork(current, workInProgress, renderLanes) {
+    // 省略
+    switch (workInProgress.tag) {
+    case IndeterminateComponent:
+      {
+        console.log('%c=beginWork-->根据React Element(vdom）类型做不同的处理 IndeterminateComponent', 'color:cyan',workInProgress.type)
+        return mountIndeterminateComponent(current, workInProgress, workInProgress.type, renderLanes);
+      }
+
+    case LazyComponent:
+      {
+        console.log('%c=beginWork-->根据React Element(vdom）类型做不同的处理 LazyComponent', 'color:cyan',workInProgress.type)
+        var elementType = workInProgress.elementType;
+        return mountLazyComponent(current, workInProgress, elementType, renderLanes);
+      }
+
+    case FunctionComponent:
+      {
+        console.log('%c=beginWork-->根据React Element(vdom）类型做不同的处理', 'color:cyan','FunctionComponent',workInProgress.type)
+        var Component = workInProgress.type;
+        var unresolvedProps = workInProgress.pendingProps;
+        var resolvedProps = workInProgress.elementType === Component ? unresolvedProps : resolveDefaultProps(Component, unresolvedProps);
+        return updateFunctionComponent(current, workInProgress, Component, resolvedProps, renderLanes);
+      }
+      // 省略
+  }
+}
+```
+</CodeBlock>
+
+依次处理不同 React Element 转 fiber，这是 beginWork 的部分。
+### 转换完之后就到了 completeWork 的部分：
+* 在这里做的事情就是创建元素、添加子元素、更新属性、然后把这个元素放到 fiber.stateNode 属性上。
+* 因为 beginWork 的过程是从上往下的，而 completeWork 正好反过来，那就可以按顺序创建元素，组装成一个 dom 树。
+
+这个阶段也是按照不同 React Element 类型做的不同处理：
+<CodeBlock>
+```js
+function completeWork(current, workInProgress, renderLanes) {
+  var newProps = workInProgress.pendingProps; // Note: This intentionally doesn't check if we're hydrating because comparing
+  popTreeContext(workInProgress);
+
+  switch (workInProgress.tag) {
+    case IndeterminateComponent:
+    case LazyComponent:
+    case SimpleMemoComponent:
+    case FunctionComponent:
+    case ForwardRef:
+    case Fragment:
+    case Mode:
+    case Profiler:
+    case ContextConsumer:
+    case MemoComponent:
+      console.log('%c=completeWork-->B-MemoComponent', 'color:gold',workInProgress.type)
+      bubbleProperties(workInProgress);
+      return null;
+
+    case ClassComponent:
+      {
+        console.log('%c=completeWork-->B-ClassComponent', 'color:gold',workInProgress.type)
+        var Component = workInProgress.type;
+
+        if (isContextProvider(Component)) {
+          popContext(workInProgress);
+        }
+
+        bubbleProperties(workInProgress);
+        return null;
+      }
+
+    case HostRoot:
+      {
+        console.log('%c=completeWork-->B-HostRoot', 'color:gold',workInProgress.type)
+        var fiberRoot = workInProgress.stateNode;
+      }
+      // 省略
+  }
+
+  // 省略
+}
+```
+</CodeBlock>
+
+
+### 那如果是hydrate呢？还需要创建新元素么？
+当不使用 ssr，react 的渲染：
+reconcile 的过程分为 beginWork 和 completeWork 两个阶段，beginWork 从上往下执行不同类型的 React Element 的渲染，而 completeWork 正好反过来，依次创建元素、更新属性，并组装起来。
+
+这里创建的元素是挂载在 fiber.stateNode 上的，并且 dom 元素上也记录着它关联的 fiber 节点。
+
+在 `completeWork` 函数的 `HostComponent` 函数分支中:
+- **水合流程**：React 检查现有的 DOM，并将其与 Fiber 树中的组件进行对比。如果节点存在且匹配，会保留现有的 DOM；如果需要更新 DOM 属性，则标记为需要更新，在提交阶段应用。
+- **非水合流程**：React 会创建新的 DOM 节点并将其插入页面。
+
+水合流程的目的是将 React 的虚拟 DOM 与服务端生成的真实 DOM 进行同步，确保客户端的 React 树能够继续接管页面的渲染和交互逻辑。
+
+1. 那如果是hydrate呢？还需要创建新元素么？
+明显是不用的，**hydrate 会在 beginWork 的时候对比当前 dom 是不是可以复用，可以复用的话就直接放到 fiber.stateNode 上了**。
+
+**beginWork 的过程中依次 hydrate，就把 dom 和对应的 fiber 关联了起来。**
+
+2. 然后在 completeWork 的时候，就不用再走创建标签的逻辑，因为 dom 已经有了，就可以跳过这部分。
+
+先看biginWork
+* 首先，beginWork 会从 HostRoot （fiber 的根节点）开始处理：
+* hydrate 的时候会执行 enterHydrationState 函数：
+<CodeBlock>
+```js
+function updateHostRoot(current, workInProgress, renderLanes) {
+
+  // 其他
+  enterHydrationState(workInProgress);
+}
+
+|
+|
+V
+
+// 在这里会开启 isHydrating 标记，并记录当前的 dom 节点，也就是 nextHydratableInstance。
+function enterHydrationState(fiber) {
+  var parentInstance = fiber.stateNode.containerInfo;
+  nextHydratableInstance = getFirstHydratableChildWithinContainer(parentInstance);
+  hydrationParentFiber = fiber;
+  isHydrating = true;
+  hydrationErrors = null;
+  didSuspendOrErrorDEV = false;
+  return true;
+}
+
+|
+|
+v
+function getFirstHydratableChildWithinContainer(parentContainer) {
+  return getNextHydratable(parentContainer.firstChild);
+}
+
+|
+|
+V
+
+// 找的顺序是先找到 firstChild，然后依次找 nextSibling，这是一个深度优先搜索的过程，一层层往下遍历：
+function getNextHydratable(node) {
+  // Skip non-hydratable nodes.
+  for (; node != null; node = node.nextSibling) {
+    var nodeType = node.nodeType;
+
+    if (nodeType === ELEMENT_NODE || nodeType === TEXT_NODE) {
+      break;
+    }
+
+    if (nodeType === COMMENT_NODE) {
+      var nodeData = node.data;
+
+      if (nodeData === SUSPENSE_START_DATA || nodeData === SUSPENSE_FALLBACK_START_DATA || nodeData === SUSPENSE_PENDING_START_DATA) {
+        break;
+      }
+
+      if (nodeData === SUSPENSE_END_DATA) {
+        return null;
+      }
+    }
+  }
+
+  return node;
+}
+```
+</CodeBlock>
+
+**然后 reconcile 的过程中会处理到这个标签(beginWork过程中依次hydrate，就把dom和对应的fiber关联了起来)**，以HostComponent类型为例子:
+<CodeBlock>
+```js
+beginWork
+|
+|
+v
+case HostComponent为例
+｜
+｜
+V
+updateHostComponent()
+|
+|
+V
+tryToClaimNextHydratableInstance(workInProgress)
+|
+|
+V
+tryHydrate()关键函数,执行不同的fiber.tag逻辑,返回并重新执行 getFirstHydratableChild()
+|
+|
+V
+instance=canHydrateInstance(nextInstance, type)关键函数,判断是否可复用
+
+function tryHydrate(fiber, nextInstance) {
+  switch (fiber.tag) {
+    case HostComponent:
+      {
+        console.log('%c=hydrate=7-A=tryHydrate-HostComponent调用canHydrateInstance', 'color:deeppink',fiber.type)
+        var type = fiber.type;
+        var props = fiber.pendingProps;
+        var instance = canHydrateInstance(nextInstance, type);
+
+        if (instance !== null) {
+          fiber.stateNode = instance;
+          console.log('%c=hydrate=7-B=tryHydrate-HostComponent把它设置到 fiber.stateNode上,%c=然后调用getFirstHydratableChild()找下一个可以 hydrate 的 dom 节点', 'color:deeppink', 'color:blue')
+          hydrationParentFiber = fiber;
+          nextHydratableInstance = getFirstHydratableChild(instance);
+          return true;
+        }
+
+        return false;
+      }
+
+    case HostText:
+      {
+        console.log('%c=hydrate=7=tryHydrate-HostText', 'color:deeppink',fiber.type)
+        var text = fiber.pendingProps;
+        var textInstance = canHydrateTextInstance(nextInstance, text);
+
+        if (textInstance !== null) {
+          fiber.stateNode = textInstance;
+          hydrationParentFiber = fiber; // Text Instances don't have children so there's nothing to hydrate.
+
+          nextHydratableInstance = null;
+          return true;
+        }
+
+        return false;
+      }
+
+    case SuspenseComponent:
+      {
+        console.log('%c=hydrate=7=tryHydrate-SuspenseComponent', 'color:deeppink',fiber.type)
+        var suspenseInstance = canHydrateSuspenseInstance(nextInstance);
+
+        if (suspenseInstance !== null) {
+          var suspenseState = {
+            dehydrated: suspenseInstance,
+            treeContext: getSuspendedTreeContext(),
+            retryLane: OffscreenLane
+          };
+          fiber.memoizedState = suspenseState; // Store the dehydrated fragment as a child fiber.
+          // This simplifies the code for getHostSibling and deleting nodes,
+          // since it doesn't have to consider all Suspense boundaries and
+          // check if they're dehydrated ones or not.
+
+          var dehydratedFragment = createFiberFromDehydratedFragment(suspenseInstance);
+          dehydratedFragment.return = fiber;
+          fiber.child = dehydratedFragment;
+          hydrationParentFiber = fiber; // While a Suspense Instance does have children, we won't step into
+          // it during the first pass. Instead, we'll reenter it later.
+
+          nextHydratableInstance = null;
+          return true;
+        }
+
+        return false;
+      }
+
+    default:
+      return false;
+  }
+}
+
+function canHydrateInstance(instance, type, props) {
+  if (instance.nodeType !== ELEMENT_NODE || type.toLowerCase() !== instance.nodeName.toLowerCase()) {
+    console.log('%c=hydrate=8=tryHydrate-canHydrateInstance A %c=不可复用', 'color:deeppink', 'color:blue');
+    return null;
+  } // This has now been refined to an element node.
+
+  console.log('%c=hydrate=8=tryHydrate-canHydrateInstance B, %c=标签名一样就可以 hydrate，也就是直接复用', 'color:deeppink', 'color:blue');
+  return instance;
+}
+```
+</CodeBlock>
+
+
+
+**流程2:completeWork跳过节点的创建:**
+水合流程`(_wasHydrated === true)`,表示当前节点已经存在于服务端生成的 DOM 中,就不用再走创建标签的逻辑，因为 dom 已经有了
+<CodeBlock>
+```js
+  function completeWork(current, workInProgress, renderLanes) {
+    var newProps = workInProgress.pendingProps; // Note: This intentionally doesn't check if we're hydrating because comparing
+    // to the current tree provider fiber is just as fast and less error-prone.
+    // Ideally we would have a special version of the work loop only
+    // for hydration.
+
+    popTreeContext(workInProgress);
+
+    switch (workInProgress.tag) {
+      case IndeterminateComponent:
+      case LazyComponent:
+      case SimpleMemoComponent:
+      case FunctionComponent:
+      case ForwardRef:
+      case Fragment:
+      // 省略
+
+      case HostComponent:
+        {
+          popHostContext(workInProgress);
+          var rootContainerInstance = getRootHostContainer();
+          var type = workInProgress.type;
+
+          if (current !== null && workInProgress.stateNode != null) {
+            updateHostComponent$1(current, workInProgress, type, newProps, rootContainerInstance);
+
+            if (current.ref !== workInProgress.ref) {
+              markRef$1(workInProgress);
+            }
+          } else {
+            if (!newProps) {
+              if (workInProgress.stateNode === null) {
+                throw new Error('We must have new props for new mounts. This error is likely ' + 'caused by a bug in React. Please file an issue.');
+              } // This can happen when we abort work.
+
+
+              bubbleProperties(workInProgress);
+              return null;
+            }
+
+            var currentHostContext = getHostContext(); // TODO: Move createInstance to beginWork and keep it on a context
+            // "stack" as the parent. Then append children as we go in beginWork
+            // or completeWork depending on whether we want to add them top->down or
+            // bottom->up. Top->down is faster in IE11.
+
+            var _wasHydrated = popHydrationState(workInProgress);
+
+            if (_wasHydrated) {
+              console.log('%c=completeWork-HostRoot,不用再走创建标签的逻辑,因为 dom 已经有了,跳过','color:red',)
+              // TODO: Move this and createInstance step into the beginPhase
+              // to consolidate.
+              if (prepareToHydrateHostInstance(workInProgress, rootContainerInstance, currentHostContext)) {
+                // If changes to the hydrated node need to be applied at the
+                // commit-phase we mark this as such.
+                markUpdate(workInProgress);
+              }
+            } else {
+              var instance = createInstance(type, newProps, rootContainerInstance, currentHostContext, workInProgress);
+              appendAllChildren(instance, workInProgress, false, false);
+              workInProgress.stateNode = instance; // Certain renderers require commit-time effects for initial mount.
+              // (eg DOM renderer supports auto-focus for certain elements).
+              // Make sure such renderers get scheduled for later work.
+
+              if (finalizeInitialChildren(instance, type, newProps, rootContainerInstance)) {
+                markUpdate(workInProgress);
+              }
+            }
+
+            if (workInProgress.ref !== null) {
+              // If there is a ref on a host node we need to schedule a callback
+              markRef$1(workInProgress);
+            }
+          }
+
+          bubbleProperties(workInProgress);
+          return null;
+        }
+    }
+    // 省略
+  }
+```
+</CodeBlock>
+
+这样在 beginWork 的过程中依次 hydrate，就把 dom 和对应的 fiber 关联了起来。
+然后在 completeWork 的时候，就不用再走创建标签的逻辑，因为 dom 已经有了，就可以跳过这部分。
+
+fiber 树创建成功之后，之后的再次渲染就和客户端渲染没有区别了。
+这样我们就把 SSR 从 renderToString 到 hydrate 的流程给串联了起来。
+
+### 重新详细整理：React 客户端水合流程在 `completeWork` 函数中的执行
+completeWork比对现有 DOM 和 Fiber 树
+
+在 React 的客户端 "水合" 流程中，`completeWork` 函数会在 **Fiber Reconciliation** 阶段执行，负责将已经通过服务端渲染生成的 HTML 与 React 的虚拟 DOM（Fiber 树）进行比对，进而完成初始化的挂载（hydration）。
+
+当 React 在客户端接收到服务端渲染生成的 HTML 后，水合流程会通过 `ReactDOM.hydrate` 启动，而不是 `ReactDOM.render`。在这个流程中，React 不会重新创建 DOM 节点，而是使用现有的服务端生成的 DOM，确保 React 的组件树和现有的 DOM 保持一致。
+
+在 `completeWork` 函数中，当 `workInProgress.tag === HostComponent` 时，React 会处理具体的 HTML 元素（如 `<div>`、`<span>`），并与现有的 DOM 元素进行比对或更新。具体执行流程如下：
+
+### 1. `popHydrationState(workInProgress)`
+当 `HostComponent` 分支执行时，React 首先会调用 `popHydrationState(workInProgress)`。这是关键的一步，用来检查是否正在进行 "水合"（hydration）流程。
+
+- **返回值 `_wasHydrated`**：`popHydrationState` 返回一个布尔值 `_wasHydrated`，表示是否找到服务端生成的 DOM 节点。如果 `_wasHydrated` 为 `true`，说明当前 Fiber 组件对应的 DOM 节点已存在于页面中。
+
+### 2. 如果是水合流程（`_wasHydrated === true`）
+如果 `_wasHydrated` 为 `true`，表示当前节点已经存在于服务端生成的 DOM 中，此时 React 需要确保这个节点是正确的并进行必要的准备工作。
+
+#### 2.1 `prepareToHydrateHostInstance`
+React 调用 `prepareToHydrateHostInstance`，它会对比 Fiber 树中的 `HostComponent` 与现有的 DOM 节点：
+
+- 如果 DOM 节点已经存在，并且属性与预期一致，React 会继续处理。
+- 如果需要对现有的 DOM 进行修改（例如某些属性或样式发生变化），则会标记 `workInProgress` 需要更新（通过 `markUpdate`），并在提交阶段应用这些更新。
+
+#### 2.2 DOM 属性变化
+- 在 `prepareToHydrateHostInstance` 中，如果检测到需要对 DOM 进行更新（例如需要设置某些属性或处理事件），React 会标记更新。
+- 这些更新将在 `commit` 阶段进行，而不是在 "水合" 的时候直接改变 DOM。
+
+### 3. 如果不是水合流程（`_wasHydrated === false`）
+如果 `_wasHydrated` 为 `false`，说明客户端未找到现有的服务端 DOM 节点（可能是节点缺失或者需要重新创建）。在这种情况下，React 将进入普通的客户端渲染逻辑，会使用 `createInstance` 来创建一个新的 DOM 节点，并将其插入页面。
+
+### 4. 处理 `ref`
+`completeWork` 还会处理 `ref`，如果组件存在 `ref`，React 会通过 `markRef$1` 标记并在提交阶段更新 `ref`。
+
+### 5. `bubbleProperties`
+无论是否进行水合，React 最终会调用 `bubbleProperties` 函数，将子组件的一些属性和效果向上传递给父组件。
+
+## 调试
+在**https://github.com/huiruo/react-ssr-demo**项目:
+
+[doc](https://github.com/huiruo/react-ssr-demo/blob/main/doc/react-dom-cjs-react-dom.development%E5%A4%87%E4%BB%BD/reamde.md)
+<CodeBlock>
+```js
+function hydrateRoot(container, initialChildren, options) {
+  // 省略
+
+  console.log('%c=createHydrationContainer-->01','color:red',)
+  var root = createHydrationContainer(initialChildren, null, container, ConcurrentRoot, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onRecoverableError);
+  markContainerAsRoot(root.current, container); // This can't be a comment node since hydration doesn't work on comment nodes anyway.
+
+  listenToAllSupportedEvents(container);
+
+  if (mutableSources) {
+    for (var i = 0; i < mutableSources.length; i++) {
+      var mutableSource = mutableSources[i];
+      registerMutableSourceForHydration(root, mutableSource);
+    }
+  }
+
+  return new ReactDOMHydrationRoot(root);
+}
+
+
+|
+|
+V
+
+function createHydrationContainer(initialChildren, // TODO: Remove `callback` when we delete legacy mode.
+callback, containerInfo, tag, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onRecoverableError, transitionCallbacks) {
+  var hydrate = true;
+  var root = createFiberRoot(containerInfo, tag, hydrate, initialChildren, hydrationCallbacks, isStrictMode, concurrentUpdatesByDefaultOverride, identifierPrefix, onRecoverableError); // TODO: Move this to FiberRoot constructor
+
+  root.context = getContextForSubtree(null); // Schedule the initial render. In a hydration root, this is different from
+  // a regular update because the initial render must match was was rendered
+  // on the server.
+  // NOTE: This update intentionally doesn't have a payload. We're only using
+  // the update to schedule work on the root fiber (and, for legacy roots, to
+  // enqueue the callback if one is provided).
+
+  var current = root.current;
+  var eventTime = requestEventTime();
+  var lane = requestUpdateLane(current);
+  var update = createUpdate(eventTime, lane);
+  update.callback = callback !== undefined && callback !== null ? callback : null;
+  enqueueUpdate(current, update, lane);
+  console.log('%c=ssr-2-createHydrationContainer','color:red',)
+  scheduleInitialHydrationOnRoot(root, lane, eventTime);
+  return root;
+}
+```
+</CodeBlock>
+
+总结：
+SSR 是 JSP、PHP 时代是通过模版引擎，现在是通过 node 服务渲染组件成字符串，客户端再次渲染，这种叫做同构渲染的模式。
+
+React SSR 是服务端通过 renderToString 把组件树渲染成 html 字符串，浏览器通过 hydrate 把 dom 关联到 fiber 树，加上交互逻辑和再次渲染。
+
+服务端 renderToString 就是递归拼接字符串的过程，遇到组件会传入参数执行，遇到标签会拼接对应的字符串，最终返回一段 html 给浏览器。
+
+浏览器端 hydrate 是在 reconcile 的 beginWork 阶段，依次判断 dom 是否可以复用到当前 fiber，可以的话就设置到 fiber.stateNode，然后在 completeWork 阶段就可以跳过节点的创建。
+
+这就是 React SSR 从服务端的 renderToString 到浏览器端的 hydrate 的全流程的原理。

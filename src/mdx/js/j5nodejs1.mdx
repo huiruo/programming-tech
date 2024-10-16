@@ -1,0 +1,60 @@
+import CodeBlock from '../../components/codeBlock';
+
+## pm2
+pm2 的主要功能
+* 进程管理
+* 日志管理
+* 负载均衡
+* 性能监控
+
+<CodeBlock>
+```text
+</CodeBlock>
+npm install -g pm2
+
+pm2 start ./dist/main.js
+
+// 日志
+pm2 logs
+
+// 指定 1k 内存就重启
+pm2 start xxx --max-memory-restart 1K
+```
+</CodeBlock>
+
+### 负载均衡
+node 应用是单进程的，而为了充分利用多核 cpu，我们会使用多进程来提高性能。
+
+node 提供的 cluster 模块就是做这个的，pm2 就是基于这个实现了负载均衡。
+
+我们只要启动进程的时候加上 -i num 就是启动 num 个进程做负载均衡的意思。
+
+<CodeBlock>
+```bash
+// 这俩是启动 cpu 数量的进程。
+pm2 start app.js -i max 
+pm2 start app.js -i 0
+```
+</CodeBlock>
+
+## RabbitMQ
+常用：前端监控系统->采集用户端的异常、性能、业务埋点等数据上报，在服务端做存储，并支持可视化分析的平台。
+
+web 服务接收请求，把消息存入 RabbitMQ，然后另一个 web 服务从 MQ 中取出消息存入数据库。
+MQ 的并发量比数据库高很多。之前 web 服务要等数据库存储完成才能响应，而现在只存入 MQ 就可以响应了。那可以支持的并发量就更多。
+
+比如 10w 的消息进来，每次只从中取出 1000 来消费,这就是 MQ 的流量削峰的功能。
+
+### 整体架构
+Producer 和 Consumer 分别是生产者和消费者。
+
+Connection 是连接，但我们不会每用一次 rabbitmq 就创建一个单独的 Connection，而是在一个 Connection 里做一下划分，叫做 Channel，每个 Channel 做自己的事情。
+
+[参考](https://zhuanlan.zhihu.com/p/624480021)
+
+## Redis
+mysql 是通过硬盘来存储信息的，并且还要解析并执行 sql 语句，这些决定了它会成为性能瓶颈。
+
+也就是说服务端执行计算会很快，但是等待数据库查询结果就很慢了。
+
+一般会使用内存数据库来做缓存，最常用的是 redis。

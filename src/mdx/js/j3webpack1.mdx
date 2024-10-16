@@ -1,0 +1,204 @@
+import CodePannel from '../CodePannel';
+import CodeBlock from '../../components/codeBlock';
+
+export const testCode = `
+
+`
+
+{/* <CodePannel code={testCode}/> */}
+## 常用的组件库打包后分lib,es,dist 3 个目录
+在 package.json 里分别声明了 commonjs,esm,umd 还有类型的入口,
+<CodeBlock>
+```json
+{
+  "main": "./index.js",
+  "module": "./esm/index.js",
+  "types": "./index.d.ts"
+}
+```
+</CodeBlock>
+* es 下的组件是 es module, import 引入的就是 es 下的组件,**esm 和 commonjs不用打包，只需要用 tsc 或者 babel 编译**
+* lib 下的组件是 commonjs,用 require 引入的就是 lib 下的组件
+* dist 下的组件是 umd,script 标签引入的就是 unpkg 下的组件,**umd 的代码用 webpack**
+
+## webpack的编译分为3个阶段：make,seal,emit
+
+### 01.make
+从入口模块开始构建依赖图 ModuleGraph，每个模块调用用对应的 loader 处理。
+* file-loader：把文件复制到 output 目录下，并在 js 模块导出路径
+* url-loader：小于一定大小的文件用 base64 内嵌，否则用 file-loader
+* css-loader：把 css 文件的内容变为 js 的变量导出,css-loader 可以实现css模块化
+<CodeBlock>
+```js
+rules: [
+  {
+    test: /\.css$/i,
+    use: [
+      'style-loader',
+      {
+        loader: "css-loader",
+          options: {
+            modules: true, // 关键代码，使css模块化
+          },
+      }
+    ],
+  },
+]
+```
+</CodeBlock>
+* style-loader：把 css 设置到 html 的 style 标签
+* ts-loader
+* babel-loader
+* postcss-loader
+
+### 02.seal:封装的意思，把不同的 Module 分到不同的Chunk
+对 ModuleGraph 做 chunk 拆分，按照 splitChunks 的逻辑或者其他拆分逻辑，拆分后就生成了 ChunkGraph。
+
+### 03.emit
+之后生成代码，对不同 Chunk 用不同的模版打印成最终代码
+
+### 三步合起来就是一次编译过程Compilation,编译过程由webpack的Compiler调用
+* 比如 compiler 的 hook：
+不同阶段的 hook就可以拿到不同阶段的资源。
+<CodeBlock>
+```js
+// webpack/lib/Compiler.js
+class Compiler {
+	constructor(context, options = /** @type {WebpackOptions} */ ({})) {
+		console.log('%c=Compiler===>start')
+	constructor(context, options = /** @type {WebpackOptions} */ ({})) {
+		console.log('%c=Compiler===>start')
+		this.hooks = Object.freeze({
+			/** @type {SyncHook<[]>} */
+			initialize: new SyncHook([]),
+
+			/** @type {SyncBailHook<[Compilation], boolean | undefined>} */
+			shouldEmit: new SyncBailHook(["compilation"]),
+			/** @type {AsyncSeriesHook<[Stats]>} */
+			done: new AsyncSeriesHook(["stats"]),
+			/** @type {SyncHook<[Stats]>} */
+			afterDone: new SyncHook(["stats"]),
+			/** @type {AsyncSeriesHook<[]>} */
+			additionalPass: new AsyncSeriesHook([]),
+			/** @type {AsyncSeriesHook<[Compiler]>} */
+			beforeRun: new AsyncSeriesHook(["compiler"]),
+			/** @type {AsyncSeriesHook<[Compiler]>} */
+			run: new AsyncSeriesHook(["compiler"]),
+			/** @type {AsyncSeriesHook<[Compilation]>} */
+			emit: new AsyncSeriesHook(["compilation"]),
+			/** @type {AsyncSeriesHook<[string, AssetEmittedInfo]>} */
+			assetEmitted: new AsyncSeriesHook(["file", "info"]),
+			/** @type {AsyncSeriesHook<[Compilation]>} */
+			afterEmit: new AsyncSeriesHook(["compilation"]),
+			/** @type {SyncHook<[Compilation, CompilationParams]>} */
+			thisCompilation: new SyncHook(["compilation", "params"]),
+      // 省略
+    })
+
+    // 省略
+  }
+}
+```
+</CodeBlock>
+
+* compilation 的 hook：
+<CodeBlock>
+```js
+class Compilation {
+	constructor(compiler, params) {
+		this._backCompat = compiler._backCompat;
+  }
+
+  		this.hooks = Object.freeze({
+        /** @type {SyncHook<[Module]>} */
+        buildModule: new SyncHook(["module"]),
+        /** @type {SyncHook<[Module]>} */
+        rebuildModule: new SyncHook(["module"]),
+        /** @type {SyncHook<[Module, WebpackError]>} */
+        failedModule: new SyncHook(["module", "error"]),
+        /** @type {SyncHook<[Module]>} */
+        succeedModule: new SyncHook(["module"]),
+        /** @type {SyncHook<[Module]>} */
+        stillValidModule: new SyncHook(["module"]),
+
+        // 省略
+      })
+}
+```
+</CodeBlock>
+
+**webpack 为了控制 hook 的执行顺序，封装了一个 tappable 的包。可以指定 hook 是同步、异步，并行、串行执行**
+* SynHook 同步顺序执行。
+* AsyncSeriesHook 异步串行执行。
+* SyncBailHook 也是同步顺序执行，但是如果中间的 hook 返回 false 就会停止后续 hook 的执行，也就是可以熔断。
+
+**插件往不同对象的 hook 上添加回调函数,** 比如下面的WorkerPlugin
+<CodeBlock>
+```js
+// webpack/lib/dependencies/WorkerPlugin.js
+class WorkerPlugin {
+	constructor(chunkLoading, wasmLoading, module, workerPublicPath) {
+		this._chunkLoading = chunkLoading;
+		this._wasmLoading = wasmLoading;
+		this._module = module;
+		this._workerPublicPath = workerPublicPath;
+	}
+	apply(compiler) {
+		if (this._chunkLoading) {
+			new EnableChunkLoadingPlugin(this._chunkLoading).apply(compiler);
+		}
+		if (this._wasmLoading) {
+			new EnableWasmLoadingPlugin(this._wasmLoading).apply(compiler);
+		}
+		const cachedContextify = contextify.bindContextCache(
+			compiler.context,
+			compiler.root
+		);
+		compiler.hooks.thisCompilation.tap(
+			PLUGIN_NAME,
+			(compilation, { normalModuleFactory }) => {
+				compilation.dependencyFactories.set(
+					WorkerDependency,
+					normalModuleFactory
+				);
+				compilation.dependencyTemplates.set(
+					WorkerDependency,
+					new WorkerDependency.Template()
+				);
+
+```
+</CodeBlock>
+
+## 其他webpck 这些功能
+code spliting、tree shaking、dev server、hmr、module federation
+
+### 01.code spliting
+webpack 的 code spliting 功能,文件特别大，但是它又不是马上要用到，所以我们想把它延后加载，不然会拖慢页面打开速度。
+改成这种方式，使用 import 的 api 加载：
+<CodeBlock>
+```js
+function fn() {
+  async function calc() {
+    const { add } = await import('./App');
+      console. log (add (1, 2)) ;
+    ｝
+
+    calc();
+
+    return <div>hello</div>;
+  }
+}
+```
+</CodeBlock>
+webpack 打包的时候会把它分离出去。这里就涉及到了 chunk 拆分的概念,code spliting在chunk拆分阶段实现,也就是给异步加载的模块分到单独的 chunk 里，然后输出到对应的 js。
+当然，这个 chunk 拆分的逻辑是可以自定义的，也就是 optimization.splitChunks 的配置。
+
+### 02.dev server
+* webpack 在开发时会启用一个静态服务器，这个静态服务器除了提供静态资源的访问外，还支持代理等功能
+* dev server 会 watch 工作区的文件变动，自动重新 build，提供静态资源访问。
+
+### 03.tree shaking
+stree shkaing 在production默认开启
+
+### 04.module federation 模块联邦
+module federation 是在多个 webpack 应用之间共享模块的机制

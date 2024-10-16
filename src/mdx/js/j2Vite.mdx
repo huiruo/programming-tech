@@ -1,0 +1,49 @@
+import CodeBlock from '../../components/codeBlock';
+
+##  vite的实现原理
+- 基于浏览器 es module import 实现的编译服务
+- 基于 esbuild 做的依赖预构建
+- 基于 hash query 做的强缓存和缓存更新
+
+核心是基于浏览器的 type 为 module 的 script 可以直接下载 es module 模块实现的。
+
+<CodeBlock>
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vite + React + TS</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="aaa.js"></script>
+  </body>
+</html>
+```
+</CodeBlock>
+
+开发环境做了一个开发服务，根据请求的 url 来对模块做编译，调用 vite 插件来做不同模块的 transform。
+
+- 但是 node_modules 下的文件有的包是 commonjs 的，并且可能有很多个模块，这时 vite 做了预构建也叫 deps optimize。
+它用 esbuild 分析依赖，然后用 esbuild 打包成 esm 的包之后输出到 node_modules/.vite 下，并生成了一个 metadata.json 来记录 hash。
+
+在开发时通过 connect 起了一个服务器，调用 vite 插件来做 transform，并且对 node_modules 下的模块做了预构建，用 esbuild 打包。
+浏览器里用 max-age 强缓存这些预打包的模块，但是带了 hash 的query。这样当重新 build 的时候，可以通过修改 query 来触发更新。
+
+在生产环境用 rollup 来打包，因为 vite 插件兼容了 rollup 插件，所以也是用同样的插件来处理，这样能保证开发和生产环境代码一致。
+
+<CodeBlock>
+```text
+在 build 的时候 vite 会用 rollup 做打包,vite 插件时兼容 rollup 插件的，这样在开发的时候，在生产环境打包的时候，都可以用同样的插件对代码做 transform 等处理。
+注意：dev 和 prod 分别用的 esbuild 和 rollup，会有不一致的问题，未来要通过 rolldown 解决
+```
+</CodeBlock>
+
+此外，vite 还基于 chokidar 和 websocket 来实现了模块热更新
+
+{/* <CodePannel code={testCode}/> */}
+
+[参考](https://zhuanlan.zhihu.com/p/694765644)
