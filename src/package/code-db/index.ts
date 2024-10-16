@@ -47,7 +47,7 @@ export const updateCodeDbWhenNoData = async (id: string, updatedFields: ICode): 
   try {
     const content = await getCodeDb(id)
     if (!content) {
-      console.log('%c=add', 'color:red', content)
+      // console.log('%c=updateCodeDbWhenNoData', 'color:green', { content, id, updatedFields })
       await addCodeDb({
         id,
         code: updatedFields.code,

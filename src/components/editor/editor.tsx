@@ -2,7 +2,7 @@ import { Box } from "@mui/system";
 import MonacoEditor, { type Monaco } from '@monaco-editor/react'
 import { editor } from 'monaco-editor';
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAtom } from "jotai"; 
+import { useAtom } from "jotai";
 import { monacoSettingsState, editorSettingsState, vimState, setCurrentCode } from "@/store-jotai";  // 从你的 Jotai store 导入 atom
 import { useDebouncedCallback } from 'use-debounce';
 import { createVimModeAdapter } from "@/package/vim";
@@ -59,6 +59,9 @@ export const CodeEditor = (prop: Props) => {
   const { path, code, height, language } = prop;
   const editor = useRef<editor.IStandaloneCodeEditor>(null as any);
 
+  const hasFirstUpdatedDbRef = useRef(false);
+
+
   // 将 monaco 设置映射到 editor options 中
   const options = useMemo(() => {
     return setMonacoSettingsToOptions(monacoSettings, editorSettings.enableVimMode);
@@ -94,7 +97,8 @@ export const CodeEditor = (prop: Props) => {
         code: value,
         // path,
       });
-      setCurrentCodeState(value);  // 更新本地状态
+
+      setCurrentCodeState(value);
     } catch (error) {
       console.error('error', error);
     }
@@ -103,7 +107,7 @@ export const CodeEditor = (prop: Props) => {
   useEffect(() => {
     if (path) {
       getCodeDb(path).then((res) => {
-        setCurrentCodeState(res?.code as string);
+        setCurrentCodeState(res?.code || '');
       });
     }
   }, [path]);
@@ -117,13 +121,15 @@ export const CodeEditor = (prop: Props) => {
   }, [vim.mode, monacoSettings.cursorStyle]);
 
   useEffect(() => {
-    if (code) {
+    if (code && !hasFirstUpdatedDbRef.current) {
+      hasFirstUpdatedDbRef.current = true;
       updateCodeDbWhenNoData(path, {
         id: path,
         code,
         title: ''
       }).then(res => {
         if (res.status !== 0) {
+          setCurrentCodeState(res?.content || '');
           setEditorState({
             code: res?.content || '',
             // path,

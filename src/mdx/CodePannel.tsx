@@ -21,7 +21,7 @@ const CodePannel: React.FC<Props> = ({ code, height, name, language = 'javascrip
 
   return <CodeEditor
     code={code}
-    path={`${location}/${name}`}
+    path={name ? `${location}/${name}` : location}
     height={height}
     language={language}
   />

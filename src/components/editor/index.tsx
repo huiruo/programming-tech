@@ -21,11 +21,11 @@ const Editor = (prop: Props) => {
   const { path, code, height, language } = prop;
   const editorcontainerRef = useRef<HTMLDivElement>(null);
   const inspectorPanelRef = useRef<InspectorPanelRef>(null);
-  
+
   // Replace useAppSelector with useAtom to get the state from Jotai atoms
   const [panel] = useAtom(panelState);
   const [, setEditorState] = useAtom(editorAtom);  // Use atom for editor state
-  
+
   // Replace dispatching actions with Jotai atom updates
   const foceUpdate = () => {
     updateCodeDb(path, {
