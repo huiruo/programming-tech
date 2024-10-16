@@ -20,4 +20,19 @@ export const sidebar: ISidebar[] = [
       { href: "/algorithm/threeSum", label: "threeSum" },
     ]
   },
+  {
+    label: 'html css',
+    href: '/css',
+    type: 'category',
+    items: [
+      { href: "/css/flex", label: "flex" },
+      { href: "/css/basis", label: "basis" },
+      { href: "/css/layout", label: "layout" },
+      { href: "/css/horiz_vert", label: "horizontal vertical" },
+      { href: "/css/grid", label: "grid" },
+      { href: "/css/margin", label: "margin" },
+      { href: "/css/jsDom", label: "jsDom" },
+      { href: "/css/gradient", label: "gradient" },
+    ]
+  },
 ]

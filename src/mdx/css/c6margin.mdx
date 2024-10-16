@@ -1,0 +1,267 @@
+import CodeBlock from '../../components/codeBlock';
+import CodePannel from '../CodePannel';
+
+## BFC 是什么
+BFC 是块级格式化上下文（Block Formatting Context）的缩写，是用于 CSS 布局的一个重要概念。BFC 定义了一块独立的布局上下文，其中块级元素按照特定规则进行排列和定位。BFC 是在文档流中创建的一个独立容器，它可以影响元素的布局和定位，以及防止一些布局问题的发生。
+
+BFC就是页面上的一个隔离的独立容器，容器里面的子元素不会影响到外面的元素。反之也如此
+
+因为BFC内部的元素和外部的元素绝对不会互相影响，因此,当BFC外部存在浮动时，它不应该影响BFC内部Box的布局，BFC会通过变窄，而不与浮动有重叠。同样的，当BFC内部有浮动时，为了不影响外部元素的布局，BFC计算高度时会包括浮动的高度。避免margin重叠也是这样的一个道理。
+
+### 作用
+以下是一些关于 BFC 的关键特点和作用：
+1. 元素在 BFC 内部垂直排列：在同一个 BFC 中，块级元素会按照垂直方向排列，一个元素的顶部会紧邻上一个元素的底部，不会发生重叠。
+>内部的块级元素垂直排列，且各自占据一行;Box垂直方向的距离由margin决定。属于同一个BFC的两个相邻Box的margin会发生重叠。
+
+2. 外边距折叠的防止：在 BFC 内部，垂直相邻的外边距不会发生折叠，这有助于更精确地控制元素之间的间距。
+>块级元素的 margin 不会重叠；
+```
+根据BFC的第二条规则： Box垂直方向的距离由margin决定，属于同一 BFC的两个Box会发生margin重叠 因此，可以在其中一个元素上包裹容器， 然后触发其BFC，这样两个元素就不在同一个 BFC，因此就不会发生重叠
+
+子元素设置margin-top或者margin-bottom会影响其父元素，这就是所谓的margin穿透。
+
+出现margin重叠的原因: 同一个BFC里面两个块级元素会出现margin折叠。
+
+解决方式：让两个块级元素不在一个BFC内。
+```
+
+3. 包含浮动元素：BFC 可以包含浮动元素，防止浮动元素溢出到其他区域，从而避免影响整体布局。
+> BFC可以包含浮动元素，并且自适应高度。
+
+4. 阻止元素被浮动元素覆盖：在 BFC 中，浮动元素不会覆盖 BFC 内部的块级元素，这有助于确保元素的可见性。
+
+5. 自身不受外部浮动元素的影响：BFC 内部的元素不会受到外部浮动元素的影响，这可以防止元素漂浮到不应该的位置。
+
+6. 清除浮动：通过创建一个包含浮动元素的 BFC，可以实现清除浮动的效果，确保容器元素自适应包含浮动元素的高度。
+
+BFC 是一个有用的概念，可以解决许多与布局和定位相关的问题，特别是在处理浮动元素和外边距折叠时。通常，BFC 是由一些属性或规则触发的，例如设置元素的 overflow 属性为 hidden、auto 或 scroll，或者使用 float 属性、position: absolute 等。
+
+### 要创建一个 BFC可以采用以下方法
+1. 使用 overflow 属性:overflow属性不为visible的块级盒子
+>设置元素的 overflow 属性为 auto、hidden 或 scroll 可以创建一个 BFC。这通常用于包含浮动元素，防止外边距折叠，或解决一些布局问题。
+
+2. 使用 float 属性:float值不为none
+>设置元素的 float 属性（通常为 left 或 right）可以将其放置在一个新的 BFC 中。这对于文字环绕图片等布局非常有用。
+
+3. 使用 display 属性:
+>一些 display 属性的值可以触发创建 BFC，如 display: inline-block 或 display: table-cell。这可用于解决外边距折叠等问题。
+> <p>因此通过将其中一个元素display属性设置为inline-block，width设置为100%是比较好的解决方式；既解决了margin穿透问题，又达到与display为block一样的效果。</p>
+
+4. 使用 position 属性:position 的值不为 relative 和 static
+>设置元素的 position 属性为 absolute 或 fixed 也会创建一个 BFC。这在一些特殊情况下非常有用。
+
+### 清除浮动
+当一个容器中有浮动元素时，该容器可以被定义为BFC来防止其高度坍塌。通过将容器定义为BFC，可以清除浮动并使该容器的高度等于其内部元素的高度。
+
+当一个元素创建了BFC时，它会形成一个隔离的空间，该空间内的元素会按照一定规则进行排列和布局。overflow:hidden属性可以创建BFC，因为它可以触发CSS的“块级盒子化”规则，将元素变为一个块级盒子。
+
+例子：
+
+在一个容器（class为container）中放置了两个浮动元素（class为box1和box2）。由于浮动元素脱离了文档流，容器的高度会坍塌，导致容器高度不够容纳其中的元素。
+
+为了解决这个问题，我们可以将容器定义为BFC，方法是设置其overflow属性为hidden。这样容器就会包含其内部的浮动元素，并将其高度自适应内部元素的高度，从而避免了容器高度坍塌的问题。
+
+可以将一个容器定义为BFC，然后在其中放置两个元素，一个使用float属性向左浮动，另一个则不使用float属性。这样就可以创建一个自适应的两栏布局:
+
+export const test0 = `
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>index</title>
+  <style>
+    .container {
+      /* overflow: hidden; */
+      /* 将容器定义为BFC */
+      background: yellow;
+    }
+
+    .box {
+      width: 100px;
+      height: 100px;
+    }
+
+    .box1 {
+      float: left;
+      background-color: red;
+    }
+
+    .box2 {
+      float: left;
+      background-color: blue;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="box box1">
+      <div>hello</div>
+    </div>
+    <div class="box box2">
+      <div>hello 2</div>
+    </div>
+  </div>
+</body>
+
+</html>
+`
+
+<CodePannel code={test0} name={'test0'} height='400px' language='html'/>
+
+### 为什么要清除浮动？
+准确地说，并不是清除浮动，而是清除浮动后造成的影响
+
+再解释下就是在标准流下面一个父p没有设置高度属性,那么它的高度就会被子元素的高度撑开。但是如果这个父p中的子元素是浮动的话，如果父p下面再有一个兄弟p，那么这个兄弟p就会遮挡这个父元素。这个现象也叫浮动溢出。
+
+浮动带来的副作用 浮动会让元素脱离文档流，不再影响不浮动的元素（这里不影响是指在文档流里头不占位置，后边的元素忽视浮动元素的存在）。
+
+实则不然，浮动不再占据文档流的位置，也使浮动元素周围的元素表现的如同浮动元素不存在一样，给布局带来了一些副作用。
+
+如果我们不希望要这些效果，就需要清除浮动来解决后患，使后面的元素表现的跟浮动前一样
+
+1. 方式1，在浮动元素下添加一个空元素，并给该元素添加clear属性，可以清除浮动
+```html
+<div style="clear:both;"></div>
+```
+2. 使用overflow属性清除浮动
+>将包含浮动元素的容器元素的overflow属性设置为hidden或auto，可以清除浮动。
+```html
+<div style="overflow:hidden;">
+    <img src="example.jpg" style="float:left;">
+</div>
+```
+
+3. 使用伪元素清除浮动
+可以使用:before或:after伪元素在浮动元素后添加一个空元素，并给该元素添加clear属性，可以清除浮动。
+```html
+.clearfix::after {
+    content:"";
+    display:block;
+    clear:both;
+}
+```
+
+## margin合并-未修复
+margin合并:一个设置下外边距100px，一个设置上外边距100px，让两个元素相距200px。
+
+我们发现这两个元素之间，他们的margin-bottom和margin-top合并了，并且显示的是较大值。这种现象被称为margin合并。解决的方式也是通过触发bfc来解决
+
+* margin塌陷和margin重叠都是垂直方向上的，水平方向没有这些问题。
+* margin-bottom和margin-top合并了，并且显示的是较大值。这种现象被称为margin合并。	
+
+export const test2 = `
+<html>
+
+<head>
+	<meta charset="UTF-8">
+	<style type="text/css">
+		div.father {
+			width: 200px;
+			height: 200px;
+			background-color: rgb(219, 68, 101);
+			margin-left: 100px;
+			margin-top: 100px;
+		}
+
+		div.father div.son {
+			width: 100px;
+			height: 100px;
+			background-color: rgb(56, 248, 207);
+			margin-left: 50px;
+			margin-top: 50px;
+		}
+	</style>
+</head>
+
+<body>
+	<div style="width:500px;width: 600px;background:gray;overflow: hidden;">
+		<div class="father">
+			<div class="son">子-未修复</div>
+			父
+		</div>
+	</div>
+</body>
+
+</html>
+`
+
+<CodePannel code={test2} name={'test2'} height='400px' language='html'/>
+
+修复：
+
+export const test1 = `
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <style type="text/css">
+        div.father {
+            width: 200px;
+            height: 200px;
+            background-color: rgb(219, 68, 101);
+            margin-left: 100px;
+            margin-top: 100px;
+            padding: 1px; /* Prevent margin collapse */
+        }
+
+        div.father div.son {
+            width: 100px;
+            height: 100px;
+            background-color: rgb(56, 248, 207);
+            margin-left: 50px;
+            margin-top: 50px;
+        }
+    </style>
+</head>
+
+<body>
+    <div style="width:600px;background:gray;overflow: hidden;">
+        <div class="father">
+            <div class="son">子-未修复</div>
+            父
+        </div>
+    </div>
+</body>
+
+</html>
+`
+
+<CodePannel code={test1} name={'test1'} height='400px' language='html'/>
+
+## margin合并-修复
+margin合并和margin塌陷不一样，margin塌陷只添加了CSS，margin合并除了添加CSS，
+
+在两个相邻的块级元素之间，如果它们的margin相遇，则它们的margin会合并，造成不必要的空白。可以通过将其中一个元素定义为BFC来避免这种margin合并现象。
+
+export const test3 = `
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>index</title>
+  <style>
+    .parent {
+      overflow: hidden;
+    }
+
+    .child {
+      height: 50px;
+      margin: 10px;
+      background-color: gray;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="parent">
+    <div class="child"></div>
+    <div class="child"></div>
+  </div>
+</body>
+
+</html>`
+
+<CodePannel code={test3} name={'test3'} height='400px' language='html'/>

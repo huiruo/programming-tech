@@ -182,7 +182,7 @@ ul {
   }
 
   .md-container {
-    padding-left: 10px !important;
+    padding: 50px 10px 20px 10px !important;
   }
 
   .sidebar-content {
@@ -246,5 +246,6 @@ ul {
 }
 
 .md-container {
-  padding: 50px 10px 20px 300px;
+  padding: 50px 100px 20px 400px;
+  width: 100%;
 }

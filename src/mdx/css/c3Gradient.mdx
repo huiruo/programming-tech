@@ -1,0 +1,295 @@
+import CodeBlock from '../../components/codeBlock';
+import CodePannel from '../CodePannel';
+import HighlightText from '../HighlightText';
+
+## 线性渐变
+双颜色值的线性渐变
+
+export const test1 = `
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title></title>
+<!--默认渐变是从上往下的-->
+<style>
+.box{
+	width:300px;
+	height:300px;
+	border:1px solid #000; 
+	background-image:linear-gradient(red,blue);
+}
+</style>
+</head>
+<body>
+<div class="box"></div>
+</body>
+</html>
+`
+
+<CodePannel code={test1} name={'test1'} height='400px' language='html'/>
+
+02-多颜色值的线性渐变
+
+export const test2 = `
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title></title>
+<style>
+.box{
+	width:300px;
+	height:300px;
+	border:1px solid #000; 
+	background-image:linear-gradient(red,blue,pink,black);
+}
+</style>
+</head>
+<body>
+<div class="box"></div>
+</body>
+</html>
+`
+
+<CodePannel code={test2} name={'test2'} height='400px' language='html'/>
+
+03-改变渐变方向:
+
+export const test3 = `
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title></title>
+<style>
+.box{
+	width:300px;
+	height:300px;
+	border:1px solid #000; 
+	background-image:linear-gradient(to top left,red,blue);
+}
+</style>
+</head>
+<body>
+<div class="box"></div>
+</body>
+</html>
+`
+
+<CodePannel code={test3} name={'test3'} height='400px' language='html'/>
+
+控制颜色节点的分布
+
+export const test4 = `
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style>
+.box{
+	width:300px;
+	height:300px;
+	border:1px solid #000; 
+	background-image:linear-gradient(90deg,red 10%,orange 15%,yellow 20%,green 30%,blue 50%,indigo 70%,violet 80%);
+}
+</style>
+</head>
+<body>
+<div class="box"></div>
+</body>
+</html>
+`
+
+<CodePannel code={test4} name={'test4'} height='400px' language='html'/>
+
+09-光斑动画:
+
+export const test5 = `
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<title></title>
+		<style type="text/css">
+			*{
+				margin: 0;
+				padding: 0;
+			}
+			body{
+				background: black;
+				text-align: center;
+				font: 50px/200px "微软雅黑";
+				color: rgba(255,255,255,.3);
+			}
+			h1{
+				display: inline-block;
+				background: linear-gradient(120deg,rgba(255,255,255,0) 100px,rgba(255,255,255,1) 180px,rgba(255,255,255,0) 270px);
+				background-position: -300px 0;
+				background-repeat:no-repeat ;
+				-webkit-background-clip: text;
+				/*transition: 3s;*/
+			}
+		</style>
+	</head>
+	<body>
+		<h1>hello programming tech</h1>
+	</body>
+	<script type="text/javascript">
+		var h1Node = document.getElementsByTagName("h1")[0];
+		var left =-300;
+		move();
+		function move(){
+			setInterval(function(){
+				left+=10;
+				if(left>1000){
+					left=-300;
+				}
+				h1Node.style.backgroundPosition=left+"px 0px";
+			},20)
+		}
+	</script>
+</html>
+
+`
+
+<CodePannel code={test5} name={'test5'} height='400px' language='html'/>
+
+08-发廊灯
+
+export const test6 = `
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title></title>
+<style>
+.wrap{
+	width:200px;
+	height:30px;
+	overflow:hidden;
+	border:1px solid #000;
+}
+.box{
+	width:400px;
+	height:30px;
+	background:repeating-linear-gradient(45deg ,black 0,black 10px,#fff 10px,#fff 20px); 
+	transition:3s;
+	}
+	
+.wrap:hover .box{ 
+	margin-left:-200px;
+	}
+</style>
+</head>
+<body>
+<div class="wrap">
+	<div class="box"></div>
+</div>
+</body>
+</html>
+`
+
+<CodePannel code={test6} name={'test6'} height='400px' language='html'/>
+
+## 径向渐变
+01-双颜色值的径向渐变
+
+export const test7 =  `
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title></title>
+<style>
+.box{
+	width:400px;
+	height:300px;
+	border:1px solid #000; 
+	background-image:radial-gradient(red,blue);
+}
+</style>
+</head>
+<body>
+<div class="box"></div>
+</body>
+</html>
+`
+
+<CodePannel code={test7} name={'test7'} height='400px' language='html'/>
+
+02-多颜色值的径向渐变
+
+export const test8 =  `
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title></title>
+<style>
+.box{
+	width:400px;
+	height:300px;
+	border:1px solid #000; 
+	background-image: radial-gradient(red,blue,pink,black);
+}
+</style>
+</head>
+<body>
+<div class="box"></div>
+</body>
+</html>
+`
+
+<CodePannel code={test8} name={'test8'} height='400px' language='html'/>
+
+重复渐变
+
+export const test9 = `
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title></title>
+<!--改变渐变的形状-->
+<style>
+.box{
+	width:400px;
+	height:300px;
+	border:1px solid #000; 
+	background-image:repeating-radial-gradient(closest-corner  circle,red 30%,blue 50%);
+}
+</style>
+</head>
+<body>
+<div class="box"></div>
+</body>
+</html>
+`
+
+<CodePannel code={test9} name={'test9'} height='400px' language='html'/>
+
+改变圆心
+
+export const test10 = `
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title></title>
+<style>
+.box{
+	width:400px;
+	height:300px;
+	border:1px solid #000; 
+	background-image:radial-gradient(closest-corner  circle at 10px 10px,red,blue);
+}
+</style>
+</head>
+<body>
+<div class="box"></div>
+</body>
+</html>
+`
+
+<CodePannel code={test10} name={'test10'} height='400px' language='html'/>
