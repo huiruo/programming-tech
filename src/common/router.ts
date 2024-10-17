@@ -54,6 +54,9 @@ export const sidebar: ISidebar[] = [
           { href: "/jsBase/arrayMethods", label: "Array Methods" },
           { href: "/jsBase/stringMapSet", label: "String Map Set" },
           { href: "/jsBase/loop", label: "loop" },
+          { href: "/jsBase/for-of", label: "for-of" },
+          { href: "/jsBase/for-in-values", label: "for-in-实现深拷贝-values" },
+          { href: "/jsBase/keys-getOwnPropertyNames", label: "keys-getOwnPropertyNames-defineProperty" },
         ]
       },
     ],

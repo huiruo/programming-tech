@@ -8,8 +8,8 @@ import { Provider } from "jotai";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Block-chain",
-  description: "block-chain",
+  title: "remirror.xyz",
+  description: "remirror.xyz",
 };
 
 export default function RootLayout({
