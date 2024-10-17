@@ -3,13 +3,12 @@ import { Inter } from "next/font/google";
 import { Sidebar } from "@/components/sidebar";
 import "./globals.css";
 import { NavWrapper } from "@/components/nav";
-import { Provider } from "jotai";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "remirror.xyz",
-  description: "remirror.xyz",
+  title: "Block-chain",
+  description: "block-chain",
 };
 
 export default function RootLayout({
@@ -21,6 +20,7 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link data-rh="true" rel="icon" href="/logo.svg"></link>
       </head>
       <body className={inter.className}>
         <div className='wrapper-box'>
@@ -28,11 +28,12 @@ export default function RootLayout({
 
           <div className='main-container'>
             <Sidebar isMobile={false} />
-            <Provider>
-              <main className="md-container">
+            <main className="md-container">
+              <div className="empty-div" />
+              <article className="article">
                 {children}
-              </main>
-            </Provider>
+              </article>
+            </main>
           </div>
         </div>
       </body>

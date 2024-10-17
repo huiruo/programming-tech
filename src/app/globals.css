@@ -181,8 +181,14 @@ ul {
     display: none !important;
   }
 
-  .md-container {
-    padding: 50px 10px 20px 10px !important;
+  .empty-div {
+    width: 0px !important;
+    min-width: 0px !important;
+  }
+
+  .article {
+    max-width: 100% !important;
+    min-width: 100% !important;
   }
 
   .sidebar-content {
@@ -194,9 +200,15 @@ ul {
   display: flex;
 }
 
+ol {
+  padding-left:18px;
+}
+
+ol li::marker {
+  color: #ec4899;
+}
 
 .nav {
-  /* position: sticky; */
   position: fixed;
   top: 0;
   height: 50px;
@@ -245,7 +257,21 @@ ul {
       rgb(var(--background-end-rgb))) rgb(var(--background-start-rgb));
 }
 
+.empty-div {
+  width: 280px;
+  min-width: 280px;
+  height: 100px;
+}
+
 .md-container {
-  padding: 50px 100px 20px 400px;
+  display: flex;
   width: 100%;
+  margin: 0 auto;
+}
+
+.article {
+  max-width: 1320px;
+  min-width: 60%;
+  margin: 0 auto;
+  padding: 0 10px 0px 10px;
 }
