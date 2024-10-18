@@ -3,7 +3,6 @@
 import { usePathname } from 'next/navigation'
 import { DocSidebarDesktop } from './desktop'
 import { sidebar } from '@/common/router'
-import { DocSidebarMobileMenu } from './mobile';
 
 export const Sidebar = ({ isMobile = false }: { isMobile?: boolean }) => {
   const activePath = usePathname()
