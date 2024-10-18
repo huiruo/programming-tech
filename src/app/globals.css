@@ -91,6 +91,10 @@ a {
   html {
     color-scheme: dark;
   }
+
+  html body pre {
+    background-color: #242424;
+  }
 }
 
 h2 {
@@ -106,18 +110,14 @@ p {
   padding: 0;
   white-space: break-spaces;
   word-wrap: break-word;
-  /* 允许长单词或 URL 换行 */
   word-break: break-all;
-  /* 强制长单词在任意位置换行 */
   overflow-wrap: break-word;
-  /* 允许内容换行 */
 }
 
 pre {
   width: 100%;
   overflow-x: auto;
   background-color: #eeeff0;
-  /* background-color: #313131; */
 }
 
 code {
@@ -273,5 +273,5 @@ ol li::marker {
   max-width: 1320px;
   min-width: 60%;
   margin: 0 auto;
-  padding: 0 10px 0px 10px;
+  padding: 50px 10px 0px 10px;
 }

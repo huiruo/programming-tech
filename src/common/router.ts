@@ -57,6 +57,11 @@ export const sidebar: ISidebar[] = [
           { href: "/jsBase/for-of", label: "for-of" },
           { href: "/jsBase/for-in-values", label: "for-in-实现深拷贝-values" },
           { href: "/jsBase/keys-getOwnPropertyNames", label: "keys-getOwnPropertyNames-defineProperty" },
+          { href: "/jsBase/prototype", label: "prototype" },
+          { href: "/jsBase/dataTypes", label: "数据类型-类型转换" },
+          { href: "/jsBase/symbol", label: "数据类型-symbol" },
+          { href: "/jsBase/this", label: "this" },
+          { href: "/jsBase/higherOrderFn", label: "高阶函数-柯里化" },
         ]
       },
     ],
