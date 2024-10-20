@@ -40,4 +40,4 @@ next-env.d.ts
 .dev.vars
 
 # test space
-/src/mdx/algorithm/algorithm2/
+/algorithm2
