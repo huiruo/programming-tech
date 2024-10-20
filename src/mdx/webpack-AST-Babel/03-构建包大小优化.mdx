@@ -1,0 +1,339 @@
+## 前言
+1. 影响开发体验的地方是首次编译和后续的增量编译
+2. 网站性能优化主要在构建体积上
+
+webpack-bundle-analyzer 分析体积:
+```js
+const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer')
+
+plugins: [
+  new BundleAnalyzerPlugin(),
+]
+```
+
+## 优化1. 去掉开发环境下的配置,不需要热加载这类只用于开发环境的东西
+不同的配置文件：创建多个不同的 Webpack 配置文件，每个文件针对不同的环境进行配置。例如，你可以创建一个 webpack.config.js 用于开发环境，另一个 webpack.prod.js 用于生产环境。在这两个文件中，可以定义不同的插件、loader、和配置选项。然后，在命令行中使用不同的配置文件来运行 Webpack，例如：
+```
+webpack --config webpack.config.js      # 开发环境
+webpack --config webpack.prod.js        # 生产环境
+```
+
+2. 环境变量：你也可以使用环境变量来区分不同的环境。在 Webpack 配置文件中，你可以检查 process.env.NODE_ENV 变量的值，通常将其设置为 'development' 或 'production'。然后，根据环境变量的值来配置 Webpack。例如：
+
+```js
+const isProduction = process.env.NODE_ENV === 'production';
+
+const config = {
+  // 共享的配置
+};
+
+if (isProduction) {
+  // 针对生产环境的配置
+} else {
+  // 针对开发环境的配置
+}
+
+module.exports = config;
+```
+
+### webpack-merge区分开发环境
+https://www.webpackjs.com/guides/production/
+
+当你需要区分开发环境和生产环境的 Webpack 配置时，使用不同的配置文件
+* webpack.dev.js
+* webpack.prod.js
+以分别适用于开发环境和生产环境。
+
+1. 将通用配置提取为共享配置：将那些在两个配置文件中相同的配置选项提取到一个共享的配置文件，通常称为 "webpack.common.js"。这些选项包括入口点（entry）、输出（output）、加载器（loaders）、插件（plugins）等。
+2. 合并配置：使用 webpack-merge 等工具将共享配置和环境特定配置合并。例如，在 "webpack.dev.js" 和 "webpack.prod.js" 中：
+>"webpack.dev.js" 配置可以包括开发环境特定的选项，如热模块替换（Hot Module Replacement）：
+```js
+// webpack.dev.js
+const { merge } = require('webpack-merge');
+const common = require('./webpack.common.js');
+
+module.exports = merge(common, {
+  mode: 'development',
+  devtool: 'inline-source-map',
+  devServer: {
+    contentBase: './dist',
+  },
+  // 添加其他开发环境选项
+});
+```
+```js
+// webpack.prod.js
+const { merge } = require('webpack-merge');
+const common = require('./webpack.common.js');
+
+module.exports = merge(common, {
+  mode: 'production',
+  // 添加其他生产环境选项
+});
+```
+
+3. 修改 package.json 中的脚本：在 package.json 中，你可以使用不同的脚本命令来指定使用的配置文件
+```json
+"scripts": {
+  "start": "webpack serve --config webpack.dev.js",
+  "build": "webpack --config webpack.prod.js"
+}
+```
+
+## 优化2.选择合适的SourceMap
+为了提高前端项目的性能和不同浏览器上的兼容性，我们线上环境的代码一般都要经过如下等处理：
+- 压缩混淆，减小体积
+- 多个文件合并，减少 HTTP 请求数
+- 将 es6+代码转换成浏览器能够识别的 es5 代码
+
+经过如上的步骤之后，我们代码的性能和兼容性提高了，然后由于转换后的代码和源代码的不同，会导致我们的开发调试变得很困难，SourceMap 的诞生就是为了解决如上问题的。
+
+简而言之，SourceMap 就是一个储存着代码位置信息的文件，转换后的代码的每一个位置，所对应的转换前的位置。有了它，点击浏览器的控制台报错信息时，可以直接显示出错源代码位置而不是转换后的代码。
+```js
+devtool: false; // 一般用于production环境，没有sourcemap映射。
+```
+
+### 如何选择 devtool? production官方推荐的 devtool 有4种：
+在生产环境中，我们的目标则转向于关注更小的 bundle，更轻量的 source map。
+线上环境没有绝对的最优选择一说，根据自己业务需要去选择即可，很多项目也是选择除上述4种之外的 cheap-module-source-map 选项。
+* none
+* source-map
+* hidden-source-map
+* nosources-source-map
+
+### development环境
+开发环境(development)和生产环境(production)的构建目标差异很大。在开发环境中，我们需要具有强大的、具有实时重新加载(live reloading)或热模块替换(hot module replacement)能力的 source map 和 localhost server。
+
+- source-map：会单独生成相应的main.js.map文件。如：
+  * cheap-source-map：没有列的映射，忽略loader的sourcemap。
+  * cheap-module-source-map：没有列映射的.map文件，且loader的sourcemap只包含对应行的。
+
+只需要考虑打包速度快、调试方便，官方推荐以下4种：
+- eval
+- eval-source-map
+- eval-cheap-source-map
+- eval-cheap-module-source-map
+大多数情况下我们选择 eval-cheap-module-source-map 即可。
+
+### SourceMap实战：设置devtool:false
+
+```js
+module.exports = function (webpackEnv) {
+  const isEnvDevelopment = webpackEnv === 'development';
+  const isEnvProduction = webpackEnv === 'production';
+
+  ...
+
+  return {
+    target: ['browserslist'],
+    mode: isEnvProduction ? 'production' : isEnvDevelopment && 'development',
+    // Stop compilation early in production
+    bail: isEnvProduction,
+    devtool: false,
+    /*
+    devtool: isEnvProduction
+      ? shouldUseSourceMap
+        ? 'source-map'
+        : false
+      : isEnvDevelopment && 'cheap-module-source-map',
+    */
+  }
+
+  ...
+
+}
+```
+
+
+## 优化3.开启tree shaking,不会打包打包未使用的es6模块
+[官方文档：tree-shaking](https://webpack.js.org/guides/tree-shaking/)
+
+`import`但未实际使用的模块使用webpack还会对它打包?
+
+tree shaking扫描所有 ES6 的 export，找出被 import 的内容并添加到最终代码中。tree shaking的使用时源码必须遵循ES6的模块规范`import & export`，CommonJS 规范`require`则无法使用。也就是说，需要给babel里面配置一下"es6不要解析"：
+```js
+// .babelrc
+{
+    "presets": [
+        ["es2015", {"modules": false}]
+    ]
+}
+```
+
+* tree shaking对于方法的处理
+>通过tree shaking设置后，webpack里面会将没有使用的方法标记为：
+unused harmony export xxx，但代码仍然保留。（webpack编译后的源码里面仍然包含没有使用的方法）。随后使用UglifyJSPlugin进行第二步，将已经标记的没有使用的方法进行删除。
+
+* tree shaking对于类的处理
+>与标记方法不同，webpack打包时会将整个类进行标记，也就是说，即使类里面的方法没有被使用也会进行打包编译。 这表明 webpack tree shaking 只处理顶层内容，例如类和对象内部都不会再被分别处理。
+综上所述，可以得出 “对于已经 import 但未实际使用的模块使用 webpack 还会对它打包” 。
+
+## 优化4.js 压缩
+```
+实际上 webpack4.0 默认是使用 terser-webpack-plugin 这个压缩插件，在此之前是使用 uglifyjs-webpack-plugin，
+
+两者的区别是后者对 ES6 的压缩不是很好，同时我们可以开启 parallel 参数，使用多进程压缩，加快压缩。
+```
+
+```js
+// config/webpack.common.js
+const TerserPlugin = require("terser-webpack-plugin");
+// ...
+const commonConfig = {
+  // ...
+  optimization: {
+    minimize: true,
+    minimizer: [
+      new TerserPlugin({
+        parallel: 4, // 开启几个进程来处理压缩，默认是 os.cpus().length - 1
+      }),
+    ],
+  },
+  // ...
+};
+```
+
+## 优化5.压缩 CSS
+我们可以借助 optimize-css-assets-webpack-plugin 插件来压缩 css，其默认使用的压缩引擎是 cssnano。 具体使用如下：
+```js
+// config/webpack.prod.js
+const OptimizeCSSAssetsPlugin = require("optimize-css-assets-webpack-plugin");
+// ...
+const prodConfig = {
+  // ...
+  optimization: {
+    minimizer: [
+      new OptimizeCSSAssetsPlugin({
+        assetNameRegExp: /\.optimize\.css$/g,
+        cssProcessor: require("cssnano"),
+        cssProcessorPluginOptions: {
+          preset: ["default", { discardComments: { removeAll: true } }],
+        },
+        canPrint: true,
+      }),
+    ],
+  },
+};
+```
+
+## 优化6.图片压缩
+借助 image-webpack-loader 帮助我们来实现。它是基于 imagemin 这个 Node 库来实现图片压缩的。
+只要在 file-loader 之后加入 image-webpack-loader 即可:
+```js
+// config/webpack.common.js
+// ...
+module: {
+  rules: [
+    {
+      test: /\.(png|jpg|gif)$/,
+      use: [
+        {
+          loader: "file-loader",
+          options: {
+            name: "[name]_[hash].[ext]",
+            outputPath: "images/",
+          },
+        },
+        {
+          loader: "image-webpack-loader",
+          options: {
+            // 压缩 jpeg 的配置
+            mozjpeg: {
+              progressive: true,
+              quality: 65,
+            },
+            // 使用 imagemin**-optipng 压缩 png，enable: false 为关闭
+            optipng: {
+              enabled: false,
+            },
+            // 使用 imagemin-pngquant 压缩 png
+            pngquant: {
+              quality: "65-90",
+              speed: 4,
+            },
+            // 压缩 gif 的配置
+            gifsicle: {
+              interlaced: false,
+            },
+            // 开启 webp，会把 jpg 和 png 图片压缩为 webp 格式
+            webp: {
+              quality: 75,
+            },
+          },
+        },
+      ],
+    },
+  ];
+}
+```
+
+
+## 代码分割和懒加载
+
+### 1.webpack推荐的分析辅助插件webpack-bundle-analyzer：
+运行NODE_ENV=production ANALYZ=true npm_config_report=true npm run build后则会为我们生成一个直观的build报告:
+>得到目前占用体积最大的组件是哪几个，如果过多的占用了我们的加载时间，则应该进行继续分割优化。不足10KB就不用进行拆分了，和其父组件在一起就可以，否则这种细碎组件拆分过多，加载性能上没有太多提升反而加大了http请求的压力
+```js
+module.exports = {
+  plugins: [
+    new BundleAnalyzerPlugin({
+      analyzerMode: 'server',
+      analyzerHost: '0.0.0.0',
+      analyzerPort: 8181,
+      reportFilename: 'report.html',
+      defaultSizes: 'parsed',
+      openAnalyzer: true,
+      generateStatsFile: false,
+      statsFilename: 'stats.json',
+      statsOptions: null,
+      logLevel: 'info'
+    })
+  ]
+}
+```
+
+### 2.代码分割:webpack的 code-splitting属性
+只要有一个库我们升级或者引入一个新库,这个 chunk 就会变动,那么这个chunk 的变动性会很高,并不适合长期缓存,还有一点,我们要提高首页加载速度,第一要务是减少首页加载依赖的代码量,请问像 react vue reudx 这种整个应用的基础库我们是首页必须要依赖的之外,像 d3.js three.js这种特定页面才会出现的特殊库是没必要在首屏加载的,所以我们需要将应用基础库和特定依赖的库进行分离。
+
+当 chunk 在强缓存期，但是服务器代码已经变动了我们怎么通知客户端？上面我们的示意图已经看到了，当命中的资源在缓存期内，浏览器是直接读取缓存而不会向服务器确认的，如果这个时候服务器代码已经变动了，怎么办？这个时候我们不能将 index.html 缓存(反正webpack时代的 html 页面小到没有缓存的必要),需要每次引入 script 脚本的时候去服务器更新,并开启 hashchunk,它的作用是当 chunk 发生改变的时候会生成新的 hash 值,如果不变就不发生变动,这样当 index 加载后续 script资源时如果 hashchunk 没变就会命中缓存,如果改变了那么会重新去服务端加载新资源。
+
+
+vue-router 路由懒加载
+
+[code-splitting官方文档](https://webpack.docschina.org/guides/code-splitting/)
+>代码分离是 webpack 中最引人注目的特性之一。此特性能够把代码分离到不同的 bundle 中，然后可以按需加载或并行加载这些文件。代码分离可以用于获取更小的 bundle、控制资源加载优先级，如果使用合理，会极大减小加载时间。
+
+Webpack提供了多种代码分割的方式，包括使用动态import语法、SplitChunks插件。
+
+使用动态import语法可以按需加载模块。通过将模块放在动态import函数中，Webpack会将其拆分为单独的块，并在需要时按需加载。这样可以减少初始加载时间，并在需要时延迟加载其他模块。
+
+SplitChunks插件是Webpack提供的一个内置插件，可以根据配置将公共模块拆分成单独的块。通过合理配置SplitChunks插件，可以将公共依赖提取到一个单独的文件中，避免重复加载，从而减小打包文件的体积。
+
+需加载实际上和代码分割的辅助功能是相辅相成的，在没有代码分割之下，所有的按需加载实际上仍然会将所有的第三方库全部压缩到一个工程文件中，导致该文件下载缓慢，运行缓慢。
+```js
+import(/* webpackChunkName: "lodash" */ 'lodash');
+```
+帮我们将引入的文件单独进行一个文件的分割打包，这样我们庞大的应用就会被我们精心地拆成一个个单独的js文件，互不影响，异步加载，极大地节省了我们的首屏加载时间。
+
+这里和按需加载是相辅相成的，我们可以把我们需要使用的第三方组件分布在我们的各个小组件中，并让这些组件进行代码分割，从而达到最大化优化效果的目的。
+
+### 3.懒加载
+[文档](https://webpack.docschina.org/guides/lazy-loading/)
+
+懒加载或者按需加载，是一种很好的优化网页或应用的方式。这种方式实际上是先把你的代码在一些逻辑断点处分离开，然后在一些代码块中完成某些操作后，立即引用或即将引用另外一些新的代码块。这样加快了应用的初始加载速度，减轻了它的总体体积，因为某些代码块可能永远不会被加载。
+
+### 3-1.可以看到懒加载是要在代码分割的基础上进行的
+原理：把一些js模块给独立出一个个js文件，然后需要用到的时候，利用jsonp:在创建一个script对象，加入到document.head对象中即可，浏览器会自动帮我们发起请求，去请求这个js文件，在写个回调，去定义得到这个js文件后，需要做什么业务逻辑操作。
+```js
+import() 语法
+
+React.lazy()
+```
+1. 使用动态import语法可以在需要时按需加载模块。通过将模块放在动态import函数中，Webpack会自动将其拆分为单独的块，并在需要时进行加载。这样可以延迟加载模块，减少初始加载时间。
+
+2. React.lazy()是React框架提供的一个懒加载组件的方法。通过使用React.lazy()函数，可以将组件的加载推迟到渲染时再进行，从而提高页面的响应速度。
+
+可以减少初始加载时间，并提升用户体验。Webpack提供了多种懒加载的方式
+
+懒加载技术可以根据用户实际需求进行模块加载，减少初始加载时间，并提升页面性能和用户体验。
+Webpack中的代码分割和懒加载技术是优化项目性能的重要手段。通过合理配置代码分割策略和懒加载方式，可以减少初始加载时间、优化打包文件体积

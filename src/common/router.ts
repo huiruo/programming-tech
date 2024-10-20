@@ -44,8 +44,8 @@ export const sidebar: ISidebar[] = [
       { href: "/js/vite", label: "vite" },
       { href: "/js/nodejs1", label: "nodejs1" },
       { href: "/js/asyncPromise", label: "Async Promise" },
-      { href: "/js/webpack1", label: "webpack1" },
-      { href: "/js/webpack2", label: "webpack2" },
+      { href: "/js/webpack1", label: "webpack 基本原理" },
+      { href: "/js/webpack2", label: "微前端" },
       {
         label: 'jsBase',
         href: '/jsBase',

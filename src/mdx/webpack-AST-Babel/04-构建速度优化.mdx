@@ -1,0 +1,261 @@
+真正影响开发体验的地方是首次编译和后续的增量编译
+
+* Cache,粒度很细的cache是速度的关键
+
+* 增量算法：由Cache实现
+
+[webpack4-增量构建](./webpack4-增量构建)
+
+* Webpack 5支持基于文件系统的持久化缓存（Persistent Cache）,这对生产环境的打包优化很有作用
+
+### 分析工具:speed-measure-webpack-plugin
+loader 和 插件的执行耗时
+```js
+const SpeedMeasureWebpackPlugin = require('speed-measure-webpack-plugin')
+
+const smp = new SpeedMeasureWebpackPlugin();
+
+module.exports = smp.wrap({
+ entry: 'xx',
+ output: 'xx', 
+ plugins: [ ]
+})
+```
+
+## 1.代码层面
+
+删除没有使用的依赖/使用webpack5使用tree-shaking消除项目中未使用的代码，从而减少构建时间
+
+文件引入进来的库没有被使用到也没有及时删除
+```
+import { get } from 'lodash';
+```
+在业务中并没有使用到a 模块，但webpack 会针对该import 进行打包一遍
+
+## 2.优化Loader配置
+[loader-plugin](./loader-plugin)
+
+## 3.优化 resolve 配置
+[resolve-devServer-等参数](./resolve-devServer-等参数)
+
+## 方式 4 使用 DllPlugin 优化
+使用DLL(Dynamic Link Library)插件：DLL插件可以将不经常更改的依赖项打包为单独的库，从而减少构建时间。
+
+使用 DllPlugin：DllPlugin 可以将一些不经常变化的模块提前编译成单独的文件，从而加快构建速度。这些文件通常是在第一次构建时生成的，之后的构建过程中可以直接使用。
+
+- 在使用 webpack 进行打包时候，对于依赖的第三方库，如 react，react-dom 等这些不会修改的依赖，可以让它和业务代码分开打包；
+
+- 只要不升级依赖库版本，之后 webpack 就只需要打包项目业务代码，遇到需要导入的模块在某个动态链接库中时，就直接去其中获取；而不用再去编译第三方库，这样第三方库就只需要打包一次。
+
+接入需要完成的事：
+
+```
+将依赖的第三方模块抽离，打包到一个个单独的动态链接库中
+当需要导入的模块存在动态链接库中时，让其直接从链接库中获取
+项目依赖的所有动态链接库都需要被加载
+```
+
+- 接入工具(webpack 已内置)
+
+```
+ DllPlugin插件：用于打包出一个个单独的动态链接库文件；
+ DllReferencePlugin:用于在主要的配置文件中引入DllPlugin插件打包好的动态链接库文件
+```
+
+> 配置 webpack_dll.config.js 构建动态链接库
+
+```js
+const path = require('path');
+const DllPlugin = require('webpack/lib/DllPlugin');
+
+module.exports = {
+    mode: 'production',
+    entry: {
+        // 将React相关模块放入一个动态链接库
+        react: ['react','react-dom','react-router-dom','react-loadable'],
+        librarys: ['wangeditor'],
+        utils: ['axios','js-cookie']
+    },
+    output: {
+        filename: '[name]-dll.js',
+        path: path.resolve(__dirname, 'dll'),
+        // 存放动态链接库的全局变量名，加上_dll_防止全局变量冲突
+        library: '_dll_[name]'
+    },
+    // 动态链接库的全局变量名称，需要可output.library中保持一致，也是输出的manifest.json文件中name的字段值
+    // 如react.manifest.json字段中存在"name":"_dll_react"
+    plugins: [
+        new DllPlugin({
+            name: '_dll_[name]',
+            path: path.join(__dirname, 'dll', '[name].manifest.json')
+        })
+    ]
+}
+```
+
+> webpack.pro.config.js 中使用
+
+```js
+const DllReferencePlugin = require('webpack/lib/DllReferencePlugin');
+plugins: [
+    // 告诉webpack使用了哪些动态链接库
+        new DllReferencePlugin({
+            manifest: require('./dll/react.manifest.json')
+        }),
+        new DllReferencePlugin({
+            manifest: require('./dll/librarys.manifest.json')
+        }),
+        new DllReferencePlugin({
+            manifest: require('./dll/utils.manifest.json')
+        }),
+]
+```
+
+```
+注意：在webpack_dll.config.js文件中，DllPlugin中的name参数必须和output.library中的一致；因为DllPlugin的name参数影响输出的manifest.json的name；而webpack.pro.config.js中的DllReferencePlugin会读取manifest.json的name，将值作为从全局变量中获取动态链接库内容时的全局变量名
+
+执行构建
+  webpack --progress --colors --config ./webpack.dll.config.js
+
+  webpack --progress --colors --config ./webpack.prod.js
+
+html中引入dll.js文件
+```
+
+## 配置缓存：通过配置缓存，Webpack 可以在第二次构建时跳过某些不必要的步骤
+可以使用 cache-loader 或 hard-source-webpack-plugin 插件来启用缓存。
+
+1. babel-loader 开启缓存: {cacheDirectory: ture} 
+2. terser-webpack-plugin 开启压缩缓存: {cache: true} 
+3. 使用 cache-loader 或者 hard-source-wekpack-plugin 参考文档
+
+开启缓存之后，会在 node_modules 下生成``.cache`目录
+
+### 例子-cache-loader
+cache-loader 缓存了 Babel 的转译结果。options.cacheDirectory 选项指定了缓存目录的路径。
+
+注意，cache-loader 只缓存 loader 的处理结果，而不会缓存模块本身。因此，在使用 cache-loader 时，需要确保模块的内容没有改变，否则缓存将失效。
+
+此外，由于 cache-loader 缓存的是 loader 的处理结果，因此建议将其放在 loader 链中的最前面，这样可以最大限度地利用缓存效果。
+```js
+const path = require('path');
+
+module.exports = {
+  mode: 'development',
+  entry: './src/index.js',
+  output: {
+    filename: 'bundle.js',
+    path: path.resolve(__dirname, 'dist')
+  },
+  module: {
+    rules: [
+      {
+        test: /\.js$/,
+        exclude: /node_modules/,
+        use: [
+          {
+            loader: 'cache-loader',
+            options: {
+              cacheDirectory: path.resolve('.cache')
+            }
+          },
+          'babel-loader'
+        ]
+      }
+    ]
+  }
+};
+```
+
+## 开启多进程/多线程构建
+可以使用 thread-loader 或 happypack 插件将某些耗时的任务分配到多个进程/线程中，从而提高构建速度。
+
+HappyPack wepack3的工具，不推荐
+>核心原理：将 webpack 中最耗时的 loader 文件转换操作任务，分解到多个进程中并行处理，从而减少构建时间。
+
+由于node是单线程运行的，所以 webpack 在打包的过程中也是单线程的，特别是在执行 loader 的时候，长时间编译的任务很多，这样就会导致等待的情况。那么我们可以使用一些方法将 loader 的同步执行转换为并行，这样就能充分利用系统资源来提高打包速度了。
+
+### thread-loader 
+```js
+module.exports = {
+    {
+        test: /\.js$/,
+        use: [
+          {
+            loader: 'thread-loader',
+            options: {
+              worker: 3,
+            },
+          },
+          'babel-loader',
+        ],
+      },
+}
+```
+
+
+## 方式 6 代码压缩用 ParallelUglifyPlugin 代替自带的 UglifyJsPlugin 插件
+
+自带的 JS 压缩插件是单线程执行的，而 webpack-parallel-uglify-plugin 可以并行的执行
+配置参数：
+
+```
+ uglifyJS: {}：用于压缩 ES5 代码时的配置，Object 类型
+ test: /.js$/g:使用正则去匹配哪些文件需要被 ParallelUglifyPlugin 压缩，默认是 /.js$/
+ include: []:使用正则去包含被压缩的文件，默认为 [].
+ exclude: []: 使用正则去包含不被压缩的文件，默认为 []
+ cacheDir: ''：缓存压缩后的结果，下次遇到一样的输入时直接从缓存中获取压缩后的结果并返回，默认不会缓存，开启缓存设置一个目录路径
+ workerCount: ''：开启几个子进程去并发的执行压缩。默认是当前运行电脑的 CPU 核数减去1
+ sourceMap: false：是否为压缩后的代码生成对应的Source Map, 默认不生成
+```
+
+```js
+...
+minimizer: [
+    // webpack:production模式默认有配有js压缩，但是如果这里设置了css压缩，js压缩也要重新设置,因为使用minimizer会自动取消webpack的默认配置
+    new optimizeCssPlugin({
+        assetNameRegExp: /\.css$/g,
+        cssProcessor: require('cssnano'),
+        cssProcessorOptions: { discardComments: { removeAll: true } },
+        canPrint: true
+    }),
+    new ParallelUglifyPlugin({
+        cacheDir: '.cache/',
+        uglifyJS:{
+            output: {
+           // 是否输出可读性较强的代码，即会保留空格和制表符，默认为输出，为了达到更好的压缩效果，可以设置为false
+                beautify: false,
+        //是否保留代码中的注释，默认为保留，为了达到更好的压缩效果，可以设置为false
+                comments: false
+            },
+            compress: {
+            //是否在UglifyJS删除没有用到的代码时输出警告信息，默认为输出
+                warnings: false,
+            //是否删除代码中所有的console语句，默认为不删除，开启后，会删除所有的console语句
+                drop_console: true,
+            //是否内嵌虽然已经定义了，但是只用到一次的变量，比如将 var x = 1; y = x, 转换成 y = 1, 默认为否
+                collapse_vars: true,
+            }
+        }
+}),
+]
+```
+
+## 其他构建速度优化
+### Tree Shaking：Tree Shaking是一个优化技术
+可以删除未使用的代码。确保你的代码库和依赖项都正确配置了Tree Shaking，以减小输出包的大小。
+
+### 2. 使用缓存：增量
+Webpack支持缓存构建结果，可以通过使用cache: true选项来启用缓存。这样，在重新构建时，Webpack可以重用先前构建的结果，而不必重新编译所有文件。
+
+### 3.使用Webpack Dev Server的热模块替换（Hot Module Replacement）
+在开发模式下，启用HMR可以在不刷新整个页面的情况下更新代码，加速开发流程。
+
+
+## 大小
+1. 使用Webpack Bundle Analyzer：这个工具可以帮助你分析构建输出，找到体积较大的模块和依赖项，从而有针对性地进行优化。
+
+3. 使用Code Splitting：将应用程序拆分为多个块，只在需要时加载这些块，而不是将整个应用程序打包到一个文件中。Webpack支持多种代码拆分方法，如动态导入和import()语法。
+
+4. 压缩代码：使用UglifyJS等工具来压缩代码，以减小输出包的大小，从而加快加载时
+间。
