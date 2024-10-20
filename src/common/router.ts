@@ -61,7 +61,28 @@ export const sidebar: ISidebar[] = [
           { href: "/jsBase/dataTypes", label: "数据类型-类型转换" },
           { href: "/jsBase/symbol", label: "数据类型-symbol" },
           { href: "/jsBase/this", label: "this" },
+          { href: "/jsBase/bindCall", label: "bind call apply and Execute fn" },
+          { href: "/jsBase/reflect", label: "reflect" },
+          { href: "/jsBase/operator", label: "operator" },
+          { href: "/jsBase/es6Es7", label: "es6 es7" },
+          { href: "/jsBase/deep-copy", label: "deep shallow copy" },
           { href: "/jsBase/higherOrderFn", label: "高阶函数-柯里化" },
+          { href: "/jsBase/inheritance", label: "Inheritance" },
+          { href: "/jsBase/others", label: "others" },
+        ]
+      },
+      {
+        label: 'ts',
+        href: '/ts',
+        type: 'category',
+        items: [
+          { href: "/ts/typeScript", label: "TypeScript" },
+          { href: "/ts/interfaceType", label: "Interface type" },
+          { href: "/ts/keyof", label: "Keyof" },
+          { href: "/ts/generics", label: "Generics record" },
+          { href: "/ts/decorator", label: "Decorator" },
+          { href: "/ts/decorator2", label: "Decorator 2" },
+          { href: "/ts/example", label: "Example" },
         ]
       },
     ],

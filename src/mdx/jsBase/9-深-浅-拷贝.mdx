@@ -1,0 +1,183 @@
+### 例子
+```js
+const testArr =  [
+  {
+    'imgUrl': [
+        'https://cn-beijing.aliyuncs.com/tp-uat/pmhmh1kt24g0000000.png'
+    ],
+    'areaShow': true,
+    'levelShow': true,
+    'linkType': 'page',
+    'page': ''
+  },
+  {
+    'imgUrl': [
+        'https://cn-beijing.aliyuncs.com/tp-uat/pmhmh1kt24g0000000.png'
+    ],
+    'areaShow': true,
+    'levelShow': true,
+    'linkType': 'page',
+    'page': ''
+  },
+]
+
+// 方法1: 当遇到一个数组或对象时，就递归调用 deepCopy 函数，直到拷贝完成。注意，在拷贝对象属性时，需要使用 hasOwnProperty 方法来判断是否是对象自身的属性，以避免拷贝原型链上的属性。
+function deepCopy(obj) {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+  
+  if (Array.isArray(obj)) {
+    const newArray = [];
+    for (let i = 0; i < obj.length; i++) {
+      newArray[i] = deepCopy(obj[i]);
+    }
+    return newArray;
+  }
+
+  const newObj = {};
+  for (const key in obj) {
+    if (obj.hasOwnProperty(key)) {
+      newObj[key] = deepCopy(obj[key]);
+    }
+  }
+
+  return newObj;
+}
+```
+
+方法2: 在处理循环引用的对象时会出现问题。此外，这种方法也不够高效，因为需要将对象转换为字符串再解析为对象，如果对象比较大的话，会占用较多的内存和处理时间
+
+```js
+const testArrCopy = JSON.parse(JSON.stringify(testArr));
+```
+
+## 最简单的拷贝,性能问题
+```js
+const tagsProps = [{ id: 'tefe', name: 'test' }, { id: 'tefe2', name: 'test2' }]
+const tagsState = JSON.parse(JSON.stringify(tagsProps))
+```
+
+```
+通过 JSON.stringify 实现深拷贝有几点要注意
+
+1.拷贝的对象的值中如果有函数、undefined、symbol，则经过 JSON.stringify() 序列化后的 JSON 字符串中这个键值对会消失
+2.无法拷贝不可枚举的属性，无法拷贝对象的原型链
+3.拷贝 Date 引用类型会变成字符串
+4.拷贝 RegExp 引用类型会变成空对象
+5.对象中含有 NaN、Infinity 和 -Infinity，则序列化的结果会变成 null
+6.无法拷贝对象的循环应用（即 objkey = obj）
+```
+
+## 简单数组/对象的深拷贝方法:assign和扩展运算符
+### 1.assign()
+```
+注意使用 assign() 有如下特点：
+
+不会拷贝对象继承的属性、不可枚举的属性、属性的数据属性/访问器属性
+可以拷贝 Symbol 类型
+```
+
+```js
+let a = { name: 'tom' }
+let b = Object.assign({}, a)
+b.name = 'lily'
+a // { name: 'tom' }
+b // { name: 'lily' }
+```
+
+### 2.扩展运算符
+```js
+let a = { name: 'tom' }
+let b = { ...a }
+b.name = 'lily'
+a // { name: 'tom' }
+b // { name: 'lily' }
+```
+
+### 简单数组深拷贝:concat
+数组方法 concat() 连接一个或多个数组，并返回一个副本
+
+那么不设置参数，就返回本数组
+```js
+let a = [1, 2, 3]
+let b = a.concat()
+b.push(4)
+a // [1, 2, 3]
+b // [1, 2, 3, 4]
+```
+
+ES6 方法
+```js
+let a = [1, 2, 3]
+let b = [...a]
+b.push(4)
+a // [1, 2, 3]
+b // [1, 2, 3, 4]
+```
+
+```js
+let a = [1, 2, 3]
+let b = Array.from(a)
+b.push(4)
+a // [1, 2, 3]
+b // [1, 2, 3, 4]
+```
+
+## lodash.cloneDeep
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+</head>
+<script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+
+<body>
+  <script>
+    const obj = { test: 1 }
+    const newObj = _.cloneDeep(obj)
+    newObj.test2 = 2
+    console.log('old', obj, 'new', newObj)
+  </script>
+</body>
+</html>
+```
+
+## immerjs
+官方文档: [immerjs](https://immerjs.github.io/immer/zh-CN/)
+
+去除引用数据类型副作用的数据的概念我们称作 immutable，意为不可变的数据;每当我们创建一个被 deepClone 过的数据，新的数据进行有副作用 (side effect) 的操作都不会影响到之前的数据
+
+例如 array 里面的 push, pop , splice 等方法操作都是会改变原来的数组结果，这些操作都算是非 immutable。相比较而言，slice , map 这类返回操作结果为一个新数组的形式，就是 immutable 的操作。
+
+deepClone 这种函数虽然断绝了引用关系实现了immutable，但是相对来说开销太大因为他相当于完全创建了一个新的对象
+
+不可变数据指的其实就是当你修改一个数据的时候，这个数据会给你返回一个新的引用，而自己的引用保持不变;
+
+react父组件数据一变化，子组件全部都移除，再换新的，所以有了PureComponent和Memo，但是只提供了浅比较，所以这时候不可变数据就派上用场了，每次修改数据都和原数据不相等的话，就可以精确的控制更新。
+
+immerjs它将所有的原生数据类型（Object， Array等）都会转化成 immutable-js 的内部对象（Map，List 等），并且任何操作最终都会返回一个新的 immutable 的值。
+
+
+[参考](https://zhuanlan.zhihu.com/p/453357618)
+
+### 介绍
+返回值并不是一份深拷贝内容，而是共享了未被修改的数据，这样的好处就是避免了深拷贝带来的极大的性能开销问题，并且更新后返回了一个全新的引用，即使是浅比对也能感知到数据的改变。
+
+Immer 源码中，使用了一个 ES6 的新特性 Proxy 对象。Proxy 对象允许拦截某些操作并实现自定义行为
+
+### Redux Toolkit使用了Immer库来实现可变状态的不可变更新。
+当您在Redux Toolkit的reducer中输出state对象时，您可能会看到一个proxy对象，而不是原始的JavaScript对象。
+
+这是因为当您使用Redux Toolkit的createSlice函数创建一个slice时，createSlice会使用Immer包装reducer函数。这意味着您可以使用可变更新，而不必担心更改原始状态对象。Immer将拦截您的可变更更改并创建一个新的不可变状态对象。
+
+如果您想要访问原始的JavaScript对象而不是Immer创建的proxy对象，您可以通过调用Immer提供的原始对象函数来获取它。在您的reducer函数中，您可以使用以下方式来输出原始JavaScript对象：
+```js
+import { original } from 'immer'
+
+console.log('store->原始状态', original(state));
+```
