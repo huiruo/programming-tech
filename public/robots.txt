@@ -1,57 +1,90 @@
 User-agent: *
-Disallow: /algorithm/twoSum
-Disallow: /algorithm/twoDivide
-Disallow: /algorithm/threeSum
-Disallow: /css/flex
-Disallow: /css/basis
-Disallow: /css/layout
-Disallow: /css/horiz_vert
-Disallow: /css/grid
-Disallow: /css/margin
-Disallow: /css/jsDom
-Disallow: /css/gradient
-Disallow: /js/eventLoop
-Disallow: /js/vite
-Disallow: /js/nodejs1
-Disallow: /js/asyncPromise
-Disallow: /js/webpack1
-Disallow: /js/webpack2
-Disallow: /jsBase/arrayMethods
-Disallow: /jsBase/stringMapSet
-Disallow: /jsBase/loop
-Disallow: /jsBase/for-of
-Disallow: /jsBase/for-in-values
-Disallow: /jsBase/keys-getOwnPropertyNames
-Disallow: /jsBase/prototype
-Disallow: /jsBase/dataTypes
-Disallow: /jsBase/symbol
-Disallow: /jsBase/this
-Disallow: /jsBase/higherOrderFn
-Disallow: /react/readme
-Disallow: /react/react17Render
-Disallow: /react/renderBuildFiberTree
-Disallow: /react/renderCompleteWork
-Disallow: /react/renderDiff
-Disallow: /react/commit
-Disallow: /react/reactComponent
-Disallow: /react/setStateRenderAndHooks
-Disallow: /react/effectHooks
-Disallow: /react/router
-Disallow: /react/reactSsr
-Disallow: /react/reactApi
-Disallow: /react/context
-Disallow: /react/redux
-Disallow: /react/mobox
-Disallow: /vue/readme
-Disallow: /vue/vupPro
-Disallow: /vue/v-for
-Disallow: /vue/computed
-Disallow: /vue/vueCode
-Disallow: /vue/compiler-baseCompile
-Disallow: /vue/compiler-render
-Disallow: /vue/compiler-genCodeFn
-Disallow: /vue/runtimeGenVnode
-Disallow: /vue/runtimeRender
-Disallow: /vue/trackDataTrigger
-Disallow: /vue/reactiveAndEffect
-Disallow: /vue/patch-diff
+Disallow: 
+
+Allow: /dashboard
+Allow: /algorithm
+Allow: /algorithm/twoSum
+Allow: /algorithm/twoDivide
+Allow: /algorithm/threeSum
+Allow: /css
+Allow: /css/flex
+Allow: /css/basis
+Allow: /css/layout
+Allow: /css/horiz_vert
+Allow: /css/grid
+Allow: /css/margin
+Allow: /css/jsDom
+Allow: /css/gradient
+Allow: /css/transform
+Allow: /css/transition
+Allow: /css/animation
+Allow: /css/requestAnimationFrame
+Allow: /css/vueAnimation
+Allow: /js
+Allow: /js/eventLoop
+Allow: /js/vite
+Allow: /js/nodejs1
+Allow: /js/asyncPromise
+Allow: /js/webpack1
+Allow: /js/webpack2
+
+Allow: /jsBase 
+Allow: /jsBase/arrayMethods 
+Allow: /jsBase/stringMapSet 
+Allow: /jsBase/loop 
+Allow: /jsBase/for-of 
+Allow: /jsBase/for-in-values 
+Allow: /jsBase/keys-getOwnPropertyNames 
+Allow: /jsBase/prototype 
+Allow: /jsBase/dataTypes 
+Allow: /jsBase/symbol 
+Allow: /jsBase/this 
+Allow: /jsBase/bindCall 
+Allow: /jsBase/reflect 
+Allow: /jsBase/operator 
+Allow: /jsBase/es6Es7 
+Allow: /jsBase/deep-copy 
+Allow: /jsBase/higherOrderFn 
+Allow: /jsBase/inheritance 
+Allow: /jsBase/others 
+
+Allow: /ts 
+Allow: /ts/typeScript 
+Allow: /ts/interfaceType 
+Allow: /ts/keyof 
+Allow: /ts/generics 
+Allow: /ts/decorator 
+Allow: /ts/decorator2 
+Allow: /ts/example 
+
+Allow: /react 
+Allow: /react/readme 
+Allow: /react/react17Render 
+Allow: /react/renderBuildFiberTree 
+Allow: /react/renderCompleteWork 
+Allow: /react/renderDiff 
+Allow: /react/commit 
+Allow: /react/reactComponent 
+Allow: /react/setStateRenderAndHooks 
+Allow: /react/effectHooks 
+Allow: /react/router 
+Allow: /react/reactSsr 
+Allow: /react/reactApi 
+Allow: /react/context 
+Allow: /react/redux 
+Allow: /react/mobox 
+
+Allow: 	/vue  
+.Allow:/vue/readme  
+.Allow:/vue/vupPro  
+.Allow:/vue/v-for  
+.Allow:/vue/computed  
+.Allow:/vue/vueCode  
+.Allow:/vue/compiler-baseCompile  
+.Allow:/vue/compiler-render  
+.Allow:/vue/compiler-genCodeFn  
+.Allow:/vue/runtimeGenVnode  
+.Allow:/vue/runtimeRender  
+.Allow:/vue/trackDataTrigger  
+.Allow:/vue/reactiveAndEffect  
+.Allow:/vue/patch-diff  

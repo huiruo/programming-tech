@@ -1,0 +1,341 @@
+import CodePannel from '../CodePannel';
+
+## transform：转换
+定义和用法：transform 属性向元素应用 2D 或 3D 转换。该属性允许我们对元素进行旋转、缩放、移动或倾斜
+
+* translate()
+* rotate()
+* scale()
+* skew()
+* matrix()
+
+* translate() 方法
+通过 translate() 方法，元素从其当前位置移动，根据给定的 left（x 坐标） 和 top（y 坐标） 位置参数：
+```css
+/*值 translate(50px,100px) 把元素从左侧移动 50 像素，从顶端移动 100 像素。*/
+div
+{
+    transform: translate(50px,100px);
+}
+```
+* 通过 rotate() 方法，元素顺时针旋转给定的角度。允许负值，元素将逆时针旋转。
+```css
+/*值 rotate(30deg) 把元素顺时针旋转 30 度。*/
+div
+{
+    transform: rotate(30deg);
+}
+```
+* 通过 scale() 方法，元素的尺寸会增加或减少，根据给定的宽度（X 轴）和高度（Y 轴）参数：
+```css
+/*值 scale(2,4) 把宽度转换为原始尺寸的 2 倍，把高度转换为原始高度的 4 倍。*/
+div
+{
+    transform: scale(2,4);
+}
+```
+* 通过 skew() 方法，元素翻转给定的角度，根据给定的水平线（X 轴）和垂直线（Y 轴）参数：
+* matrix() 方法把所有 2D 转换方法组合在一起。
+matrix() 方法需要六个参数，包含数学函数，允许您：旋转、缩放、移动以及倾斜元素。
+
+### 方法1：translate():
+元素从其当前位置移动，根据给定的 left（x 坐标） 和 top（y 坐标） 位置参数
+```css
+/* 有两个div，它们的css样式如下： */
+.before {
+  width: 70px;
+  height: 70px;
+  background-color: #8fbc8f;
+}
+
+.after {
+  width: 70px;
+  height: 70px;
+  background-color: #ffe4c4;
+  -webkit-transform: translate(50px, 30px);
+  -moz-transform: translate(50px, 30px);
+  -ms-transform: translate(50px, 30px);
+  -o-transform: translate(50px, 30px);
+  transform: translate(50px, 30px);
+}
+```
+
+
+### 方法2：rotate():    
+```css
+/* 元素顺时针旋转给定的角度。允许负值，元素将逆时针旋转。
+有两个div，它们的css样式如下 */
+.before {
+  width: 70px;
+  height: 70px;
+  background-color: #8fbc8f;
+}
+
+.after {
+  width: 70px;
+  height: 70px;
+  background-color: #ffe4c4;
+  -webkit-transform: rotate(20deg);
+  -moz-transform: rotate(20deg);
+  -ms-transform: rotate(20deg);
+  -o-transform: rotate(20deg);
+  transform: rotate(20deg);
+}
+```
+
+### 方法3.scale()
+元素的尺寸会增加或减少，根据给定的宽度（X 轴）和高度（Y 轴）参数        
+```css
+.before {
+  width: 70px;
+  height: 70px;
+  background-color: #8fbc8f;
+}
+
+.after {
+  width: 70px;
+  height: 70px;
+  background-color: #ffe4c4;
+  -webkit-transform: scale(1.5, 0.8);
+  /*宽度变为原来的1.5倍，高度变为原来的0.8倍*/
+  -moz-transform: scale(1.5, 0.8);
+  -ms-transform: scale(1.5, 0.8);
+  -o-transform: scale(1.5, 0.8);
+  transform: scale(1.5, 0.8);
+}
+```
+
+### 方法4.skew()
+元素翻转给定的角度，根据给定的水平线（X 轴）和垂直线（Y 轴）参数   
+```css
+.before {
+  width: 70px;
+  height: 70px;
+  background-color: #8fbc8f;
+}
+
+.after {
+  width: 70px;
+  height: 70px;
+  background-color: #ffe4c4;
+  -webkit-transform: skew(20deg, 20deg);
+  /*围绕 X 轴把元素翻转20度，围绕 Y 轴翻转20度*/
+  -moz-transform: skew(20deg, 20deg);
+  -ms-transform: skew(20deg, 20deg);
+  -o-transform: skew(20deg, 20deg);
+  transform: skew(20deg, 20deg);
+}
+```
+
+## 动画-animation-transition
+export const testCode = `
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>动画</title>
+</head>
+<style>
+  /*
+  一.transition(过渡):是指从一个状态到另一个状态的变化。
+  参考：
+  https://www.w3school.com.cn/cssref/pr_transition.asp
+
+  transition 属性是一个简写属性，用于设置四个过渡属性：
+  1.transition-property:规定设置过渡效果的 CSS 属性的名称。
+  2.transition-duration:规定完成过渡效果需要多少秒或毫秒。
+    transition-duration: time;	
+  3.transition-timing-function:规定速度效果的速度曲线。
+    linear	规定以相同速度开始至结束的过渡效果（等于 cubic-bezier(0,0,1,1)）。
+    ease	默认。动画以低速开始，然后加快，在结束前变慢。
+    ease-in	动画以低速开始。
+    ease-out	动画以低速结束。
+  4.transition-delay:定义过渡效果何时开始。
+
+  简写：transition: property duration timing-function delay;
+ */
+  .demo {
+    transition: background 1s linear;
+    background: blue;
+    width: 100px;
+    height: 100px;
+    transition: width 2s;
+  }
+
+  /*
+  二.animation 属性是一个简写属性，用于设置六个动画属性：
+  参考：
+  https://www.w3school.com.cn/cssref/pr_animation.asp
+
+  1.animation-name: 规定需要绑定到选择器的 keyframe 名称。。
+  2.animation-duration: 规定完成动画所花费的时间，以秒或毫秒计。
+  3.animation-timing-function:规定动画的速度曲线。
+    linear	动画从头到尾的速度是相同的。
+    ease	默认。动画以低速开始，然后加快，在结束前变慢。
+    ease-in	动画以低速开始。
+    ease-out	动画以低速结束。
+  4.animation-delay:规定在动画开始之前的延迟。
+  5.animation-iteration-count:规定动画应该播放的次数。
+  6.animation-direction:规定是否应该轮流反向播放动画。
+
+  简写：语法
+  animation: name duration timing-function delay iteration-count direction;
+ */
+  .num {
+    background: yellow;
+    /* animation: myNum 1s 1; */
+  }
+
+  @keyframes myNum {
+    0% {
+      transform: scale(1);
+      /*开始为原始大小*/
+    }
+
+    /*
+      25% {
+        transform: scale(1.1); 放大1.1倍
+      }
+      50% {
+        transform: scale(1);
+      }
+      */
+    75% {
+      transform: scale(1.1);
+    }
+  }
+
+  /*
+    -webkit-animation-name: scaleDraw; 关键帧名称
+    -webkit-animation-timing-function: ease-in-out; 动画的速度曲线
+    -webkit-animation-iteration-count: infinite;  动画播放的次数
+    -webkit-animation-duration: 5s; 动画所花费的时间
+
+	  合起来写：
+	  -webkit-animation: scaleDraw 5s ease-in-out infinite;
+  */
+  .myMove {
+    width: 100px;
+    height: 100px;
+    background: red;
+    position: relative;
+    animation: mymove 5s infinite;
+  }
+
+  @keyframes mymove {
+    from {
+      left: 0px;
+    }
+
+    to {
+      left: 400px;
+    }
+
+    transform: scale(1.1);
+  }
+
+  /*参考 start*/
+  .bounce-enter-active {
+    /*进入时间*/
+    animation: bounce-in 3s;
+  }
+
+  .bounce-leave-active {
+    /*离开时间*/
+    animation: bounce-in 1s reverse;
+  }
+
+  @keyframes bounce-in {
+
+    /*开始放大倍数*/
+    0% {
+      transform: scale(0);
+    }
+
+    50% {
+      /*50%时放大倍数：x轴和y轴*/
+      transform: scale(2.2, 1.6);
+    }
+
+    100% {
+      /*最终放大倍数*/
+      transform: scale(1);
+    }
+  }
+</style>
+<script>
+  function buttonClick() {
+    const box = document.getElementById("demoId");
+    const width = box.clientWidth;
+    const numDom = document.getElementById("demoId");
+    const numwidth = numDom.clientWidth;
+    if (width >= 300) {
+      box.style.width = "100px";
+    } else {
+      box.style.width = "300px";
+    }
+    console.log("box", box);
+    console.log("box", width);
+  }
+</script>
+
+<body>
+  <div id="demoId" class="demo" />
+
+  <div>
+    <button type="button" onclick="buttonClick();">按钮,测试transition</button>
+  </div>
+
+  <div class="myMove"></div>
+</body>
+
+</html>
+`
+
+<CodePannel name='动画-animation-transition' language='html' code={testCode} height='500px'/>
+
+## transition-基础-鼠标悬停下拉
+export const testCode2 = `
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title></title>
+	<style type="text/css">
+		#transition-demo2 {
+			height: 100px;
+			background-color: yellowgreen;
+			transition: height 1s 0.5s ease-out;
+		}
+
+		#transition-demo2:hover {
+			height: 200px;
+		}
+
+		/*
+transition常用属性:
+	transition-property: height; // 适用于哪个属性
+	transition-duration: 1s;
+	transition-delay: 1s;
+	transition-timing-function: ease/linear/ease-in(加速)/ease-out/cubic-bezier(自定义)；
+
+transition特性:
+	1.需要具体数值，不能用block,none等
+	2.transition需用事件触发，不能在网页加载时自动发生
+	3.一次性，不能重复发生，除非一再触发
+	4.只有两个状态：开始和结束状态
+	5.一条transition规则只能定义一个属性
+*/
+	</style>
+</head>
+
+<body>
+	<div id="transition-demo2">
+		transition例子，鼠标悬停试试
+	</div>
+</body>
+
+</html>
+`
+
+<CodePannel name='transition-基础-鼠标悬停下拉' language='html' code={testCode2} height='500px'/>

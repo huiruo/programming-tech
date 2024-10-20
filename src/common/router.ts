@@ -33,6 +33,11 @@ export const sidebar: ISidebar[] = [
       { href: "/css/margin", label: "margin" },
       { href: "/css/jsDom", label: "jsDom" },
       { href: "/css/gradient", label: "gradient" },
+      { href: "/css/transform", label: "transform" },
+      { href: "/css/transition", label: "transition" },
+      { href: "/css/animation", label: "animation" },
+      { href: "/css/requestAnimationFrame", label: "requestAnimationFrame" },
+      { href: "/css/vueAnimation", label: "Vue Animation" },
     ]
   },
   {
