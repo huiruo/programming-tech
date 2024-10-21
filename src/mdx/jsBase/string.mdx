@@ -1,0 +1,461 @@
+import CodeBlock from '../../components/codeBlock';
+
+## test() 方法和 exec() 方法比较
+<CodeBlock>
+```js
+/*
+* ## 1.正则匹配html
+* */
+let richText = `< div > test < p > <b> </b></p ></div > `
+let reg = /<([a-z]+?)(?:\s+?[^>]*?)?>\s*?<\/\1>/ig;
+while (reg.test(richText)) {
+    richText = richText.replace(reg, "");
+}
+console.log("1.正则匹配html", richText)
+
+/*
+* 去除空格
+* */
+let str = " 546546 4564 46 46 88 88 ";
+let strR = str.replace(/\s+/g, "");
+console.log('去除空格:', strR);
+
+/*
+* 请输入正确的金额,如果有小数点保留后两位
+* */
+// let input = 12222
+let input = 12222.0999
+const reg2 = /(^[1-9]([0-9]+)?(\.[0-9]{1,2})?$)|(^(0){1}$)|(^[0-9]\.[0-9]([0-9])?$)/
+if (reg2.test(input)) {
+    console.log('输入数字合法')
+} else {
+    console.log('输入不合法')
+}
+
+/*
+* 取出数字：
+* */
+const strN = "中国移动:10086,中国联通:10010,中国电信:10000";
+const regN = /\d{5}/g;
+//通过正则表达式匹配这个字符串
+let arrayN = regN.exec(str);
+while (arrayN != null) {
+    //输出匹配的内容
+    console.log(arrayN[0]);
+    arrayN = regN.exec(strN);  // 再次匹配
+}
+console.log('arrayN', arrayN)
+
+// 用math 实现
+console.log('取出数字用math实现：', strN.match(regN))
+
+/*
+*
+*
+* */
+let sharebyStr = 'lang=en'
+let regShare = RegExp(/lang=en/);
+if (sharebyStr && sharebyStr.match(regShare)) {
+    console.log("带参且带lang=en")
+} else {
+    console.log("不带参数")
+}
+
+/*
+//表情emoji 限制
+const emojiReg = /\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDE4F]/g
+let customerReviewsFilter = this.customerReviews
+if (emojiReg.test(this.customerReviews)) {
+    // console.log('输入暂不支持表情,过滤')
+    customerReviewsFilter = this.customerReviews.replace(/\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDE4F]/g, '')
+    // console.log('customerReviewsFilter__', customerReviewsFilter)
+}
+* */
+```
+</CodeBlock>
+
+JavaScript RegExp 对象是有状态的。他们会将上次成功匹配后的位置记录在 lastIndex 属性中。使用此特性，
+
+exec() 可用来对单个字符串中的多次 * 匹配结果进行逐条的遍历（包括捕获到的匹配），
+
+而相比之下， String.prototype.match() 只会返回匹配到的结果。
+
+如果你只是为了判断是否匹配（true或 false），可以使用 RegExp.test() 方法，或者 String.search() 方法。
+
+```js
+const regex1 = RegExp('foo*', 'g');
+const str1 = 'table football, foosball';
+let array1;
+
+while ((array1 = regex1.exec(str1)) !== null) {
+  console.log(`Found ${array1[0]}. Next starts at ${regex1.lastIndex}.`);
+  // expected output: "Found foo. Next starts at 9."
+  // expected output: "Found foo. Next starts at 19."
+}
+```
+### test()
+
+* 如果字符串与正则表达式匹配，test()方法返回true，否则返回false。
+```js
+const pattern = /abc/;
+const text = "abcdef";
+const result = pattern.test(text);
+console.log(result); // 输出 true，因为 "abcdef" 包含 "abc"
+```
+
+```js
+/*
+* 执行一个检索，用来查看正则表达式与指定的字符串是否匹配。返回 true 或 false
+* */
+
+const text = "000-00-0000";
+const pattern = /\d{3}-\d{2}-\d{4}/;
+if (pattern.test(text)) {
+    console.log("The pattern was matched.");
+} else {
+    console.log('not ok');
+}
+
+/*
+/[^0-9]/g
+/[^\d]/g
+*/
+
+// 需求：必须精确到小数点后4位
+// const pattern2 = /^([0-9]{1,}[.][0-9]{4})$/;
+// const pattern2 = /^([0-9]{3}[.][0-9]{4})$/;
+const pattern2 = /^(([1-9][0-9]*){3}[.][0-9]{4})$/;
+// const text2 = 12.333
+// const text2 = 12.3334
+// const text2 = 123.3334
+// const text2 = 123.333455
+const text2 = '023.3334'
+if (pattern2.test(text2)) {
+    console.log("必须精确到小数点后4位,The pattern was matched.");
+} else {
+    console.log('not ok');
+}
+
+console.log('=======');
+// let reg = /^[\d]{2}$/g;
+// let reg = /^([1-9][0-9]*)$/;
+let reg = /^[1-9][0-9]*$/;
+let str = "12";
+// let str = "012";
+// let str = "0";
+console.log(reg.test(str));     //返回true
+```
+
+### exec()
+1. exec()方法用于在字符串中查找匹配的文本，返回一个数组，其中包含匹配的子串和捕获组。
+
+2. 如果没有找到匹配，exec()返回null。
+
+3. 如果找到匹配，返回的数组包含匹配的文本作为第一个元素，然后是捕获组的匹配结果（如果有的话）。
+
+```
+exec()方法用于查找匹配，返回匹配的文本和捕获组信息。如果没有匹配，返回null。
+
+exec()方法更适合在需要获取匹配的详细信息时使用，而test()方法通常用于简单的布尔匹配检查。
+```
+```js
+const pattern = /ab(c)/;
+const text = "abcdef";
+const result = pattern.exec(text);
+if (result) {
+  console.log(result[0]); // 输出 "abc"，匹配的文本
+  console.log(result[1]); // 输出 "c"，捕获组中的匹配
+} else {
+  console.log("No match found");
+}
+```
+
+```js
+/* 
+正则表达式"g"标识使用
+正则表达式使用"g"标识时，如果要查找目标字符串中所有的匹配，需要多次执行exec()方法，
+每次执行时，都是从 lastIndex属性指定的位置开始匹配
+* */
+let str = 'hell word';
+let pattern = /o/;
+console.log(pattern.exec(str));
+// [ 'o', index: 6, input: 'hell word', groups: undefined ]
+
+let reg2 = /hello hu(\w+)/;
+let str2 = 'hello huxiao6, balabala, hello huDi, 724';
+let result = reg2.exec(str2);
+console.log(result)
+/*
+[
+  'hello huxiao6',
+  'xiao6',
+  index: 0,
+  input: 'hello huxiao6, balabala, hello huDi, 724',
+  groups: undefined
+]
+* */
+```
+
+### exec例子
+```js
+/*
+* 规则：对于 exec() 方法
+在模式中设置了全局标志（ g ），它每次也只会返回一个匹配项，多次调用exec() ，每次调用则都会在字符串中继续查找新匹配项；
+* */
+const text = "cat, bat, sat, fat";
+const pattern2 = /.at/g;
+let matches = pattern2.exec(text);   // 返回数组 ["cat", index: 0, input: "cat, bat, sat, fat", groups: undefined]
+console.log(matches.index);                // 0
+console.log(matches[0]);                   // cat
+console.log(pattern2.lastIndex);           // 3
+
+matches = pattern2.exec(text);       // 返回数组 ["bat", index: 5, input: "cat, bat, sat, fat", groups: undefined]
+console.log(matches.index);                // 5
+console.log(matches[0]);                   // bat
+console.log(pattern2.lastIndex);           // 8
+
+console.log('分割线=====》end')
+console.log('分割线=====》end')
+
+/*
+* 在不设置全局标志的情况下，在同一个字符串上多次调用 exec() 将始终返回第一个匹配项的信息。
+* */
+let text2 = "cat, bat, sat, fat";
+let pattern1 = /.at/;
+let matches2 = pattern1.exec(text2);    // 返回数组 ["cat", index: 0, input: "cat, bat, sat, fat", groups: undefined]
+console.log(matches2.index);                 // 0
+console.log(matches2[0]);                    // cat
+console.log(pattern1.lastIndex);            // 0
+
+matches2 = pattern1.exec(text);
+console.log(matches2.index);                 // 0
+console.log(matches2[0]);                    // cat
+console.log(pattern1.lastIndex);            // 0
+```
+
+## 03-search-字符串中查找指定值返回-1或值
+search() 方法是 JavaScript 中用于在字符串中查找指定值。它可以在一个字符串中查找与给定的正则表达式相匹配的值，并返回匹配到的第一个字符的位置。如果没有找到匹配的值，则返回 -1。
+
+regexp 一个正则表达式（regular expression）对象。如果传入一个非正则表达式对象 regexp，则会使用 new RegExp(regexp) 隐式地将其转换为正则表达式对象。
+```js
+const str = "hey JudE";
+const re = /[A-Z]/g;
+console.log(str.search(re)); // returns 4
+console.log(str.search(/h/)); // returns 0
+console.log(str.search(/hy/)); // returns -1
+console.log(str[str.search(re)]) // J
+```
+
+## 04-replace-替换字符串中指定值
+replace() 
+
+用于替换字符串中指定的值。它接受两个参数，第一个参数是需要被替换的值，第二个参数是替换后的值。replace() 方法会返回一个新的字符串，其中包含被替换后的内容。
+
+例如，我们可以使用 replace() 方法来替换字符串中的所有空格，如下所示：
+```js
+let str = "  天气真好    ,太幸福了  ";
+// \s表示空白符，+表示多个空白符
+let strNew = str.replace(/\s+/g, "");
+console.log(`str:${strNew},old:${str}`); // str:天气真好,太幸福了,old:  天气真好    ,太幸福了  
+
+// trim只能去掉收尾
+console.log('trim:',str.trim()); // trim: 天气真好    ,太幸福了
+console.log('old',str)
+```
+
+* 模式可以是一个字符串或者一个正则表达式，替换值可以是一个字符串或者一个每次匹配都要调用的回调函数。如果pattern是字符串，则仅替换第一个匹配项。 
+
+* 原字符串不会改变。
+
+
+使用2：正则表达式用对象的方式
+```js
+let reg = new RegExp(/[h]/gi);
+let str3 = "HhpphH";
+let str3New = str3.replace(reg, "S");
+console.log(`${str3New}`); // SSppSS
+```
+
+## match-搜索指定值并返回数组
+match()方法是字符串对象的方法，用于在字符串中查找正则表达式的匹配。
+
+该方法接受一个正则作为参数，用来匹配一个字符串，
+```
+result返回值有两个属性可以记下：
+input: 原始字符串，即 str;
+index: 匹配到的字符位于原始字符串的索引值, 索引初始值为0；
+lastIndex: 正则表达式属性,下一次匹配开始的位置
+```
+
+* 当正则表达式包含全局标志 g 时，match()方法会返回一个数组，包含所有匹配的子字符串。
+* 如果正则表达式没有全局标志，match()只返回第一个匹配项及其捕获组。
+* 如果没有找到匹配，match()返回 null。
+* match()方法不提供详细的捕获组信息，只返回匹配的子字符串。
+```js
+const text = "abcdef abcgh";
+const pattern = /abc/g;
+const result = text.match(pattern);
+console.log(result); // 输出 ["abc", "abc"]
+```
+
+实战：使用js正则截取-key-前面的字符串
+```js
+const test1 = 'page-key-0';
+const test2 = 'ptest-key-0';
+const test3 = 'a-key-1';
+
+const regex = /(.+)-key-/;
+const result1 = test1.match(regex)[1];
+const result2 = test2.match(regex)[1];
+const result3 = test3.match(regex)[1];
+
+console.log(result1); // 输出：page
+console.log(result2); // 输出：ptest
+console.log(result3); // 输出：a
+```
+
+### 和exec区别
+exec()方法是正则表达式对象的方法，用于在字符串中查找匹配。
+
+exec()方法返回一个数组，其中包含匹配的子串和捕获组的信息。
+如果没有找到匹配，exec()返回 null。
+当正则表达式包含全局标志 g 时，exec()方法可以被多次调用，每次调用都会查找下一个匹配项。
+
+异同：
+* match()方法用于在字符串中查找正则表达式的匹配，返回匹配的子字符串数组。
+* exec()方法用于在字符串中查找匹配，返回匹配的文本和捕获组信息。它还可以用于多次查找匹配项。
+* 如果只需要匹配的子字符串，通常可以使用match()方法。如果需要获取更多关于匹配项的信息，或者需要多次查找匹配项，可以使用exec()方法。
+
+## trim
+trim 方法可以用来去除一个字符串开头和结尾的空格。
+
+它可以让你方便地删除字符串前后的空白，以便让字符串的开头和结尾处都没有空格。
+```js
+const str = "   hello world!   ";
+console.log(str.trim());
+```
+
+## 1.js 字符串两边截取空白的 trim 的原型方法的实现
+js 中本身是没有 trim 函数的。
+```js
+/*
+删除左右两端的空格
+删除左边的空格 /(^s*)/g
+删除右边的空格 /(s*$)/g
+*/
+function trim(str){
+ return str.replace(/(^s*)|(s*$)/g, "");
+}
+```
+
+## 截取字符串
+### js截取两个字符串之间的内容：
+```js
+let str1 = "aaabbbcccdddeeefff";
+console.log(str1.match(/aaa(\S*)fff/)[1]);// 结果 bbbcccdddeee
+
+// 某个字符串前面的内容：
+let str2 = "aaabbbcccdddeeefff";
+console.log(str2.match(/(\S*)fff/)[1]);//结果 aaabbbcccdddeee
+
+// js截取某个字符串后面的内容：
+let str3 = "aaabbbcccdddeeefff";
+console.log(str3.match(/aaa(\S*)/)[1]);//结果 bbbcccdddeeefff
+```
+
+### 例子：去掉首尾字符
+使用字符串方法实现:查找出第一个不是空格的字符
+
+查出最后一个不是空格的字符，截取中间的内容即可
+
+substring()	提取字符串中两个指定的索引号之间的字符。
+slice 同理
+```js
+function _trim2(targetStr){
+    console.log(`${targetStr.search(/\S/)}`)
+
+    let startIndex = Math.max(targetStr.search(/\S/), 0);
+    // test
+    console.log('test:',targetStr.match(/\S\s*$/g)); // test: [ 'a  ' ]
+    let endIndex = targetStr.search(/\S\s*$/) + 1;
+
+    console.log(`startIndex:${startIndex},endIndex:${endIndex}`)
+    return targetStr.slice(startIndex, endIndex);
+}
+
+let strTest2 = `  hello world haha   hhhhhha  `;
+console.log(`实现3${_trim2(strTest2)}`)
+```
+
+## substr-substring-slice
+### substr 已经不建议使用：
+substr 从起始索引号提取字符串中指定数目的字符。
+
+ substring方法与substr方法的不同之处在于，substring方法的第二个参数表示的是结束位置，而不是截取的长度。
+
+```js
+console.log('substr1:', str.substr(3))
+// 输出lo world！
+console.log('substr1_test:', str.substr(1))
+// substr1_test: ello world!
+console.log('substr2', str.substr(3, 7))
+// lo worl
+```
+
+### substring
+```js
+const str = "Hello world!"
+
+console.log('substring 1:', str.substring(3)) // lo world!
+//因为indexEnd为默认，所以从下标3开始截取，后面的全部截取
+console.log('substring 2:', str.substring(3, 7)) // lo w
+// indexStart为3，所以从三开始取，取到'l'
+// indexEnd为7，所以取到第六位（注意：是第六位），'w'
+// 所以输出为'lo w'
+```
+
+```js
+const str3 = "Hello world!"
+console.log('slice 1:', str3.slice(3)) // lo world!!
+console.log('slice 2:', str3.slice(3, 7)) // lo w
+console.log('str3:', str3)
+```
+
+截取后几位
+```js
+const str = "Hello world!"
+//因为indexEnd为默认，所以从下标3开始截取，后面的全部截取
+console.log('substring 2:', str.substring(3, 7)) // lo w
+```
+
+## indexOf-lastIndexOf
+indexOf: 返回字符串中检索指定字符第一次出现的位置
+lastIndexOf
+```js
+const str = 'hello world'
+
+console.log('test:',str.indexOf('o')) // 4
+// search 也可以达到同样效果
+console.log(str.search(/[o]/g)); // 4
+console.log('截取',str.slice(0,str.indexOf('o'))) // hell
+```
+
+## startsWith-indexOf-的区别
+jumpUrl.startsWith('http')  和 jumpUrl.indexOf('http') > -1 的区别
+
+### startsWith，专门用于检查一个字符串是否以指定的前缀开头。
+如果 jumpUrl 以 'http' 开头，它将返回 true；否则，返回 false。
+
+```js
+const jumpUrl = '/pages/group/index/index?url=https%3A%2F%2Fprintchaintest.xx.com%2Factivity-center-front%2F%23%2Fdraw%2Findex'
+if (jumpUrl.startsWith('http')) {
+  console.log('jumpUrl 以 "http" 开头');
+} else {
+  console.log('jumpUrl 不以 "http" 开头');
+}
+```
+
+### jumpUrl.indexOf('http') > -1:
+* indexOf 方法来检查字符串中是否包含子字符串 'http'。
+* 如果 jumpUrl 中包含 'http'，indexOf 返回 'http' 在字符串中的位置索引，如果找不到则返回 -1。
+* 通过检查索引是否大于 -1，可以确定是否存在 'http'。

@@ -7,20 +7,6 @@ export interface ISidebar {
 
 export const sidebar: ISidebar[] = [
   {
-    label: 'Dashboard',
-    href: '/dashboard',
-  },
-  {
-    label: 'Algorithm',
-    href: '/algorithm',
-    type: 'category',
-    items: [
-      { href: "/algorithm/twoSum", label: "twoSum" },
-      { href: "/algorithm/twoDivide", label: "twoDivide" },
-      { href: "/algorithm/threeSum", label: "threeSum" },
-    ]
-  },
-  {
     label: 'Html css',
     href: '/css',
     type: 'category',
@@ -38,6 +24,15 @@ export const sidebar: ISidebar[] = [
       { href: "/css/animation", label: "animation" },
       { href: "/css/requestAnimationFrame", label: "requestAnimationFrame" },
       { href: "/css/vueAnimation", label: "Vue Animation" },
+      {
+        label: 'WebGL',
+        href: '/webGL',
+        type: 'category',
+        items: [
+          { href: "/webGL/readme", label: "WebGL" },
+          { href: "/webGL/matrix", label: "Transformation Matrix" },
+        ]
+      },
     ]
   },
   {
@@ -46,8 +41,9 @@ export const sidebar: ISidebar[] = [
     type: 'category',
     items: [
       { href: "/js/eventLoop", label: "Event Loop" },
-      { href: "/js/vite", label: "vite" },
-      { href: "/js/nodejs1", label: "nodejs1" },
+      { href: "/js/nodejseventLoop", label: "Nodejs Event Loop" },
+      { href: "/js/vite", label: "Vite" },
+      { href: "/js/nodejs", label: "Nodejs" },
       { href: "/js/asyncPromise", label: "Async Promise" },
       { href: "/js/webpack1", label: "webpack 基本原理" },
       { href: "/js/webpack2", label: "微前端" },
@@ -57,6 +53,7 @@ export const sidebar: ISidebar[] = [
         type: 'category',
         items: [
           { href: "/jsBase/arrayMethods", label: "Array Methods" },
+          { href: "/jsBase/string", label: "String" },
           { href: "/jsBase/stringMapSet", label: "String Map Set" },
           { href: "/jsBase/loop", label: "loop" },
           { href: "/jsBase/for-of", label: "for-of" },
@@ -74,6 +71,7 @@ export const sidebar: ISidebar[] = [
           { href: "/jsBase/higherOrderFn", label: "高阶函数-柯里化" },
           { href: "/jsBase/inheritance", label: "Inheritance" },
           { href: "/jsBase/others", label: "others" },
+          { href: "/jsBase/regular", label: "regular" },
         ]
       },
       {
@@ -133,5 +131,55 @@ export const sidebar: ISidebar[] = [
       { href: "/vue/reactiveAndEffect", label: "Reactive And Effect" },
       { href: "/vue/patch-diff", label: "Patch-diff" },
     ],
+  },
+  {
+    label: 'Web optimization',
+    href: '/web-optimi',
+    type: 'category',
+    items: [
+      { href: "/web-optimi/optimization", label: "Optimization" },
+      { href: "/web-optimi/react", label: "React Vue" },
+      { href: "/web-optimi/intl", label: "Intl" },
+    ],
+  },
+  {
+    label: 'Parsing interpretation compilation',
+    href: '/parsing-inte-co',
+    type: 'category',
+    items: [
+      { href: "/parsing-inte-co/parsesAST", label: "Parses->AST->Bytecode" },
+      { href: "/parsing-inte-co/closureMemory", label: "Closure-Memory Life Cycle" },
+      { href: "/parsing-inte-co/babelConvertsEs6", label: "Babel converts es6" },
+      { href: "/parsing-inte-co/verdaccio", label: "Verdaccio" },
+      { href: "/parsing-inte-co/pre-analysis", label: "Pre-analysis-variable" },
+      { href: "/parsing-inte-co/scope", label: "Scope" },
+      { href: "/parsing-inte-co/contextFunction", label: "Execution context-function call stack" },
+      {
+        label: 'Js Modules',
+        href: '/jsModules',
+        type: 'category',
+        items: [
+          { href: "/jsModules/esm", label: "Esm" },
+          { href: "/jsModules/cjs", label: "Cjs" },
+          { href: "/jsModules/cjsEsm", label: "Cjs esm differences" },
+          { href: "/jsModules/modulesClosures", label: "Modules and Closures" },
+          { href: "/jsModules/commonJSImport", label: "ESM and CommonJS import" },
+        ]
+      },
+    ],
+  },
+  // {
+  //   label: 'Dashboard',
+  //   href: '/dashboard',
+  // },
+  {
+    label: 'Algorithm',
+    href: '/algorithm',
+    type: 'category',
+    items: [
+      { href: "/algorithm/twoSum", label: "twoSum" },
+      { href: "/algorithm/twoDivide", label: "twoDivide" },
+      { href: "/algorithm/threeSum", label: "threeSum" },
+    ]
   },
 ]

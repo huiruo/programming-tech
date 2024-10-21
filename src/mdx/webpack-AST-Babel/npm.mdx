@@ -3,3 +3,19 @@
 3. 下载压缩包，存放在~/.npm目录；
 4. 安装模块:解压压缩包到当前项目的node_modules目录；
 5. 生成或更新版本描述文
+
+## 解决版本报错，
+https://github.com/vercel/next.js/issues/65161
+
+```bash
+# Try "react": "18.2.0" (without ^). "react": "^18.2.0" will install react 18.2.0 or higher.
+yarn add react@18.2.0
+
+这二者是不同的，
+yarn add react@^18.2.0
+```
+
+## yarn remove
+```bash
+yarn remove react
+```
