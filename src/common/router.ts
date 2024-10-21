@@ -47,6 +47,7 @@ export const sidebar: ISidebar[] = [
       { href: "/js/asyncPromise", label: "Async Promise" },
       { href: "/js/webpack1", label: "webpack 基本原理" },
       { href: "/js/webpack2", label: "微前端" },
+      { href: "/js/throttleDebounce", label: "Throttle Debounce" },
       {
         label: 'jsBase',
         href: '/jsBase',
@@ -72,6 +73,18 @@ export const sidebar: ISidebar[] = [
           { href: "/jsBase/inheritance", label: "Inheritance" },
           { href: "/jsBase/others", label: "others" },
           { href: "/jsBase/regular", label: "regular" },
+        ]
+      },
+      {
+        label: 'Promise',
+        href: '/promise',
+        type: 'category',
+        items: [
+          { href: "/promise/basics", label: "Promise basics" },
+          { href: "/promise/generator", label: "generator" },
+          { href: "/promise/promise", label: "promise具体实现" },
+          { href: "/promise/async-await", label: "async-await" },
+          { href: "/promise/axios", label: "axios" },
         ]
       },
       {
@@ -167,6 +180,31 @@ export const sidebar: ISidebar[] = [
         ]
       },
     ],
+  },
+  {
+    label: 'Http-browser',
+    href: '/http-browser',
+    type: 'category',
+    items: [
+      { href: "/http-browser/webRenderingProcess", label: "Web rendering process" },
+      { href: "/http-browser/browserCache", label: "Browser cache" },
+      { href: "/http-browser/compatibility", label: "Browser compatibility" },
+      { href: "/http-browser/TCPIP", label: "TCP-IP-Handshake" },
+      { href: "/http-browser/httpsEncryption", label: "Https-encryption" },
+      { href: "/http-browser/httpMessage", label: "Http message" },
+      { href: "/http-browser/httpJsStreamSee", label: "http-jsStream-see" },
+      { href: "/http-browser/crossDomain", label: "Reverse/forward proxy" },
+      { href: "/http-browser/token-cookie-session", label: "Token-cookie-session" },
+      { href: "/http-browser/eventsBubblingCapture", label: "Events Bubbling Capture" },
+      { href: "/http-browser/webSecurity", label: "Web security:XSS/CSRF" },
+      { href: "/http-browser/renderingProcess", label: "Browser rendering process" },
+      { href: "/http-browser/serviceWorkers", label: "Service Workers" },
+      { href: "/http-browser/webAssembly", label: "WebAssembly" },
+      { href: "/http-browser/webComponents", label: "Web Components" },
+      { href: "/http-browser/DNS", label: "DNS" },
+      { href: "/http-browser/WebSocket", label: "WebSocket" },
+      { href: "/http-browser/socks5", label: "Socks5-Shadowsocks" },
+    ]
   },
   // {
   //   label: 'Dashboard',

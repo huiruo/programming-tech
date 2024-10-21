@@ -1,0 +1,58 @@
+## 2.浏览器的兼容性无非还是样式兼容性（css），交互兼容性（javascript），浏览器 hack 三个方面。
+https://zhuanlan.zhihu.com/p/39067069
+
+### 2-1.样式兼容性（css）方面：
+
+html5 css3的兼容性浏览器都支持它们中的大多数
+
+### 2-3.交互兼容性（javascript）：
+> 1.事件兼容的问题，我们通常需要会封装一个适配器的方法，过滤事件句柄绑定、移除、冒泡阻止以及默认事件行为处理
+```js
+var  helper = {}
+
+//绑定事件
+helper.on = function(target, type, handler) {
+    if(target.addEventListener) {
+        target.addEventListener(type, handler, false);
+    } else {
+        target.attachEvent("on" + type,
+            function(event) {
+                return handler.call(target, event);
+            }, false);
+    }
+};
+
+//取消事件监听
+helper.remove = function(target, type, handler) {
+    if(target.removeEventListener) {
+        target.removeEventListener(type, handler);
+    } else {
+        target.detachEvent("on" + type,
+        function(event) {
+            return handler.call(target, event);
+        }, true);
+    }
+};
+```
+
+
+### 2-4.对于时间的解析ios 不同
+new Date("2018-10-16 17:00:00")结果为 invalid date
+```js
+所以可以将2018-10-16 17:00:00改为上述的格式，如下：
+
+var regTime = result.RegTime.replace(/\-/g, "/");
+或则
+var time = "2017-06-23 17:00:00";
+time = time.replace(/-/g,':').replace(' ',':'); // 注意，第二个replace里，是' '，中间有个空格，千万不能遗漏
+time = time.split(':');
+var time1 = new Date(time[0],(time[1]-1),time[2],time[3],time[4],time[5]);
+```
+
+```js
+2. new Date()构造函数使用，’2018-07-05’是无法被各个浏览器中，使用new Date(str)来正确生成日期对象的。 正确的用法是’2018/07/05’.
+
+3. 获取 scrollTop 通过 document.documentElement.scrollTop 兼容非chrome浏览器
+
+var scrollTop = document.documentElement.scrollTop||document.body.scrollTop;
+```
