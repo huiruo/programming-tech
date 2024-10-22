@@ -36,7 +36,7 @@ export const sidebar: ISidebar[] = [
     ]
   },
   {
-    label: 'Js',
+    label: 'JavaScript',
     href: '/js',
     type: 'category',
     items: [
@@ -218,6 +218,36 @@ export const sidebar: ISidebar[] = [
       { href: "/algorithm/twoSum", label: "twoSum" },
       { href: "/algorithm/twoDivide", label: "twoDivide" },
       { href: "/algorithm/threeSum", label: "threeSum" },
+    ]
+  },
+  {
+    label: 'Docker',
+    href: '/docker',
+    type: 'category',
+    items: [
+      { href: "/docker/basics", label: "Basics" },
+      { href: "/docker/docker_nginx", label: "Docker nginx" },
+      { href: "/docker/dockerCommands", label: "Docker Commands" },
+      { href: "/docker/dockerfileCommands", label: "Dockerfile Commands" },
+      { href: "/docker/dockerSwarm", label: "DockerSwarm" },
+      { href: "/docker/dockerContainerStatus", label: "Docker container status" },
+      { href: "/docker/K8S", label: "K8S" },
+      { href: "/docker/microservices", label: "Microservices" },
+    ]
+  },
+  {
+    label: 'Design patterns',
+    href: '/designPatterns',
+    type: 'category',
+    items: [
+      { href: "/designPatterns/basics", label: "Design patterns" },
+      { href: "/designPatterns/singletonPattern", label: "Singleton Pattern" },
+      { href: "/designPatterns/factoryMode", label: "Factory Mode" },
+      { href: "/designPatterns/publishSubscribe", label: "Publish and Subscribe" },
+      { href: "/designPatterns/decoratorPattern", label: "Decorator Pattern" },
+      { href: "/designPatterns/adapterMode", label: "Adapter Mode" },
+      { href: "/designPatterns/proxyMode", label: "Proxy Mode" },
+      { href: "/designPatterns/strategyMode", label: "Strategy Mode" },
     ]
   },
 ]
