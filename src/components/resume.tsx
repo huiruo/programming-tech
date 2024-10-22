@@ -102,9 +102,9 @@ export const Resume = () => {
       <li className='mg1-bottom'>
         阿语社交应用
         <div>
-          介绍:&nbsp;阿语社交应用。
+          介绍:阿语社交应用。
         </div>
-        体验:&nbsp;<div>
+        体验:<div>
           <a target="_blank" href='https://sada.mobi/'>
             Sada
           </a>
@@ -120,23 +120,23 @@ export const Resume = () => {
       <li className='mg1-bottom'>
         泰山啤酒小程序
         <div>
-          介绍:&nbsp;千万用户级应用，日流水百万的啤酒商城。
+          介绍:千万用户级应用，日流水百万的啤酒商城。
         </div>
-        <div>体验：微信搜索"泰山原浆啤酒"</div>
+        <div>体验：微信搜索:泰山原浆啤酒</div>
         {/* <div className='onpreview' onClick={() => onPreview(1)}>演示截图</div> */}
       </li>
 
       <li className='mg1-bottom'>
         低代码商城设计器
         <div className='flex'>
-          体验:&nbsp;<div>
+          体验:<div>
             <a target="_blank" href='https://dcode-editor.vercel.app/#/'>
               Dcode商城设计器(部署在vercel,访问要梯子🤣)
             </a>
           </div>
         </div>
         <div>
-          github:&nbsp;
+          github:
           <a target="_blank" href='https://github.com/huiruo/dcode-editor'>
             Dcode商城设计器
           </a>
@@ -146,7 +146,7 @@ export const Resume = () => {
       <li className='mg1-bottom'>
         低代码建站平台
         <div>
-          介绍:&nbsp;“数字妙笔”低代码平台提供了画布编辑，界面下方提供了丰富的图形组件，并支持引用多种开源组件实现丰富的图表及异形控件，只需要一键拖拽到画布区域，即可快速构建实现设计图效果。
+          介绍:“数字妙笔”低代码平台提供了画布编辑，界面下方提供了丰富的图形组件，并支持引用多种开源组件实现丰富的图表及异形控件，只需要一键拖拽到画布区域，即可快速构建实现设计图效果。
           {/* <div className='onpreview' onClick={() => onPreview(2)}>演示截图</div> */}
         </div>
       </li>
@@ -154,7 +154,7 @@ export const Resume = () => {
       <li className='mg1-bottom'>
         chrome插件：一键识别网站文章并输出markdown
         <div>
-          github:&nbsp;
+          github:
           <a target="_blank" href='https://github.com/huiruo/web-clipper-extension'>
             web-clipper-extension
           </a>
@@ -164,7 +164,7 @@ export const Resume = () => {
       <li className='mg1-bottom'>
         基于Electron+react 企业即时通讯与协作App，主要特性是支持企业私有化部署。
         <div className='flex'>
-          体验:&nbsp;<div>
+          体验:<div>
             <a target="_blank" href='https://www.workplus.io/'>
               workplus
             </a>
