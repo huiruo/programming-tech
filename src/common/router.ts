@@ -206,10 +206,6 @@ export const sidebar: ISidebar[] = [
       { href: "/http-browser/socks5", label: "Socks5-Shadowsocks" },
     ]
   },
-  // {
-  //   label: 'Dashboard',
-  //   href: '/dashboard',
-  // },
   {
     label: 'Algorithm',
     href: '/algorithm',
@@ -249,5 +245,9 @@ export const sidebar: ISidebar[] = [
       { href: "/designPatterns/proxyMode", label: "Proxy Mode" },
       { href: "/designPatterns/strategyMode", label: "Strategy Mode" },
     ]
+  },
+  {
+    label: 'Resume',
+    href: '/resume',
   },
 ]
