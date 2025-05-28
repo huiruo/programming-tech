@@ -273,5 +273,6 @@ ol li::marker {
   max-width: 1320px;
   min-width: 60%;
   margin: 0 auto;
+  margin-bottom: 50px;
   padding: 50px 10px 0px 10px;
 }

@@ -1,0 +1,219 @@
+
+我排查了下当 `<SiteFooter />` 组件被加载，`<Link href={href} className="flex-1 flex flex-col items-center justify-center">`
+被渲染，解决nginx 请求http://localhost:8080/ 报错 http://localhost:8080/_next/data/e1e5bHZwZu6frz91FQ-Lo/undefined.json?locale=undefined    是什么原因？下面是我的代码： import Layout from '@/components/layout/Layout'
+```js
+function App({ Component, pageProps }: AppProps) {
+
+  useEffect(() => {
+    setConsole()
+  }, [])
+
+  return <>
+    <Head>
+      <title>Hfun</title>
+      <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no,viewport-fit=cover"
+      />
+      <meta name="format-detection" content="telephone=no" />
+      <meta name="keywords" content="Hfun" />
+      <meta name="description" content="Hfun" />
+      <meta property="og:image" content="https://h5.sada.mobi/pay/mainLogo.png" />
+      <link rel="icon" href="/mainLogo.png" sizes="any" />
+    </Head>
+    <ClientOnly>
+      <Layout>
+        <Provider store={store}>
+          <Component {...pageProps} />
+        </Provider>
+      </Layout>
+    </ClientOnly>
+  </>
+}
+
+export default appWithTranslation(App)  import { ReactNode } from "react";
+import { SiteFooter } from "./SiteFooter";
+
+export default function Layout({ children }: {
+  children: ReactNode
+}) {
+  return (
+    <main className="min-h-screen relative bg-gray-10">
+
+      <div className="main">{children}</div>
+      <SiteFooter />
+    </main>
+  )
+}  import { LinkItem } from './LinkItem'
+import { useRouter } from 'next/router'
+import { usePathname } from 'next/navigation'
+
+export const SiteFooter = () => {
+  const pathname = usePathname() || ''
+  const router = useRouter()
+  const locale = router.query.locale
+
+  // console.log('%c=SiteFooter==?>', 'color:red', { locale, pathname })
+
+  return (
+    <div className="h-14 fixed bottom-0 left-0 w-full flex justify-center items-center border-t border-foreground/5 bg-amber-300">
+      <LinkItem
+        href={/${locale}/}
+        icon={null}
+        text="Home"
+        isActive={pathname === /}
+      />
+
+      <LinkItem
+        href={/${locale}/promotion}
+        icon={null}
+        text="Promotion"
+        isActive={pathname === /promotion}
+      />
+
+      <LinkItem
+        href={/${locale}/deposit}
+        icon={null}
+        text="Deposit"
+        isActive={pathname === /deposit}
+      // isActive={pathname.startsWith(/deposit)}
+      />
+
+      <LinkItem
+        href={/${locale}/withdrawal}
+        icon={null}
+        text="Withdrawal"
+        isActive={pathname === /withdrawal}
+      />
+
+      <LinkItem
+        href={/${locale}/profile}
+        icon={null}
+        text="Profile"
+        isActive={pathname === /profile}
+      />
+    </div>
+  )
+}  import { cn } from '@/lib/utils'
+import Link from 'next/link'
+import { ReactNode } from 'react'
+
+interface LinkItemProps {
+  href: string
+  icon: ReactNode
+  text: string
+  isActive: boolean
+}
+
+export const LinkItem = ({ href, icon, text, isActive }: LinkItemProps) => {
+  return (
+    <Link
+      href={href}
+      className="flex-1 flex flex-col items-center justify-center"
+    >
+      <div
+        className={cn(
+          'inline-flex text-foreground/50',
+          isActive && 'text-foreground',
+        )}
+      >
+        {icon}
+      </div>
+      <div
+        className={cn(
+          'text-xs text-foreground/60',
+          isActive && 'text-foreground',
+        )}
+      >
+        {text}
+      </div>
+    </Link>
+  )
+} 
+```
+
+既然你使用的是 SSG (Static Site Generation)，那么 router.query.locale 在构建时 (yarn build) 并不存在，因为 SSG 生成的页面 是静态的，不会在初始加载时运行 useRouter() 来获取 query 参数。
+
+你的 SiteFooter 组件的 href 计算错误，导致 静态 HTML 生成的是 href="/undefined/"，并最终触发 undefined.json?locale=undefined 404 错误。
+
+
+## 解决
+确保 locale 由 getStaticProps 传递
+在 getStaticProps 里明确传递 locale，避免 router.query.locale 未定义
+```js
+export async function getStaticProps(ctx: GetStaticPropsContext) {
+  const locale = (ctx.params?.locale as string) || defaultLocale;
+
+  try {
+    const response = await fetch(`http://localhost:3010/messages/${locale}.json`);
+    const messages = await response.json();
+
+    return {
+      props: {
+        locale, // 传递 locale
+        messages: messages || { Index: {} },
+      },
+    };
+  } catch (error) {
+    console.error("Error loading locale messages:", error);
+    return {
+      props: {
+        locale,
+        messages: { Index: {} },
+      },
+    };
+  }
+}
+```
+
+### 步骤2.修改 App.tsx
+在 _app.tsx 里确保 pageProps.locale 总是存在：
+```js
+export default function App({ Component, pageProps }: AppProps) {
+  const router = useRouter();
+  const locale = pageProps.locale || router.locale || defaultLocale; // pageProps 里获取 locale
+
+  return (
+    <NextIntlClientProvider locale={locale} messages={pageProps.messages}>
+      <Layout locale={locale}> {/* 传递 locale */}
+        <Component {...pageProps} />
+      </Layout>
+    </NextIntlClientProvider>
+  );
+}
+```
+
+📝 修改 Layout.tsx
+```js
+export default function Layout({
+  children,
+  locale,
+}: {
+  children: ReactNode;
+  locale: string;
+}) {
+  return (
+    <main className="min-h-screen relative bg-gray-10">
+      <div className="main">{children}</div>
+      <SiteFooter locale={locale} /> {/* 传递 locale */}
+    </main>
+  );
+}
+```
+
+📝 修改 SiteFooter.tsx
+```js
+export const SiteFooter = ({ locale }: { locale: string }) => {
+  const pathname = usePathname() || "";
+
+  return (
+    <div className="h-14 fixed bottom-0 left-0 w-full flex justify-center items-center border-t border-foreground/5 bg-amber-300">
+      <LinkItem href={`/${locale}/`} icon={null} text="Home" isActive={pathname === `/${locale}/`} />
+      <LinkItem href={`/${locale}/promotion`} icon={null} text="Promotion" isActive={pathname === `/${locale}/promotion`} />
+      <LinkItem href={`/${locale}/deposit`} icon={null} text="Deposit" isActive={pathname === `/${locale}/deposit`} />
+      <LinkItem href={`/${locale}/withdrawal`} icon={null} text="Withdrawal" isActive={pathname === `/${locale}/withdrawal`} />
+      <LinkItem href={`/${locale}/profile`} icon={null} text="Profile" isActive={pathname === `/${locale}/profile`} />
+    </div>
+  );
+};
+```

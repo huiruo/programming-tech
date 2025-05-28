@@ -1,0 +1,94 @@
+# 1.两个 useRouter 的区别
+```js
+import { useRouter } from 'next/navigation';
+import { useRouter } from "next/router"; 
+```
+
+useRouter 在 next/navigation 和 next/router 之间的区别主要体现在 Next.js 的 App Router (app 目录) 和 Pages Router (pages 目录) 的不同 API 设计上：
+
+
+在page router 项目中 `router.query.locale`能获取到当前语言,使用`next/navigation`获取的都是默认的：
+```js
+import { useTranslations } from 'next-intl';
+import { useRouter } from "next/router";
+import { LocaleSwitcherSelect } from './LocaleSwitcherSelect';
+import { locales } from '@/common/getStaticProps';
+
+export function LocaleSwitcher() {
+  const t = useTranslations('LocaleSwitcher');
+  const router = useRouter();
+  const locale = router.query.locale as string
+
+  return (
+    <LocaleSwitcherSelect defaultValue={locale} label={t('label')}>
+      {locales.map((cur) => (
+        <option key={cur} value={cur}>
+          {t('locale', { locale: cur })}
+        </option>
+      ))}
+    </LocaleSwitcherSelect>
+  );
+}
+```
+
+1. useRouter from "next/router" (适用于 Pages Router)
+适用于 pages/ 目录，用于管理传统的 Next.js 路由。
+   - 适用于 pages/ 目录
+   - router.query 可用于获取 URL 参数
+   - router.push() 进行页面跳转（客户端导航）
+```js
+import { useRouter } from "next/router";
+
+const Component = () => {
+  const router = useRouter();
+  
+  console.log(router.pathname); // 当前路径
+  console.log(router.query); // 获取动态路由参数，例如 /post/[id]
+
+  return (
+    <button onClick={() => router.push('/about')}>
+      Go to About
+    </button>
+  );
+};
+```
+
+2. useRouter from "next/navigation" (适用于 App Router)
+适用于 app/ 目录（App Router），用于 客户端导航，但不提供 pathname 和 query。
+   - 仅支持 App Router (app/ 目录)
+   - 仅用于 客户端导航
+   - 不提供 pathname 和 query，不能直接获取动态参数
+   - 可与 React Server Components (RSC) 配合使用
+
+
+# 2.Pages Router vs App Router 的区别
+- Pages Router (pages/ 目录) → 基于文件系统的路由 (适用于传统 Next.js 项目)
+
+- App Router (app/ 目录) → 基于 React Server Components (RSC) 的新架构
+
+```
+目录结构	pages/                目录	app/ 目录
+
+渲染方式	以 客户端渲染 (CSR) 为主，支持 SSR	   B.以 服务端渲染 (SSR) + RSC 为主，支持 CSR
+
+数据获取	getServerSideProps, getStaticProps	B.fetch() (自动缓存), useEffect
+
+布局 (Layout)	需要手动创建 _app.tsx	       B.内置 layout.tsx
+
+路由管理	useRouter (next/router)	        B.useRouter (next/navigation)
+
+API Routes	pages/api	app/api            B.(基于 Route Handlers)
+
+支持 React Server Components (RSC)	   ❌ 不支持	   B.✅ 支持
+
+SEO 处理	next/head	                  B.metadata.ts
+```
+
+## 如果只做客户端渲染 (CSR),选择 Pages Router（pages/ 目录）更适合 CSR！
+1. pages/ 目录天然支持 CSR，可以在组件里直接用 useState、useEffect、useRouter，像普通的 React 项目一样写代码。
+2. next/navigation 的 useRouter() 只提供 push() 方法，没有 pathname、query，不方便 CSR 获取动态路由参数。
+3. App Router 的 RSC 模型更适合 SSR，而不是纯 CSR。
+
+## 什么时候用 App Router？
+1. ✅ 如果需要服务端渲染 (SSR) + React Server Components (RSC) + SEO，推荐使用 App Router (app/ 目录)。
+3. 但如果你 只是做 CSR，继续使用 Pages Router (pages/ 目录) 更简单，迁移到 App Router 没有明显的好处。

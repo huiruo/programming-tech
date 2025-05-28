@@ -1,0 +1,40 @@
+## 为什么要用 cn？
+```js
+import { clsx, type ClassValue } from 'clsx'
+import { twMerge } from 'tailwind-merge'
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+
+<div
+  className={cn(
+    'inline-flex text-foreground/50',
+    isActive && 'text-foreground',
+  )}
+>
+  {icon}
+</div>
+
+
+假设 isActive = true：
+
+<div className="inline-flex text-foreground" />
+
+假设 isActive = false：
+
+<div className="inline-flex text-foreground/50" />
+```
+
+1. 条件拼接更简洁：
+    - clsx 处理 false 值，避免写 isActive ? 'text-foreground' : '' 这样冗余的代码。
+2. 避免 Tailwind 类冲突：
+    - tailwind-merge 确保 text-foreground/50 和 text-foreground 只会保留后者。
+
+这个 cn 函数非常适用于 Tailwind CSS 项目，能让 className 代码更整洁、避免冲突。 🚀
+
+- twMerge(...)：
+    - tailwind-merge 用于优化 Tailwind CSS 的类名，自动去重和优先级合并。
+```js
+cn('text-red-500', 'text-blue-500') // 只保留 'text-blue-500' 
+```

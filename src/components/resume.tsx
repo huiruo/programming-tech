@@ -94,6 +94,9 @@ export const Resume = () => {
       <li>
         <a target="_blank" href='https://create.t3.gg/en/introduction'>基于trpc，Prisma，nextsj全栈框架：t3-app</a>
       </li>
+      <li>
+        熟悉 CICD 流水线,Cloudflare,Docker,Supabase 各类基建和云服务。
+      </li>
     </ul>
 
     <div className='skill-title title-font mg2-bottom'>参与项目：</div>

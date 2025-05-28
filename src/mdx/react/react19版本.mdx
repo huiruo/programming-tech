@@ -1,0 +1,419 @@
+## React 19 新特性总览
+
+## 0.useTransition
+React 中根据数据变更更新状态需要手动处理各种情况，比如用户提交表单，这些操作涉及的各种状态（加载、错误、更新等）和请求顺序都需要开发者手动管理，比较麻烦。在React 19中，可以使用useTransition简化状态和表单处理。
+
+此代码展示了如何使用 useTransition 的 isPending 状态来处理异步更新。startTransition内的异步函数会立即更新isPending为true，发起请求，完成后再将其设为false。
+```js
+{
+  const [name, setName] = useState("");
+  const [error, setError] = useState(null);
+  
+  const [isPending, startTransition] = useTransition();
+  
+  const handleSubmit = () => {
+    startTransition(async () => {
+      const error = await updateName(name);
+      if (error) {
+        setError(error);
+        return;
+      } 
+      redirect("/path");
+    })
+  };
+  return (
+    <div>
+      <input value={name} onChange={(event) => setName(event.target.value)} />
+
+      <button onClick={handleSubmit} disabled={isPending}>
+
+        Update
+
+      </button>
+
+      {error && <p>{error}</p>}
+
+    </div>
+
+  );
+
+}
+```
+
+
+## 1.useFormState, useFormStatus
+服务端 actions API 与 React Server Components 配合
+
+这是 React 19 正式纳入的一套表单处理 API，适配 Server Actions 的 SSG/SSR 模式。
+```js
+"use client";
+import { useFormState, useFormStatus } from "react-dom";
+
+function SubmitButton() {
+  const { pending } = useFormStatus();
+  return <button disabled={pending}>提交</button>;
+}
+```
+
+### 2. useFormStatus
+在构建复杂组件（特别是设计系统中的组件）时，你可能需要在表单内部的某个深层嵌套的组件中获取表单的状态。
+
+传统解决方案：
+1. Prop Drilling（属性逐层传递）:  将表单状态作为 props 一层层地传递到需要的组件中。缺点是代码冗余，难以维护。
+2. Context：  使用 React 的 Context 机制来共享表单状态。虽然可行，但对于只是获取表单状态这样简单的需求来说，创建和管理 Context 显得有些繁琐, 容易造成组件的重复渲染
+
+useFormStatus 解决方案：
+useFormStatus 提供了一种更简洁、更方便的方式来获取表单状态。它就像一个“表单状态读取器”，可以让你在表单内的任何组件中直接读取表单的状态，就如同表单是一个 Context 一样。
+
+```js
+function DesignButton() {
+  const { pending } = useFormStatus();
+  return <button type="submit" disabled={pending} />;
+}
+```
+
+
+
+### 2.指令式 DOM 操作	
+useImperativeHandle 增强版，或 `useRef().current.click()` 可同步更新 DOM	
+
+实现更强的 UI 控制
+
+## 3.动作和异步转换
+动作（Action）简化了很多异步操作（如数据突变、待处理状态、错误处理和乐观更新）的管理。
+
+你可以使用 useTransition 或新的 useActionState 钩子来：
+- 自动处理待处理状态。
+- 提供更好的错误处理。
+- 使用 action 或 formAction 属性管理表单提交元素。
+
+示例：使用 useActionState 简化表单:
+```js
+function ChangeName({ name, setName }) {
+  const [error, submitAction, isPending] = useActionState(
+    async (previousState, formData) => {
+      const error = await updateName(formData.get("name"));
+      if (error) {
+        return error;
+      }
+      redirect("/path");
+      return null;
+    },
+    null,
+  );
+  return (
+    <form action={submitAction}>
+      <input type="text" name="name" />
+      <button type="submit" disabled={isPending}>Update</button>
+      {error && <p>{error}</p>}
+    </form>
+  );
+}
+```
+
+虽然 Actions 本身已经简化了异步操作的处理，但在实际应用中，开发者经常需要处理一些相似的逻辑，比如：
+
+- 获取 Action 的执行状态（是否正在进行、是否成功、是否失败）。
+- 获取 Action 执行后的结果数据。
+- 处理 Action 执行过程中的错误。 useActionState Hook 将这些常见的操作封装起来，提供了一个更简洁、更一致的 API，避免了重复编写相似的代码。
+```js
+{
+    const [error, submitAction, isPending] = useActionState(  
+        async (previousState, formData) => {  
+            const error = await updateName(formData.get("name"));  
+            if (error) {  
+                return error;  
+            }  
+            redirect("/path");  
+            return null;  
+        },  
+        null,  
+    );  
+    return (  
+        <form action={submitAction}>  
+            <input type="text" name="name" />  
+            <button type="submit" disabled={isPending}>Update</button>  
+            {error && <p>{error}</p>}  
+        </form>  
+        );  
+}
+```
+
+```js
+const [state,formAction,isPending] = useActionState(fn,initialState,permalink?);
+
+fn (必需)：  当表单提交或按钮被点击时要调用的函数。该函数将会接收到表单的上一个状态（首次为 initialState，之后是它之前的返回值）作为第一个参数，紧接着是表单 Action 通常接收的参数（如 formData）。
+initialState (必需)：  初始值，在 Action 第一次被调用后，这个参数会被忽略。
+permalink (可选)：  一个包含该表单修改的唯一页面 URL 的字符串。
+```
+
+useActionState 就像一个“Action 增强器”。它接收一个 Action，并返回一个功能更强大的 Action。通过这个增强版的 Action，你可以轻松获取 Action 的执行结果和状态，从而简化异步操作的处理。
+
+
+## 4.使用 useOptimistic 进行乐观更新
+新的 useOptimistic 钩子允许你在等待异步响应时向用户提供即时反馈。
+```js
+function ChangeName({ currentName, onUpdateName }) {
+  const [optimisticName, setOptimisticName] = useOptimistic(currentName);
+  const submitAction = async (formData) => {
+    const newName = formData.get("name");
+    setOptimisticName(newName);
+    const updatedName = await updateName(newName);
+    onUpdateName(updatedName);
+  };
+  return (
+    <form action={submitAction}>
+      <p>Your name is: {optimisticName}</p>
+      <input type="text" name="name" />
+    </form>
+  );
+}
+```
+
+它的作用是在执行异步操作（如数据更新）时，乐观地 显示最终状态，从而提升用户体验。
+
+什么是乐观更新 (Optimistic Updates)？
+乐观更新是一种 UI 模式，它假设异步操作会成功，并 立即 将 UI 更新到操作成功后的状态，而不是等待操作完成。如果操作失败了，useOptimistic 会自动把界面变回原来的样子，就像什么都没发生过一样，这样可以让用户感觉应用响应更快，体验更流畅。
+```js
+{
+  const [optimisticName, setOptimisticName] = useOptimistic(currentName);
+
+  const submitAction = async formData => {
+    const newName = formData.get("name");
+    setOptimisticName(newName); // 更新乐观状态
+    const updatedName = await updateName(newName); // 执行异步更新操作
+    onUpdateName(updatedName); // 操作成功，将新的名字同步到父组件
+  };
+
+  return (
+    <form action={submitAction}>
+      <p>Your name is: {optimisticName}</p> {/* 显示乐观状态 */}
+      <p>
+        <label>Change Name:</label>
+        <input
+          type="text"
+          name="name"
+          disabled={currentName !== optimisticName} // 正在更新时禁用输入框
+        />
+      </p>
+    </form>
+  );
+}
+```
+
+
+## 5.use API
+use API 允许你有条件地渲染 Promise 和上下文，从而实现更灵活的组件设计。
+```js
+import { use } from 'react';
+function Comments({ commentsPromise }) {
+  const comments = use(commentsPromise);
+  return comments.map(comment => <p key={comment.id}>{comment}</p>);
+}
+```
+
+use 就像一个“数据读取器”，它可以让你在组件渲染的时候读取各种数据，比如异步获取的数据（Promise）或者共享的数据（Context）。
+
+1. 对于异步数据：  use 会“耐心等待”数据加载完成，如果数据还没加载好，它会先显示一个加载中的提示（通过 Suspense 实现）。数据加载完成后，它会把数据给你，然后组件就可以用这个数据来渲染界面了。
+```js
+function Comments({ commentsPromise }) {
+  // `use` will suspend until the promise resolves.
+  const comments = use(commentsPromise); // 读取 commentsPromise 的值
+  return comments.map(comment => <p key={comment.id}>{comment}</p>);
+}
+
+function Page({ commentsPromise }) {
+
+  // 如果 `commentsPromise` 还在 pending 状态，`Comments` 组件会 Suspense，并触发外层的 `Suspense` 组件显示 `fallback` 内容（"Loading..."）
+  
+  return (
+    <Suspense fallback={<div>Loading...</div>}> {/* 当 Suspense 触发时，显示 "Loading..." */}
+      <Comments commentsPromise={commentsPromise} />
+    </Suspense>
+  );
+}
+```
+
+2. 对于 Context：  use 可以让你更灵活地读取共享数据，你可以在任何地方读取，甚至是在 if 语句或者early return之后。你可以将 use(ThemeContext) 看作是 useContext(ThemeContext) 的另一种写法。
+```js
+import ThemeContext from './ThemeContext';
+
+function Heading({ children }) {
+  if (children == null) {
+    return null; // `Heading` 组件根据 `children` 是否为 `null` 来决定是否 early return
+  }
+
+  // 在 early return 之后，使用 `use(ThemeContext)` 读取 `ThemeContext` 的值
+  const theme = use(ThemeContext); // 在 early return 之后读取 Context
+  return (
+    <h1 style={{ color: theme.color }}>
+      {children}
+    </h1>
+  );
+}
+```
+
+## 6.原生元数据管理
+React 19 支持直接在组件中渲染标签，并自动将它们提升到对应部分。
+```js
+function BlogPost({ post }) {
+  return (
+    <article>
+      <title>{post.title}</title>
+      <meta name="author" content="Author Name" />
+    </article>
+  );
+}
+```
+
+## 7.Ref 作为 Prop
+函数组件现在可以接受 ref 作为 prop，通过消除对 forwardRef 的需求来简化代码。
+```js
+function MyInput({placeholder, ref}) {
+  return <input placeholder={placeholder} ref={ref} />
+}
+//...
+<MyInput ref={ref} />
+```
+
+你可以把 ref 看作是一个钩子，它可以让你勾住一个 DOM 元素或者一个组件实例。
+
+- React 19 之前：  在函数组件里，如果你想用这个 “钩子”，你得先用一个叫 forwardRef 的工具把你的组件包一下，才能把 “钩子” 传递进去。
+- React 19：  你直接把 “钩子”(ref) 当作普通行李 (prop) 递给函数组件就行了，不需要 forwardRef 这个工具了。
+
+## 8.useDeferredValue:支持 initialValue 选项
+假设你正在开发一个搜索框，用户输入时需要实时显示搜索结果。如果搜索结果列表很大，每次用户输入都重新渲染整个列表可能会导致卡顿。
+
+使用 useDeferredValue 可以解决这个问题：
+
+它可以让你在用户输入时，先显示一个旧的搜索结果（或一个 loading 状态），然后等浏览器空闲下来，再去渲染新的搜索结果。
+
+React 19 之前：
+
+useDeferredValue 返回的延迟值在初始渲染时会是 undefined。
+```js
+function Search({ query }) {
+  const deferredQuery = useDeferredValue(query);
+
+  // 第一次渲染时，deferredQuery 是 undefined
+  return <Results query={deferredQuery} />;
+}
+```
+
+React 19： 为 useDeferredValue 添加了一个可选的 initialValue 选项，用于指定延迟值在初始渲染时的值。
+```js
+function Search({ deferredValue }) {
+  // 在初始渲染时使用 '' 作为初始值
+  const value = useDeferredValue(deferredValue, '');
+
+  return <Results query={value} />;
+}
+```
+
+## Server Actions
+这是 React 中与 Server Components 紧密相关的一个概念，可以让你在客户端组件中轻松调用在服务器端执行的异步函数。Server Actions 就像是服务器端的“办事员”，你可以在客户端（比如用户的浏览器）给这个“办事员”下达指令（调用 Server Action 函数），然后他会跑到服务器那里去执行这个指令（执行函数），最后把结果给你送回来。
+创建和使用方式：
+
+在 Client Components 中导入：  你可以在一个单独的文件中创建 Server Actions，然后在 Client Components 中导入并使用它们。
+例如：
+
+假设你有一个在线商店，你需要一个功能来将商品添加到用户的购物车。你可以创建一个 Server Action：
+```js
+'use server';
+
+export async function addToCart(productId, quantity) {
+  // ... 在这里执行数据库操作，将商品添加到购物车 ...
+  console.log('商品已添加到购物车:', productId, quantity);
+  return { success: true, message: '商品已添加到购物车' };
+}
+```
+
+然后，你可以在一个客户端组件中调用这个 Server Action：
+```js
+import { addToCart } from './actions';
+
+function ProductPage({ product }) {
+  const handleAddToCart = async () => {
+    const result = await addToCart(product.id, 1); // 调用 Server Action
+    if (result.success) {
+      // ... 更新 UI，显示商品已添加到购物车 ...
+    }
+  };
+
+  return (
+    <div>
+      <h1>{product.name}</h1>
+      <button onClick={handleAddToCart}>添加到购物车</button>
+    </div>
+  );
+}
+```
+
+2. 在 Server Components 中创建：  你可以在 Server Components 中创建 Server Actions，然后将它们作为 props 传递给 Client Components。
+在 Server Component 中创建 Server Action:
+```js
+'use server';
+
+export async function incrementCounter(currentCount) {
+ // 模拟数据库操作或其他服务器端逻辑
+ const newCount = currentCount + 1;
+ console.log('Counter incremented on the server:', newCount);
+ return newCount;
+}
+```
+
+在 Server Component 中使用 Server Action 并传递给 Client Component:
+```js
+import { incrementCounter } from './actions.server';
+import { CounterButton } from './CounterButton.client';
+
+export default async function CounterPage() {
+ // 假设我们从数据库中获取初始计数
+ const initialCount = 0; 
+
+ return (
+   <div>
+     <h1>Counter Example</h1>
+     <p>Current Count: {initialCount}</p>
+     {/* 将 Server Action 作为 prop 传递给 Client Component */}
+     <CounterButton action={incrementCounter} initialCount={initialCount} />
+   </div>
+ );
+}
+```
+
+在 Client Component 中接收并使用 Server Action:
+```js
+'use client';
+
+import { useState } from 'react';
+
+export function CounterButton({ action, initialCount }) {
+  const [count, setCount] = useState(initialCount);
+
+  const handleClick = async () => {
+    // 使用传入的 Server Action
+    const newCount = await action(count);
+    setCount(newCount);
+  };
+
+  return (
+    <button onClick={handleClick}>
+      Increment (Current: {count})
+    </button>
+  );
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

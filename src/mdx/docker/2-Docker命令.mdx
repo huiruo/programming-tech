@@ -135,6 +135,8 @@ docker start nginx
 ```
 docker run -d --name nginx -p 8008:80 nginx
 
+http://localhost:8008
+
 -d 后台持续运行运行。
 --name 自定义的容器名称。
 -p 映射主机端口号到docker容器的端口号。
@@ -143,7 +145,7 @@ docker run -d --name nginx -p 8008:80 nginx
 
 启动成功，就可以通过 ip:8008 访问站点
 
-http://localhost:8008/
+http://localhost:8008
 
 127.0.0.1:8008
 ```
@@ -234,3 +236,9 @@ docker pull 镜像名称[:tag]
 ```
 docker system df
 ```
+
+
+docker run -d --name nginx -p 8008:80 nginx
+docker stop nginx
+
+http://localhost:8008

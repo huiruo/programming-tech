@@ -1,3 +1,38 @@
+import ImageRender from '../ImageRender';
+
+## prefetch cache
+![](./prefetch.png)
+
+`router.prefetch()`触发的 prefetch cache，指的是 Next.js 自动将某个页面对应的 JS bundle 提前加载并缓存在浏览器内存（或 HTTP cache）中，以便用户点击页面链接时能秒开，不需要等资源加载。
+
+1. 浏览器 Memory Cache 或 Disk Cache（由浏览器控制）
+
+是普通的 HTTP 请求缓存（不是 IndexedDB）
+
+浏览器看你是否已经请求过相应 .js 文件，并根据 Cache-Control 缓存策略决定是否缓存
+
+Next.js 会为这些 JS 资源生成 Cache-Control: public, max-age=31536000, immutable，长期缓存
+
+2. Service Worker 缓存（如果你使用 PWA）
+
+如果你用的是 next-pwa 并且配置了缓存策略（如 StaleWhileRevalidate），prefetch 加载的 JS 资源也可能会被缓存到 Service Worker 的 Cache Storage 中
+
+## 例子
+<ImageRender alt='test' width='50%' path='/img-optimize/03-optimize.png' />
+
+分析：
+- MPA（Multi-Page Application）：每次用户点击链接或进行操作时，浏览器会重新向服务器发送请求，服务器返回一个新的完整 HTML 页面。比如传统的电商网站、新闻网站，大多数是 MPA。
+
+- 相对的概念是 SPA（Single-Page Application），即单页应用，比如用 React、Vue 做的网站，点击页面内链接时通常不会重新加载页面，而是通过前端路由控制，只更新部分内容，用户体验更流畅。
+
+
+Next.js 路由切换时行为:
+1. 页面跳转时，Next.js 不会重新刷新整个页面（不像 MPA）；
+
+2. 它会 按需加载当前页面需要的 JS（页面组件代码）和 CSS（比如每个页面的 scoped CSS）；
+
+3. 同时它会重新请求后端数据（比如用 getServerSideProps 或 getStaticProps 预取的数据）。
+
 ## 页面加载速度优化
 ### 优化图像和多媒体资源，以减少它们的文件大小。
 ```
@@ -223,3 +258,18 @@ HTML/CSS/JS，图片和视频等静态内容由 CDN 提供。CDN 的 DNS 解析�
 * CDN 就是将内容缓存在离用户更近的节点上，以此来提高用户体验；
 
 * 所以 CDN 适用于具有一定量级的静态资源访问，包括 html，js，css，apk，mp3，flv，jpg，gif、mp4、flv 等所有的静态资源。
+
+
+
+## Wed Apr 30 15:31:02 CST 2025 组件优化
+```js
+export const PaySelectTabs = memo(PaySelectTabsComponent, (prev, next) => {
+  const prevLength = prev.payList?.list?.length || 0;
+  const nextLength = next.payList?.list?.length || 0;
+
+  // return true; // No change, skip rendering
+  // or prev.payList === next.payList;
+  console.log('%c=prevLength === nextLength','color:red',prevLength === nextLength)
+  return prevLength === nextLength;
+});
+```

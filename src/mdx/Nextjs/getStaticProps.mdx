@@ -1,0 +1,48 @@
+## getStaticProps 只在构建时 (next build) 运行，不会在服务器或浏览器端运行
+```js
+export const getStaticPaths: GetStaticPaths = async () => ({
+  paths: getI18nPaths(),
+  fallback: false,
+});
+
+/**
+ * getStaticProps 只在构建时 (next build) 运行，不会在服务器或浏览器端运行
+ */
+export async function getStaticProps(ctx: GetStaticPropsContext) {
+  const locale = ctx.params?.locale || defaultLocale;
+
+  try {
+    const response = await fetch(
+      `http://localhost:3010/messages/${locale}.json`
+    );
+    const messages = await response.json();
+
+    return {
+      props: {
+        messages,
+      },
+    };
+  } catch (error) {
+    console.error("Error loading locale messages:", error);
+    return {
+      props: {
+        messages: {},
+      },
+    };
+  }
+}
+
+
+// 组件
+
+import { getStaticPaths, getStaticProps } from "@/common/getStaticProps";
+
+export default function ProfilePage() {
+
+  return <div>
+    profile
+  </div>
+}
+
+export { getStaticProps, getStaticPaths }
+```

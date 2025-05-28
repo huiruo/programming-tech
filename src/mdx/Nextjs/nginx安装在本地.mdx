@@ -1,0 +1,105 @@
+
+```
+source ~/.bash_profile
+brew install nginx
+```
+
+Docroot is: /opt/homebrew/var/www
+
+启动：
+brew services start nginx
+
+Or, if you don't want/need a background service you can just run:
+  /opt/homebrew/opt/nginx/bin/nginx -g daemon\ off\
+
+```
+==> curl
+curl is keg-only, which means it was not symlinked into /opt/homebrew,
+because macOS already provides this software and installing another version in
+parallel can cause all kinds of trouble.
+
+If you need to have curl first in your PATH, run:
+  echo 'export PATH="/opt/homebrew/opt/curl/bin:$PATH"' >> ~/.zshrc
+
+For compilers to find curl you may need to set:
+  export LDFLAGS="-L/opt/homebrew/opt/curl/lib"
+  export CPPFLAGS="-I/opt/homebrew/opt/curl/include"
+
+zsh completions have been installed to:
+  /opt/homebrew/opt/curl/share/zsh/site-functions
+==> python@3.11
+Python is installed as
+  /opt/homebrew/bin/python3.11
+
+Unversioned and major-versioned symlinks `python`, `python3`, `python-config`, `python3-config`, `pip`, `pip3`, etc. pointing to
+`python3.11`, `python3.11-config`, `pip3.11` etc., respectively, are installed into
+  /opt/homebrew/opt/python@3.11/libexec/bin
+
+You can install Python packages with
+  pip3.11 install <package>
+They will install into the site-package directory
+  /opt/homebrew/lib/python3.11/site-packages
+```
+
+## 修改配置：
+brew info nginx
+
+cd /opt/homebrew/opt/nginx/bin
+
+修改配置：
+```
+cd /opt/homebrew/etc/nginx
+
+
+Fri Apr 18 11:28:49 CST 2025 可用
+sudo vim nginx.conf
+```
+
+## 启动nginx
+```bash
+source ~/.bash_profile
+# 启动 Nginx
+brew services start nginx
+# 重启 Nginx
+brew services restart nginx
+# 停止 Nginx
+brew services stop nginx
+```
+
+localhost:8080
+
+## 修改网站
+vim index.html 
+```
+/opt/homebrew/var/www
+```
+
+```
+/Users/ruo/user-workspace/TECH/LuckyWheelCocos/build
+
+在macbook中，我需要把上面的build目录下的所有文件复制到下面的www目录
+
+/opt/homebrew/var/www
+
+sudo cp -r /Users/ruo/user-workspace/TECH/LuckyWheelCocos/build/* /opt/homebrew/var/www/
+
+sudo cp -r /opt/homebrew/var/www/web-mobile/* /opt/homebrew/var/www/
+
+sudo cp -r /Users/ruo/user-workspace/TECH/LuckyWheelCocos/build/web-mobile/* /opt/homebrew/var/www/
+
+删除文件夹里面的所有文件:
+sudo rm -rf /opt/homebrew/var/www/*
+
+删除文件夹:
+sudo rm -rf assets cocos-js src web-mobile
+
+sudo cp -r /Users/ruo/user-workspace/TECH/wheel-of-luck-pixijs/wof-wheel-pixijs/dist/* /opt/homebrew/var/www/
+
+sudo cp -r /Users/ruo/company-workspace/haixing-company/A-Haixing-game/bfun-game/out/* /opt/homebrew/var/www/
+
+sudo cp -r /Users/ruo/company-workspace/haixing-company/A-Haixing-game/hfun-game/out/* /opt/homebrew/var/www/
+
+
+sudo cp -r /Users/ruo/company-workspace/haixing-company/halachat-official/out/* /opt/homebrew/var/www/
+
+```

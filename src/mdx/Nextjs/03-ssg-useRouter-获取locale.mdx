@@ -1,0 +1,51 @@
+```js
+import { LinkItem } from './LinkItem'
+import { useRouter } from 'next/router'
+import { usePathname } from 'next/navigation'
+
+export const SiteFooter = () => {
+  const pathname = usePathname() || ''
+  const router = useRouter()
+  const locale = router.query.locale
+
+  return (
+    <div className="h-14 fixed bottom-0 left-0 w-full flex justify-center items-center border-t border-foreground/5 bg-amber-300">
+      <LinkItem
+        href={`/${locale}/`}
+        icon={null}
+        text="Home"
+        isActive={pathname === `/`}
+      />
+
+      <LinkItem
+        href={`/${locale}/promotion`}
+        icon={null}
+        text="Promotion"
+        isActive={pathname === `/promotion`}
+      />
+
+      <LinkItem
+        href={`/${locale}/deposit`}
+        icon={null}
+        text="Deposit"
+        isActive={pathname === `/deposit`}
+      // isActive={pathname.startsWith(`/deposit`)}
+      />
+
+      <LinkItem
+        href={`/${locale}/withdrawal`}
+        icon={null}
+        text="Withdrawal"
+        isActive={pathname === `/withdrawal`}
+      />
+
+      <LinkItem
+        href={`/${locale}/profile`}
+        icon={null}
+        text="Profile"
+        isActive={pathname === `/profile`}
+      />
+    </div>
+  )
+}
+```
