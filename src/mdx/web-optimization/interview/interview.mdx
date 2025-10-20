@@ -1,0 +1,51 @@
+
+# css 问题1
+- 怎么css实现背景透明？
+```
+使用 RGBA 设置透明度：
+
+2.background-color: transparent;
+background-color: transparent; 和 background-color: yellow; 是互斥的。
+```
+
+## css基础
+### 1. box-sizing
+box-sizing:content-box; width(宽度) + padding(内边距) + border(边框) = 元素实际宽度。
+box-sizing:border-box; 指定盒模型为IE模型,即 border 与 padding 由元素已设空间转变。
+
+### 2. 盒模型
+Content(内容) - 盒子的内容，显示文本和图像。
+Padding(内边距) - 清除内容周围的区域，内边距是透明的。
+Border(边框) - 围绕在内边距和内容外的边框。
+Margin(外边距) - 清除边框外的区域，外边距是透明的。
+
+### 2. flex垂直水平居中
+```css
+.container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100px;
+    background: yellow;
+} 
+```
+2. 负margin在固定宽高实现水平垂直居中
+
+3. transform代替margin-水平垂直居中
+```css
+.container {
+    position: relative;
+    height: 100px;
+    background: green
+}
+
+.box {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: yellow;
+}
+```
+
+4. absolute绝对定位+margin-垂直居中
