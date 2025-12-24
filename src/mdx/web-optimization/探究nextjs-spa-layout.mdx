@@ -1,0 +1,39 @@
+
+## 2.next export 的真实工作方式
+- SPA 行为,原理是：
+  - 首次访问：加载 index.html
+  - 之后：
+    - jS runtime 接管
+    - 路由切换只替换 DOM
+- Next.js export ≠ MPA
+- 但 page 组件一定重新渲染
+- 唯一“不重新渲染”的位置是 Layout
+
+output: "export" 之后：
+
+每次切换路由，page.tsx / index.tsx 组件一定会重新渲染
+这是 Next Router 的设计:因为 Next.js 的路由模型是：
+```
+Route A → 卸载 Page A
+Route B → 挂载 Page B
+```
+
+- 每个路由 → 一个 独立 HTML 文件
+
+- 但运行时：
+  - 仍然是 客户端路由（SPA）
+  - 点击 `<Link>` 不会整页刷新
+
+### 2-1.因为 Layout 层是持久的。
+想“不重新渲染”，只能放在 Layout 层
+```js
+// layout.tsx 或 _app.tsx
+export default function Layout({ children }) {
+  return (
+    <>
+      <BannerImage />   {/* 永久存在 */}
+      {children}
+    </>
+  );
+}
+```
