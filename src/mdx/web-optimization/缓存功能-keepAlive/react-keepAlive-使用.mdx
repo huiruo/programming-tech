@@ -1,0 +1,264 @@
+
+```js
+import { isKeepAliveRoute, useKeepAliveRouter } from "@/hooks/useKeepAliveRouter"
+
+  const { navigateToCache } = useKeepAliveRouter()
+
+  const handleClickCallback = (href: string, needLogin = false) => {
+    const normalized = normalizePath(href)
+
+    if (needLogin && !isLoggedIn()) {
+      setIsShowLoginDrawer({ showLoginDrawer: true, isSwitchLogin: true })
+      return
+    }
+
+    if (href === "/") {
+      taskEventUpApi({
+        event: "get_activity_event",
+        metadata: "",
+      })
+    }
+
+    if (isKeepAliveRoute(normalized)) {
+      // SPA 内切换缓存页面
+      navigateToCache(normalized)
+    } else {
+      // 非缓存页面，普通跳转
+      router.push(href)
+    }
+  }
+```
+
+## KeepAlive 已经做到 Next.js 非官方高阶玩法
+实时上在layout 一个文件就可以实现缓存功能了
+```js
+./keepAlive/index.tsx
+```
+
+原理：
+你不是在“缓存路由”，而是在“缓存 React 组件实例 + DOM”，通过 display: none 把不用的页面藏起来，而不是卸载它。
+
+这就是所谓的 前端 KeepAlive
+
+### 正常 Next.js 路由切换
+```
+/promotion → /deposit
+
+react行为
+Promotion Component  unmount ❌
+Deposit Component     mount  ✅
+
+- state 全没
+- scrollTop 归零
+- 请求重新发
+```
+
+### 你现在的 KeepAlive:
+DOM 没被销毁，只是 隐藏。
+```
+/promotion → /deposit
+
+React 实际行为：
+
+Promotion Component   保留在内存中（display: none）
+Deposit Component     mount
+```
+
+## 你这套 KeepAlive 的核心机制（逐行拆）
+1. 缓存容器 = Map,这一步相当于： 「我在内存里维护一个路由 → ReactElement 的映射表」
+```js
+const [cachedComponents, setCachedComponents] =
+  useState<Map<string, CachedComponent>>(new Map())
+```
+
+2. 当前路由作为 key（非常关键）
+```js
+const currentPath =
+  router.pathname === "/" ? "/" : `${router.pathname}/`
+```
+
+3. shouldCache = 是否进入 KeepAlive
+```js
+const shouldCache = (pathname: string) =>
+  cacheRoutes.some(route =>
+    route.endsWith('*')
+      ? pathname.startsWith(route.slice(0, -1))
+      : pathname === route
+  )
+
+本质是：
+
+1. 白名单
+
+2. 精确匹配 or 前缀匹配
+
+3. 只有在白名单里的路由，才会进入缓存系统
+```
+
+### 4. useEffect：决定「建缓存 / 用缓存 / 刷新缓存」
+这里是整个 KeepAlive 的心脏
+
+1. 没缓存 → 新建组件实例
+
+2. 有缓存且未过期 → 继续用原来的 ReactElement
+
+3. 过期 → 彻底重建（等同 unmount + mount）
+```js
+useEffect(() => {
+  if (!shouldCache(currentPath)) return
+
+  setCachedComponents(prev => {
+    const newCache = new Map(prev)
+    const existing = newCache.get(currentPath)
+
+    if (!existing || isCacheExpired(existing.timestamp)) {
+      // ❗新建 or 过期 → 重新 mount
+      newCache.set(currentPath, {
+        pathname: currentPath,
+        component: <Component {...pageProps} key={currentPath} />,
+        timestamp: Date.now()
+      })
+    } else {
+      // ✅ 命中缓存 → 更新时间
+      newCache.set(currentPath, {
+        ...existing,
+        timestamp: Date.now()
+      })
+    }
+
+    return newCache
+  })
+}, [currentPath])
+```
+
+## 5. 渲染阶段：真正“骗过 React”
+这里发生了关键的事:
+所有缓存页面都同时存在于 React 树中
+
+```
+只是：
+
+当前页面：display: block
+其他页面：display: none
+```
+
+- 👉 React 不会 unmount
+- 👉 DOM、state、scroll、ref 全保留
+
+```js
+{Array.from(cachedComponents.entries()).map(([pathname, cached]) => {
+  const isActive = pathname === currentPath
+
+  return (
+    <div
+      key={pathname}
+      style={{ display: isActive ? 'block' : 'none', height: '100%' }}
+    >
+      {cached.component}
+    </div>
+  )
+})}
+```
+
+## 6.兜底渲染（非缓存路由）
+如果当前路由：
+
+1. 不在白名单
+2. 或还没进入缓存
+
+就走 普通渲染
+```js
+{!cachedComponents.has(currentPath) &&
+  <Component {...pageProps} key={currentPath} />
+}
+```
+
+## 这套 KeepAlive 适合什么场景？
+- 首页游戏列表
+- promotion 页
+- 滚动非常重
+- 请求非常多
+- 返回体验要求极高
+
+
+## A.和vue3 的 keep alive
+- Vue 3 的 `<KeepAlive>` 是“框架级生命周期控制”
+- React / Next.js 的 KeepAlive 是“用户态 DOM + 组件实例缓存”
+```
+| 对比点          | Vue 3 `<KeepAlive>`           | 你这套 React KeepAlive |
+| ------------ | ----------------------------- | ------------------- |
+| 是否官方支持       | ✅ 是（内建）                       | ❌ 否（手写）             |
+| 是否真的 unmount | ❌ 不卸载                         | ❌ 不卸载               |
+| 生命周期感知       | ✅ 有 `activated / deactivated` | ❌ 没有                |
+| 缓存粒度         | 组件级                           | 路由级（你实现的）           |
+| 控制方式         | 声明式                           | 命令式                 |
+| 实现难度         | 低                             | 高                   |
+| 出错概率         | 低                             | 高                   |
+```
+
+Vue 不是简单 display:none,把组件从真实 DOM 树中移除，但保留在内存的 VNode 树里
+```
+1. DOM 节点被缓存
+2. 组件实例被缓存
+3. watcher / reactive 还活着
+
+Vue 稳的原因：
+
+1. KeepAlive 是编译期 + runtime 级别支持
+
+2. 路由系统和 KeepAlive 深度耦合
+
+3. 有 activated / deactivated 钩子兜底
+
+官方处理了：
+
+多层嵌套
+
+include / exclude
+
+max LRU
+
+async component
+```
+
+Vue 有专属生命周期（React 没有）
+```js
+onActivated(() => {
+  // 页面“被唤醒”
+})
+
+onDeactivated(() => {
+  // 页面“被冷冻”
+})
+
+模拟：
+useEffect(() => {
+  if (isActive) {
+    onActivated?.()
+  } else {
+    onDeactivated?.()
+  }
+}, [isActive])
+```
+
+### React KeepAlive 本质是在“骗 React”
+React 的视角是： “哦，这些组件一直都在，那我就不管了”
+```js
+{
+  allCachedPages.map(page => (
+    <div style={{ display: isActive ? 'block' : 'none' }}>
+      <PageComponent />
+    </div>
+  ))
+```
+
+### 两者“等价”的地方（为什么你会觉得像）
+两者确实在干同一件事： 阻止组件 unmount，从而保留 state + DOM
+
+所以在用户体验层面：
+```
+滚动条
+表单输入
+已加载数据
+效果几乎一样。
+```
