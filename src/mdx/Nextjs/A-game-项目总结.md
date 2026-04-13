@@ -15,16 +15,15 @@
 - 主 tab 页面做 keep-alive，处理了从业务页返回首页时的重复挂载和页面闪动问题
 ```
 这个项目里一个典型例子就是“页面闪动”：
-1. 而是通过 useEffect([]) 是否重复执行，判断页面是否重新 mount
+1. 而是通过 `useEffect([])` 是否重复执行，判断页面是否重新 mount
 2. 再进一步区分，组件 cleanup、还是 keep-alive 容器结构导致的问题
 ```
 - 支持 PWA，包括 manifest、service worker、安装体验和资源缓存
 
 ### 2. 熟悉 Next.js 运行模式和部署差异
 处理过：
-1. output: "export" 和标准 Next 运行模式的区别
-2. 静态导出对路由、PWA、运行时能力的影响
-3. Cloudflare Pages / next-on-pages / wrangler.toml / nodejs_compat 这些部署层问题
+1.  静态导出output: "export" 和标准 Next 运行模式的区别
+2. Cloudflare Pages / next-on-pages / wrangler.toml / nodejs_compat 这些部署层问题
 
 ```
 1. 构建脚本
@@ -411,3 +410,21 @@ window.location.href = "/xxx"
 7. PWA / SW / 资源加载链路稳定
 少了这些，router.push 只是“形式上前端跳转”，不是“体验上像 App”。
 
+## 8.国际化
+项目国际化基于 next-intl 实现，当前语言从 Cookie 读取，并按 locale 动态加载语言包。为了避免首屏语言包异步加载带来的闪烁，我在 _app 层先用默认语言做占位，再异步替换成目标 messages；如果加载失败则回退到默认语言。这样既保证了多语言能力，也兼顾了首屏体验和容错性。
+
+1. 技术方案
+项目用的是 next-intl。 在 _app.tsx 里通过：
+- NextIntlClientProvider
+- 把当前语言包注入到整个应用里。
+- 页面和组件里再通过： `useTranslations()`
+
+“我做的是按 locale 动态加载 message bundle，而不是简单硬编码全量语言包。”
+
+语言包加载方式
+项目不是在构建时把所有语言全塞进去，而是在运行时按语言动态加载, 这有两个好处：
+- 语言资源按需加载
+- 不把所有语言一次性塞进首屏包体
+```js
+const msgs = await import(`../../public/messages/${locale}.json`)
+```
