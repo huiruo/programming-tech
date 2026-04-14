@@ -79,57 +79,10 @@
 比如底部 tab 和部分页面会做`router.prefetch(...)`，提前把目标路由资源拉下来，进一步减少切换时的白屏和等待感。
 
 ### A-2.主 tab 页面做 keep-alive，状态保留是怎么实现的。
-这个项目的做法是：在布局层缓存页面组件实例，而不是每次路由切换都重新挂载页面。
-
-可以拆成 4 个点讲。
-
-1. 先定义哪些页面需要保活
-项目里把主 tab 路由列出来：
+见：
 ```
-/ /promotion/ /deposit/ /referral/ /profile/
+src/mdx/Nextjs/对缓存的优化.mdx
 ```
-
-2. 用 Map 缓存页面实例
-容器内部维护了一个 `Map<string, CachedComponent>`，按 pathname 存页面：
-- pathname
-- component
-- timestamp
-
-第一次进入某个保活页面时，就把下面组件存进去。重点是缓存的是 React 元素实例，不是只存页面数据。
-这样之后再切回来时，可以直接复用那棵组件树。
-```
-<Component {...pageProps} key={currentPath} />
-```
-
-3. 切路由时不卸载，只隐藏
-- 真正让状态保留的关键，不是“记住数据”，而是：
-- 已缓存页面始终留在 React 树里
-- 当前激活页 display: block
-- 其他缓存页 display: none
-
-也就是说页面没有被卸载，只是隐藏了。 这样保留下来的就不仅是接口数据，还包括：
-1. 组件内部 useState
-2. 已渲染的列表
-3. 已加载的图片
-4. 滚动位置相关 DOM 状态
-5. 各种局部 UI 状态
-这就是为什么体验会更像 App。
-
-4. 非缓存页单独渲染，不影响缓存页
-后来又补了一层关键修正：
-
-以前进入 /game、/central 这类非缓存页时，keep-alive 容器会直接返回当前页，导致缓存页从 React 树里被移除。
-这样再回首页时，首页还是会重新 mount。
-
-后面改成：
-
-缓存页一直留在树里
-非缓存页只是额外挂一层当前页面
-这样从非 tab 页面回主 tab，缓存页也不会丢
-这是项目里真正把“主 tab 状态保留”做完整的关键。
-
-一句话术:
-我在布局层做了一个 keep-alive 容器，把主 tab 页按 pathname 缓存在 Map 里。切换 tab 时不是卸载页面，而是把非激活页隐藏、激活页显示，这样页面组件实例、局部 state、已加载资源和滚动状态都能保留。后面我还修正了非缓存页切入时把缓存树卸载的问题，保证从游戏页或活动页回首页时也能复用已有页面实例。
 
 ### A-3. 支持 PWA，包括 manifest、service worker、安装体验和资源缓存
 这个项目的 PWA 不是只挂一个 manifest。我做了完整链路：通过 manifest 和 meta tags 支持安装，通过 next-pwa 接入 service worker，并针对静态产物、图片和字体做 runtime caching；同时还实现了安装状态判断、安装提示控制，以及 Firebase Messaging 与主 PWA service worker 的作用域隔离。
@@ -207,7 +160,6 @@ const scopePath = "/firebase-cloud-messaging-push-scope/";
 
 // 然后注册时显式写：
 navigator.serviceWorker.register(swUrl, { scope: scopePath })
-
 ```
 
 这意味着：

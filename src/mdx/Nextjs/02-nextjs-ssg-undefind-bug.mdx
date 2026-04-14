@@ -1,6 +1,7 @@
 
 我排查了下当 `<SiteFooter />` 组件被加载，`<Link href={href} className="flex-1 flex flex-col items-center justify-center">`
 被渲染，解决nginx 请求http://localhost:8080/ 报错 http://localhost:8080/_next/data/e1e5bHZwZu6frz91FQ-Lo/undefined.json?locale=undefined    是什么原因？下面是我的代码： import Layout from '@/components/layout/Layout'
+
 ```js
 function App({ Component, pageProps }: AppProps) {
 

@@ -143,7 +143,7 @@ export const sidebar: ISidebar[] = [
       { href: "/nextjs/nginxLocal", label: "nginx 安装在本地" },
       { href: "/nextjs/buildOptimization", label: "nextjs 打包优化" },
       { href: "/nextjs/nextConfig202404", label: "next.config 2024-04" },
-      { href: "/nextjs/cacheOptimization", label: "对缓存的优化" },
+      { href: "/nextjs/cacheOptimization", label: "keepAlive-对缓存的优化" },
       { href: "/nextjs/buildFailure", label: "遇到的构建失败难题" },
     ],
   },
