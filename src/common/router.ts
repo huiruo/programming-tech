@@ -7,9 +7,9 @@ export interface ISidebar {
 
 export const sidebar: ISidebar[] = [
   {
-    label: 'Html css',
-    href: '/css',
-    type: 'category',
+    label: "Html css",
+    href: "/css",
+    type: "category",
     items: [
       { href: "/css/flex", label: "flex" },
       { href: "/css/basis", label: "basis" },
@@ -25,20 +25,20 @@ export const sidebar: ISidebar[] = [
       { href: "/css/requestAnimationFrame", label: "requestAnimationFrame" },
       { href: "/css/vueAnimation", label: "Vue Animation" },
       {
-        label: 'WebGL',
-        href: '/webGL',
-        type: 'category',
+        label: "WebGL",
+        href: "/webGL",
+        type: "category",
         items: [
           { href: "/webGL/readme", label: "WebGL" },
           { href: "/webGL/matrix", label: "Transformation Matrix" },
-        ]
+        ],
       },
-    ]
+    ],
   },
   {
-    label: 'JavaScript',
-    href: '/js',
-    type: 'category',
+    label: "JavaScript",
+    href: "/js",
+    type: "category",
     items: [
       { href: "/js/eventLoop", label: "Event Loop" },
       { href: "/js/nodejseventLoop", label: "Nodejs Event Loop" },
@@ -49,9 +49,9 @@ export const sidebar: ISidebar[] = [
       { href: "/js/webpack2", label: "微前端" },
       { href: "/js/throttleDebounce", label: "Throttle Debounce" },
       {
-        label: 'jsBase',
-        href: '/jsBase',
-        type: 'category',
+        label: "jsBase",
+        href: "/jsBase",
+        type: "category",
         items: [
           { href: "/jsBase/arrayMethods", label: "Array Methods" },
           { href: "/jsBase/string", label: "String" },
@@ -59,7 +59,10 @@ export const sidebar: ISidebar[] = [
           { href: "/jsBase/loop", label: "loop" },
           { href: "/jsBase/for-of", label: "for-of" },
           { href: "/jsBase/for-in-values", label: "for-in-实现深拷贝-values" },
-          { href: "/jsBase/keys-getOwnPropertyNames", label: "keys-getOwnPropertyNames-defineProperty" },
+          {
+            href: "/jsBase/keys-getOwnPropertyNames",
+            label: "keys-getOwnPropertyNames-defineProperty",
+          },
           { href: "/jsBase/prototype", label: "prototype" },
           { href: "/jsBase/dataTypes", label: "数据类型-类型转换" },
           { href: "/jsBase/symbol", label: "数据类型-symbol" },
@@ -73,24 +76,24 @@ export const sidebar: ISidebar[] = [
           { href: "/jsBase/inheritance", label: "Inheritance" },
           { href: "/jsBase/others", label: "others" },
           { href: "/jsBase/regular", label: "regular" },
-        ]
+        ],
       },
       {
-        label: 'Promise',
-        href: '/promise',
-        type: 'category',
+        label: "Promise",
+        href: "/promise",
+        type: "category",
         items: [
           { href: "/promise/basics", label: "Promise basics" },
           { href: "/promise/generator", label: "generator" },
           { href: "/promise/promise", label: "promise具体实现" },
           { href: "/promise/async-await", label: "async-await" },
           { href: "/promise/axios", label: "axios" },
-        ]
+        ],
       },
       {
-        label: 'ts',
-        href: '/ts',
-        type: 'category',
+        label: "ts",
+        href: "/ts",
+        type: "category",
         items: [
           { href: "/ts/typeScript", label: "TypeScript" },
           { href: "/ts/interfaceType", label: "Interface type" },
@@ -99,14 +102,14 @@ export const sidebar: ISidebar[] = [
           { href: "/ts/decorator", label: "Decorator" },
           { href: "/ts/decorator2", label: "Decorator 2" },
           { href: "/ts/example", label: "Example" },
-        ]
+        ],
       },
     ],
   },
   {
-    label: 'React',
-    href: '/react',
-    type: 'category',
+    label: "React",
+    href: "/react",
+    type: "category",
     items: [
       { href: "/react/readme", label: "Readme" },
       { href: "/react/react17Render", label: "React17Render" },
@@ -126,9 +129,28 @@ export const sidebar: ISidebar[] = [
     ],
   },
   {
-    label: 'Vue',
-    href: '/vue',
-    type: 'category',
+    label: "Nextjs",
+    href: "/nextjs",
+    type: "category",
+    items: [
+      { href: "/nextjs/ssgUndefinedBug", label: "SSG undefined bug" },
+      { href: "/nextjs/ssgRouterLocale", label: "SSG useRouter locale" },
+      { href: "/nextjs/aGameSummary", label: "A-game 项目总结" },
+      { href: "/nextjs/tailwind", label: "nextjs-新建项目-tailwind" },
+      { href: "/nextjs/twoRouters", label: "两个 router 的区别" },
+      { href: "/nextjs/pageAppRouter", label: "page 和 app router" },
+      { href: "/nextjs/getStaticProps", label: "getStaticProps" },
+      { href: "/nextjs/nginxLocal", label: "nginx 安装在本地" },
+      { href: "/nextjs/buildOptimization", label: "nextjs 打包优化" },
+      { href: "/nextjs/nextConfig202404", label: "next.config 2024-04" },
+      { href: "/nextjs/cacheOptimization", label: "对缓存的优化" },
+      { href: "/nextjs/buildFailure", label: "遇到的构建失败难题" },
+    ],
+  },
+  {
+    label: "Vue",
+    href: "/vue",
+    type: "category",
     items: [
       { href: "/vue/readme", label: "Readme" },
       { href: "/vue/vupPro", label: "Vue" },
@@ -146,9 +168,9 @@ export const sidebar: ISidebar[] = [
     ],
   },
   {
-    label: 'Web optimization',
-    href: '/web-optimi',
-    type: 'category',
+    label: "Web optimization",
+    href: "/web-optimi",
+    type: "category",
     items: [
       { href: "/web-optimi/optimization", label: "Optimization" },
       { href: "/web-optimi/react", label: "React Vue" },
@@ -156,37 +178,52 @@ export const sidebar: ISidebar[] = [
     ],
   },
   {
-    label: 'Parsing interpretation compilation',
-    href: '/parsing-inte-co',
-    type: 'category',
+    label: "Parsing interpretation compilation",
+    href: "/parsing-inte-co",
+    type: "category",
     items: [
       { href: "/parsing-inte-co/parsesAST", label: "Parses->AST->Bytecode" },
-      { href: "/parsing-inte-co/closureMemory", label: "Closure-Memory Life Cycle" },
-      { href: "/parsing-inte-co/babelConvertsEs6", label: "Babel converts es6" },
+      {
+        href: "/parsing-inte-co/closureMemory",
+        label: "Closure-Memory Life Cycle",
+      },
+      {
+        href: "/parsing-inte-co/babelConvertsEs6",
+        label: "Babel converts es6",
+      },
       { href: "/parsing-inte-co/verdaccio", label: "Verdaccio" },
       { href: "/parsing-inte-co/pre-analysis", label: "Pre-analysis-variable" },
       { href: "/parsing-inte-co/scope", label: "Scope" },
-      { href: "/parsing-inte-co/contextFunction", label: "Execution context-function call stack" },
       {
-        label: 'Js Modules',
-        href: '/jsModules',
-        type: 'category',
+        href: "/parsing-inte-co/contextFunction",
+        label: "Execution context-function call stack",
+      },
+      {
+        label: "Js Modules",
+        href: "/jsModules",
+        type: "category",
         items: [
           { href: "/jsModules/esm", label: "Esm" },
           { href: "/jsModules/cjs", label: "Cjs" },
           { href: "/jsModules/cjsEsm", label: "Cjs esm differences" },
           { href: "/jsModules/modulesClosures", label: "Modules and Closures" },
-          { href: "/jsModules/commonJSImport", label: "ESM and CommonJS import" },
-        ]
+          {
+            href: "/jsModules/commonJSImport",
+            label: "ESM and CommonJS import",
+          },
+        ],
       },
     ],
   },
   {
-    label: 'Http-browser',
-    href: '/http-browser',
-    type: 'category',
+    label: "Http-browser",
+    href: "/http-browser",
+    type: "category",
     items: [
-      { href: "/http-browser/webRenderingProcess", label: "Web rendering process" },
+      {
+        href: "/http-browser/webRenderingProcess",
+        label: "Web rendering process",
+      },
       { href: "/http-browser/browserCache", label: "Browser cache" },
       { href: "/http-browser/compatibility", label: "Browser compatibility" },
       { href: "/http-browser/TCPIP", label: "TCP-IP-Handshake" },
@@ -194,60 +231,75 @@ export const sidebar: ISidebar[] = [
       { href: "/http-browser/httpMessage", label: "Http message" },
       { href: "/http-browser/httpJsStreamSee", label: "http-jsStream-see" },
       { href: "/http-browser/crossDomain", label: "Reverse/forward proxy" },
-      { href: "/http-browser/token-cookie-session", label: "Token-cookie-session" },
-      { href: "/http-browser/eventsBubblingCapture", label: "Events Bubbling Capture" },
+      {
+        href: "/http-browser/token-cookie-session",
+        label: "Token-cookie-session",
+      },
+      {
+        href: "/http-browser/eventsBubblingCapture",
+        label: "Events Bubbling Capture",
+      },
       { href: "/http-browser/webSecurity", label: "Web security:XSS/CSRF" },
-      { href: "/http-browser/renderingProcess", label: "Browser rendering process" },
+      {
+        href: "/http-browser/renderingProcess",
+        label: "Browser rendering process",
+      },
       { href: "/http-browser/serviceWorkers", label: "Service Workers" },
       { href: "/http-browser/webAssembly", label: "WebAssembly" },
       { href: "/http-browser/webComponents", label: "Web Components" },
       { href: "/http-browser/DNS", label: "DNS" },
       { href: "/http-browser/WebSocket", label: "WebSocket" },
       { href: "/http-browser/socks5", label: "Socks5-Shadowsocks" },
-    ]
+    ],
   },
   {
-    label: 'Algorithm',
-    href: '/algorithm',
-    type: 'category',
+    label: "Algorithm",
+    href: "/algorithm",
+    type: "category",
     items: [
       { href: "/algorithm/twoSum", label: "twoSum" },
       { href: "/algorithm/twoDivide", label: "twoDivide" },
       { href: "/algorithm/threeSum", label: "threeSum" },
-    ]
+    ],
   },
   {
-    label: 'Docker',
-    href: '/docker',
-    type: 'category',
+    label: "Docker",
+    href: "/docker",
+    type: "category",
     items: [
       { href: "/docker/basics", label: "Basics" },
       { href: "/docker/docker_nginx", label: "Docker nginx" },
       { href: "/docker/dockerCommands", label: "Docker Commands" },
       { href: "/docker/dockerfileCommands", label: "Dockerfile Commands" },
       { href: "/docker/dockerSwarm", label: "DockerSwarm" },
-      { href: "/docker/dockerContainerStatus", label: "Docker container status" },
+      {
+        href: "/docker/dockerContainerStatus",
+        label: "Docker container status",
+      },
       { href: "/docker/K8S", label: "K8S" },
       { href: "/docker/microservices", label: "Microservices" },
-    ]
+    ],
   },
   {
-    label: 'Design patterns',
-    href: '/designPatterns',
-    type: 'category',
+    label: "Design patterns",
+    href: "/designPatterns",
+    type: "category",
     items: [
       { href: "/designPatterns/basics", label: "Design patterns" },
       { href: "/designPatterns/singletonPattern", label: "Singleton Pattern" },
       { href: "/designPatterns/factoryMode", label: "Factory Mode" },
-      { href: "/designPatterns/publishSubscribe", label: "Publish and Subscribe" },
+      {
+        href: "/designPatterns/publishSubscribe",
+        label: "Publish and Subscribe",
+      },
       { href: "/designPatterns/decoratorPattern", label: "Decorator Pattern" },
       { href: "/designPatterns/adapterMode", label: "Adapter Mode" },
       { href: "/designPatterns/proxyMode", label: "Proxy Mode" },
       { href: "/designPatterns/strategyMode", label: "Strategy Mode" },
-    ]
+    ],
   },
   {
-    label: 'Resume',
-    href: '/resume',
+    label: "Resume",
+    href: "/resume",
   },
-]
+];
