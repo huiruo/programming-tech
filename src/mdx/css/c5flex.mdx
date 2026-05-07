@@ -1,5 +1,150 @@
-import CodeBlock from '../../components/codeBlock';
 import CodePannel from '../CodePannel';
+
+## Flex （补充：垂直居中 / 原生 CSS / Tailwind）
+
+### 1. 怎么用 Flex 实现“垂直居中”？
+
+假设父元素是 `flex` 容器（默认 `flex-direction: row` 时，交叉轴是“垂直方向”）。
+
+#### 原生 CSS 写法
+```css
+.container {
+  display: flex;
+  align-items: center; /* 垂直居中：交叉轴对齐 */
+  height: 200px;       /* 需要给高度（或等价的可计算高度） */
+}
+
+.item {
+  /* 需要的话给宽高/背景等 */
+}
+```
+
+#### Tailwind 写法
+```html
+<div class="flex items-center h-[200px]">
+  <div class="bg-teal-500">item</div>
+</div>
+```
+
+补充：如果把 `flex-direction: column` 改为列布局，那么“垂直/水平”的含义会互换，此时用的是 `justify-content` 来做主轴居中。
+
+### 2. 怎么用 Flex 实现“水平 + 垂直居中”？
+
+#### 原生 CSS 写法
+```css
+.container {
+  display: flex;
+  justify-content: center; /* 主轴水平居中（row 默认主轴在水平方向） */
+  align-items: center;     /* 交叉轴垂直居中 */
+  height: 200px;
+}
+```
+
+#### Tailwind 写法
+```html
+<div class="flex items-center justify-center h-[200px]">
+  <div class="bg-sky-500">item</div>
+</div>
+```
+
+### justify-items 和 align-items 的区别
+⚠️ **注意**：`justify-items` 在 **Flexbox 布局中不生效**，只在 **Grid 布局** 中有效。在 Flexbox 中控制主轴对齐应使用 `justify-content`。
+
+| 属性 | Flexbox | Grid | 作用轴 |
+|------|---------|------|--------|
+| `justify-items` | ❌ 不支持 | ✅ 支持 | 主轴 |
+| `align-items` | ✅ 支持 | ✅ 支持 | 交叉轴 |
+| `justify-content` | ✅ 支持 | ✅ 支持 | 主轴（对齐子元素整体） |
+
+**justify-items**：设置子元素在**主轴**方向上的对齐方式。
+
+**align-items**：设置子元素在**交叉轴**方向上的对齐方式。
+
+```css
+/* Flexbox 中 */
+.container {
+  display: flex;
+  justify-items: center;  /* ❌ Flexbox 中不生效 */
+  align-items: center;    /* ✅ 交叉轴对齐 */
+}
+
+/* Grid 布局中 */
+.container {
+  display: grid;
+  justify-items: center;  /* ✅ 水平方向对齐（主轴） */
+  align-items: center;    /* ✅ 垂直方向对齐（交叉轴） */
+}
+```
+
+### align-items 和 align-content的区别
+>align-items是针对单行的，是把单行来当做一个整体进行对齐方式操作，而align-content是针对多行的，是把多行来当做一个整体进行对齐方式操作
+
+align-items：
+
+* 适用于：Flexbox 容器（父元素）。
+* 指定了如何在交叉轴上（与主轴垂直的轴）对齐伸缩项目。
+* align-items 的常见值包括 flex-start、flex-end、center、baseline 和 stretch。
+* align-items 对容器内的各个项目进行对齐。
+
+例子如上
+
+align-content：
+
+* 适用于：具有多行伸缩项目的 Flexbox 容器或 grid 容器（父元素）。
+* 指定了如何在伸缩或网格容器中的交叉轴上对齐多行伸缩项目。
+* 仅在存在多行伸缩项目时产生效果（例如，由于在 flex 容器中使用了 flex-wrap: wrap）。
+* align-content 用于对齐容器内的伸缩项目行，而不是对齐这些行内的各个项目。
+
+
+### 3. 怎么用 Flex 做“两端对齐”（左/右贴边）？
+
+#### 原生 CSS 写法
+```css
+.container {
+  display: flex;
+  justify-content: space-between; /* 两端对齐，中间留空 */
+}
+```
+
+#### Tailwind 写法
+```html
+<div class="flex justify-between">
+  <div>left</div>
+  <div>right</div>
+</div>
+```
+
+### 4. 子元素“溢出省略号”如何写（Flex + ellipsis 常考）？
+
+#### 原生 CSS 写法
+```css
+.container {
+  display: flex;
+  gap: 12px;
+}
+
+.left {
+  flex: 0 0 auto;
+}
+
+.text {
+  flex: 1 1 auto;
+  min-width: 0;              /* 关键：允许 flex 子项真正缩小 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+```
+
+#### Tailwind 写法
+```html
+<div class="flex gap-3">
+  <div class="shrink-0">left</div>
+  <div class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+    some long text...
+  </div>
+</div>
+```
 
 ## 关于flex 1
 
@@ -101,25 +246,6 @@ flex 项目绝对大小
     flex: 1; 
 }
 ```
-
-### align-items 和 align-content的区别
->align-items是针对单行的，是把单行来当做一个整体进行对齐方式操作，而align-content是针对多行的，是把多行来当做一个整体进行对齐方式操作
-
-align-items：
-
-* 适用于：Flexbox 容器（父元素）。
-* 指定了如何在交叉轴上（与主轴垂直的轴）对齐伸缩项目。
-* align-items 的常见值包括 flex-start、flex-end、center、baseline 和 stretch。
-* align-items 对容器内的各个项目进行对齐。
-
-例子如上
-
-align-content：
-
-* 适用于：具有多行伸缩项目的 Flexbox 容器或 grid 容器（父元素）。
-* 指定了如何在伸缩或网格容器中的交叉轴上对齐多行伸缩项目。
-* 仅在存在多行伸缩项目时产生效果（例如，由于在 flex 容器中使用了 flex-wrap: wrap）。
-* align-content 用于对齐容器内的伸缩项目行，而不是对齐这些行内的各个项目。
 
 ### flex-wrap 属性规定灵活项目是否拆行或拆列
 ```
