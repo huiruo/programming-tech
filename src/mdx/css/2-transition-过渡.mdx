@@ -36,6 +36,63 @@ div:hover {
 * transition-duration – 转变过程持续时间。
 * transition-timing-function – 转变时使用的调速函数(比如, linear、 ease-in 或自定义的 cubic bezier 函数)
 
+### transition-property 支持哪些属性？
+
+**只有"数值型"属性才能过渡，"离散型"属性不能过渡。**
+
+#### ✅ 支持过渡的属性（常见）
+
+| 类型 | 属性 | 示例 |
+|-----|------|------|
+| 尺寸 | width, height, max-width, min-height | 100px → 200px |
+| 位置 | top, left, right, bottom, margin, padding | 0 → 50px |
+| 透明度 | opacity | 0 → 1 |
+| 颜色 | color, background-color, border-color | red → blue |
+| 边框 | border-width, border-radius | 0 → 10px |
+| 变换 | transform (translate, rotate, scale) | scale(1) → scale(2) |
+| 文字 | font-size, font-weight, line-height | 12px → 24px |
+| 其他 | z-index, flex, visibility | visibility: visible → hidden |
+
+#### ❌ 不支持过渡的属性
+
+| 属性 | 原因 |
+|-----|------|
+| display | 没有"中间状态"（none 和 block 之间没有过渡值） |
+| position | 离散值（static/absolute/fixed 之间没有过渡） |
+| float | 离散值 |
+| visibility | 特殊：可以过渡但效果不明显（只是延迟消失） |
+
+**理解：为什么 display 不能过渡？**
+
+```
+display 过渡示例：
+display: none → display: block
+
+问题：none 和 block 之间没有"中间值"
+不存在 display: half-block 这种值
+所以无法实现渐变效果
+
+✅ 替代方案：用 opacity + visibility 组合
+visibility: visible → hidden（延迟消失）
+opacity: 1 → 0（渐变透明）
+```
+
+**visibility 的特殊情况：**
+
+```css
+/* visibility 可以写进 transition，但效果是"延迟消失" */
+.box {
+  visibility: visible;
+  opacity: 1;
+  transition: visibility 0s 0.5s, opacity 0.5s;  /* opacity 0.5s渐变，visibility 0.5s后隐藏 */
+}
+
+.box:hover {
+  visibility: hidden;
+  opacity: 0;
+}
+```
+
 实例：transition–三种属性的合体简写
 ```css
 div{

@@ -1,110 +1,141 @@
 import CodeBlock from '../../components/codeBlock';
 import CodePannel from '../CodePannel';
 
-## css中隐藏元素
-* diaplay: none; --> 盒模型不生成，被隐藏的元素不占据任何空间,其占用的空间会被其他元素所占有，从而会引起浏览器的重排和重绘。
->v-show： 调用display:none 来控制元素,display:none；视觉上消失，也不占位置，但Dom节点还在。
-* visibility: hidden; --> 如同opacity属性，被隐藏的元素依然会对我们的网页布局起作用。与opacity唯一不同的是它不会响应任何用户交互。(导致浏览器的重绘而不会引起重排)
->视觉上消失，但是还占着位置。 
-* opacity: 0; --> 元素本身依然占据它自己的位置并对网页的布局起作用，它也将响应用户交互。
-* v-if ：让Dom节点直接消失。（即：视觉上看不到，也没有位置，dom节点也不在。）
+## CSS 问题
 
-css优先级：
-- 第一优先级：!important
-- 1.内联样式，如style="color: green"，权值为1000
-- 2.ID选择器，如#app，权值为0100
-- 3.类、伪类、属性选择器，如.foo, :first-child, div[class="foo"]，权值为0010
-- 4.标签、伪元素选择器，如div::first-line，权值为0001
-- 5.通配符、子类选择器、兄弟选择器，如*, >, +，权值为0000
-- 6.继承的样式没有权值
+以下是高频 CSS 面试题，本文档会逐一展开：
 
-### 常见的块级元素有：
+1. **CSS 盒模型**：标准盒模型 vs IE 盒模型（box-sizing）
+2. **隐藏元素**：display:none vs visibility:hidden vs opacity:0
+3. **CSS 选择器优先级**：权值计算规则
+4. **块级元素 vs 行内元素**：区别与转换
+5. **BFC（块级格式化上下文）**：触发条件与应用场景
+6. **position 定位**：static/relative/absolute/fixed/sticky
+7. **水平垂直居中**：多种实现方案
+8. **Flex 布局**：常用属性与场景
+9. **清除浮动**：多种方法
+10. **重排（Reflow）vs 重绘（Repaint）**：性能优化
+11. **CSS3 新特性**：动画、渐变、transform 等
+12. **响应式布局**：媒体查询、rem/vw/vh
+13. **伪类 vs 伪元素**：区别与使用
+14. **object-fit**：图片适配容器
+15. **GPU 加速**：will-change、transform:translateZ(0)
+
+### 1.dom元素的高度和盒模型
+
+先理解盒模型结构（从内到外）：
 ```
-<h1>,<p>,<div>,<ul>,<ol>,<li>,<form><table><hr>
-<address>,<blockquote>,<center>,<dir>,<dl>,<menu>,<pre>
-```
-
-常见的行内元素有：
-```
-span/a/img/input/em/strong/font/br/select/textarea/i/label/
-abbr/acronym/b/big/cite/code/kbd/q/s/small/strike/sub/sup/tt/u
-```
-
-1. 行内标签：块级标签转换为行内标签：display:inline;
-		- 2.宽高:
-		行内元素不可以设置宽高,宽度高度随文本内容的变化而变化,但是可以设置行高;
-			块级可设置高度
-		- 2.行内元素的display属性默认为inline 
-2. 块级元素：行内标签转换为块级标签：display:block;
-		- 1.排列:
-			行内元素和其他行内元素都会在一条水平线上排列,都是在同一行的;
-			块级元素却总是会在新的一行.
-		- 是否包含：
-			块级元素可以包含行内元素和块级元素,还可以容纳内联元素和其他元素;
-			行内元素不能包含块级
-3. 转换为行内块标签：display：inline-block;
-当元素浮动时，无论是行内元素还是块元素，状态都类似于display:inline-block，既宽高可设置，内外边距可设置，不会独占一行。默认状态下宽高由元素内容决定。
-
-```
-inline-block元素的宽度始终等于其内容宽度.  它具有块级元素的特点，也有行内元素的行为.
-
-从块级元素角度来说，可以为他设定外边距和内边距，也可以通过它简便而有效的包围其他块级元素.
-
-从行内元素角度看，他会收缩包裹自己的内容，而不是扩展填充父元素.
-
-
-解决方案就是为要居中元素的父元素应用text-align:center，为要居中的元素设定display:inline-block.这样设定就可以得到我们想要的结果:没有宽度的元素也能在其父元素内居中.
-
-.title img{
-    display: inline-block;
-    vertical-align: middle;
-}
+┌─────────────────────────────┐ ← Border 外边缘
+│  Border（边框）              │
+│  ┌───────────────────────┐  │ ← Padding 内边缘
+│  │ Padding（内边距）      │  │
+│  │  ┌─────────────────┐  │  │ ← Content 边缘
+│  │  │ Content（内容） │  │  │
+│  │  └─────────────────┘  │  │
+│  └───────────────────────┘  │
+└─────────────────────────────┘
+         ↑ Margin 在 Border 外面，不影响这三个高度
 ```
 
-## box-sizing
-* box-sizing:content-box; width(宽度) + padding(内边距) + border(边框) = 元素实际宽度。
-* box-sizing:border-box; 指定盒模型为IE模型,即 border 与 padding 由元素已设空间转变。
+**三个高度的区别：**
+
+| 属性 | 包含什么 | 用途 |
+|-----|---------|-----|
+| `offsetHeight` | content + padding + border | 元素"盒子"的总高度（你看到的整个元素） |
+| `clientHeight` | content + padding | 元素"可视区域"的高度（去掉边框） |
+| `scrollHeight` | content + padding + 溢出部分 | 元素"内容的真实总高度"（包括隐藏部分） |
+| `scrollTop` | 滚动距离 | 滚动条滚动了多少（可读写） |
+
+**举个实际例子：**
+
 ```html
-<style type="text/css">
+<style>
 .box {
-  width: 200px;
-  height: 200px;
-  text-align: center;
-  border: 10px solid black;
-  padding: 15px;
-  box-sizing: border-box;
+  height: 100px;      /* 内容高度 */
+  padding: 10px;      /* 上下各10px */
+  border: 5px;        /* 上下各5px */
+  overflow: auto;     /* 内容溢出时可滚动 */
 }
+/* 假设里面放了 300px 高的内容 */
 </style>
 ```
 
-此时的行高：`line-height = height - border*2 - padding*2 = 200px - 10px*2 - 15px*2 = 150px;`因为此时，内容的其余空间被边框和填充占用，所以是元素的高减去边框和填充的空间，剩余即为内容空间
+计算结果：
+```
+offsetHeight = 100 + 10*2 + 5*2 = 130px  （盒子高度）
+clientHeight = 100 + 10*2     = 120px  （可视区域，不含边框）
+scrollHeight = 300 + 10*2     = 320px  （内容总高度，含溢出部分）
+```
 
-### 1-2.dom元素的高度
-盒模型
-* Content(内容) - 盒子的内容，显示文本和图像。
-* Padding(内边距) - 清除内容周围的区域，内边距是透明的。
-* Border(边框) - 围绕在内边距和内容外的边框。
-* Margin(外边距) - 清除边框外的区域，外边距是透明的。
+**什么时候用哪个？**
 
-1. offsetHeight:border + padding + 元素内部
-    * offsetHeight 衡量了一个元素在网页布局中的完整高度，包括其高度、边框（border）和内边距（padding），但不包括外边距（margin）。
-    * 如果元素有水平滚动条，它的 offsetHeight 包括水平滚动条的高度。
-    > 对于包含外边距的总高度，你应该考虑使用 offsetHeight 额外加上外边距的高度。
+- `offsetHeight`：想知道元素在页面占多大空间
+- `clientHeight`：想知道元素可视区域有多大（滚动容器时用）
+- `scrollHeight`：想知道滚动容器里内容总高度（判断是否滚动到底部）
 
-2. clientHeight: 只包括padding和元素的内容
-    * clientHeight 衡量了一个元素的可见区域的高度，不包括边框（border）和外边距（margin），只包括内边距（padding）和元素的内容。
-    * 对于带有滚动条的容器元素，它表示可见区域的高度，而 scrollHeight 表示所有内容的高度。
-    * clientHeight 可用于确定元素内部内容的高度，以帮助在滚动时计算滚动位置。
+### scrollTop：滚动距离
 
-3. scrollHeight: 溢出内容的高度 + padding + 元素内部
-    * scrollHeight 衡量了一个元素内容在不可见区域的高度，包括被隐藏的内容（例如，溢出内容）的高度。
-    * 如果元素的内容没有溢出并且在可见区域内，scrollHeight 等于元素的 clientHeight。
-    * scrollHeight 对于滚动元素（例如，带有滚动条的容器）非常有用，因为它可以告诉你隐藏内容的总高度。
+**scrollTop = 滚动条滚动了多少距离**
 
->offsetHeight 和 scrollHeight 可以看做是元素实际高度的两个方面，分别考虑了内容和溢出的情况。clientHeight 只考虑了元素内部的高度。
+```
+滚动前（scrollTop = 0）：
+┌─────────────┐ ← 可视区域顶部
+│ 内容 A      │
+│ 内容 B      │
+│ 内容 C      │  ← 可视区域（clientHeight）
+└─────────────┘ ← 可视区域底部
+│ 内容 D      │  ← 滚动后被看到
+│ 内容 E      │
+│ 内容 F      │
 
+向下滚动后（scrollTop = 50）：
+│ 内容 A      │  ← 滚上去看不到了
+│ 内容 B      │
+┌─────────────┐ ← 可视区域顶部
+│ 内容 C      │
+│ 内容 D      │
+│ 内容 E      │  ← 可视区域
+└─────────────┘ ← 可视区域底部
+│ 内容 F      │
+```
 
-> 一般来说，如果元素内部的内容溢出了可见区域，scrollHeight 会比 offsetHeight 或 clientHeight 大
+**判断是否滚动到底部：**
+
+```js
+// 滚动到底部的条件
+scrollTop + clientHeight >= scrollHeight
+
+// 为什么用 clientHeight 而不是 offsetHeight？
+// - clientHeight = 内容可视区域（不含 border）
+// - offsetHeight = 盒子总高度（含 border）
+// - 滚动发生在"内容区域"，border 不参与滚动计算
+// - scrollTop 是基于内容区域计算的，不包括 border
+// - 如果用 offsetHeight，会把 border 加进去，导致判断不准确
+//   例如：border=5px 时，会提前5px判断为"到底了"
+
+// 理解：
+// scrollTop（已滚动距离） + clientHeight（可视区域） = 当前看到的位置
+// scrollHeight（内容总高度） = 底部位置
+// 当两个相等时，说明到底了
+```
+
+**实际应用示例：**
+
+```js
+const box = document.querySelector('.scroll-box');
+
+// 监听滚动
+box.addEventListener('scroll', () => {
+  const scrollTop = box.scrollTop;           // 滚动了多少
+  const clientHeight = box.clientHeight;     // 可视区域高度
+  const scrollHeight = box.scrollHeight;     // 内容总高度
+
+  // 判断是否到底
+  if (scrollTop + clientHeight >= scrollHeight) {
+    console.log('已滚动到底部，可以加载更多');
+  }
+});
+```
 
 <CodeBlock>
 ```html
@@ -177,6 +208,435 @@ const elOffsetTop = document.getElementById("meId" + index).offsetTop;
 
 if (elOffsetTop < clientHeight + scrollTop) {
   console.log("===============>显示了");
+}
+```
+
+---
+
+## css中隐藏元素
+* diaplay: none; --> 盒模型不生成，被隐藏的元素不占据任何空间,其占用的空间会被其他元素所占有，从而会引起浏览器的重排和重绘。
+>v-show： 调用display:none 来控制元素,display:none；视觉上消失，也不占位置，但Dom节点还在。
+* visibility: hidden; --> 如同opacity属性，被隐藏的元素依然会对我们的网页布局起作用。与opacity唯一不同的是它不会响应任何用户交互。(导致浏览器的重绘而不会引起重排)
+>视觉上消失，但是还占着位置。 
+* opacity: 0; --> 元素本身依然占据它自己的位置并对网页的布局起作用，它也将响应用户交互。
+* v-if ：让Dom节点直接消失。（即：视觉上看不到，也没有位置，dom节点也不在。）
+
+### css优先级：
+- 第一优先级：!important
+- 1.内联样式，如style="color: green"，权值为1000
+- 2.ID选择器，如#app，权值为0100
+- 3.类、伪类、属性选择器，如.foo, :first-child, div[class="foo"]，权值为0010
+- 4.标签、伪元素选择器，如div::first-line，权值为0001
+- 5.通配符、子类选择器、兄弟选择器，如*, >, +，权值为0000
+- 6.继承的样式没有权值
+
+### 常见的块级元素有：
+```
+<h1>,<p>,<div>,<ul>,<ol>,<li>,<form><table><hr>
+<address>,<blockquote>,<center>,<dir>,<dl>,<menu>,<pre>
+```
+
+常见的行内元素有：
+```
+span/a/img/input/em/strong/font/br/select/textarea/i/label/
+abbr/acronym/b/big/cite/code/kbd/q/s/small/strike/sub/sup/tt/u
+```
+
+1. 行内标签：块级标签转换为行内标签：display:inline;
+		- 2.宽高:
+		行内元素不可以设置宽高,宽度高度随文本内容的变化而变化,但是可以设置行高;
+			块级可设置高度
+		- 2.行内元素的display属性默认为inline 
+2. 块级元素：行内标签转换为块级标签：display:block;
+		- 1.排列:
+			行内元素和其他行内元素都会在一条水平线上排列,都是在同一行的;
+			块级元素却总是会在新的一行.
+		- 是否包含：
+			块级元素可以包含行内元素和块级元素,还可以容纳内联元素和其他元素;
+			行内元素不能包含块级
+3. 转换为行内块标签：display：inline-block;
+当元素浮动时，无论是行内元素还是块元素，状态都类似于display:inline-block，既宽高可设置，内外边距可设置，不会独占一行。默认状态下宽高由元素内容决定。
+
+```
+inline-block元素的宽度始终等于其内容宽度.  它具有块级元素的特点，也有行内元素的行为.
+
+从块级元素角度来说，可以为他设定外边距和内边距，也可以通过它简便而有效的包围其他块级元素.
+
+从行内元素角度看，他会收缩包裹自己的内容，而不是扩展填充父元素.
+
+
+解决方案就是为要居中元素的父元素应用text-align:center，为要居中的元素设定display:inline-block.这样设定就可以得到我们想要的结果:没有宽度的元素也能在其父元素内居中.
+
+.title img{
+    display: inline-block;
+    vertical-align: middle;
+}
+```
+
+## box-sizing
+* box-sizing:content-box; width(宽度) + padding(内边距) + border(边框) = 元素实际宽度。
+* box-sizing:border-box; 指定盒模型为IE模型,即 border 与 padding 由元素已设空间转变。
+```html
+<style type="text/css">
+.box {
+  width: 200px;
+  height: 200px;
+  text-align: center;
+  border: 10px solid black;
+  padding: 15px;
+  box-sizing: border-box;
+}
+</style>
+```
+
+此时的行高：`line-height = height - border*2 - padding*2 = 200px - 10px*2 - 15px*2 = 150px;`因为此时，内容的其余空间被边框和填充占用，所以是元素的高减去边框和填充的空间，剩余即为内容空间
+
+## BFC（块级格式化上下文）
+
+### 什么是 BFC？
+
+简单理解：**BFC 就是一个"封闭的盒子"，盒子里的元素和外面的元素互不影响。**
+
+类比：想象一个密封的房间，房间里的人怎么活动都不会影响房间外面的人，外面的人也进不来。
+
+**⚠️ 重要：普通 `<div>` 默认没有 BFC！需要主动触发。**
+
+```html
+<!-- 这个 div 没有 BFC，是"开放的"，会有浮动塌陷、margin重叠等问题 -->
+<div class="parent">
+  <div class="child">内容</div>
+</div>
+```
+
+### 触发 BFC 的条件（让元素变成"封闭盒子"）
+
+常用方式：
+```css
+overflow: hidden;      /* 最常用 */
+display: flow-root;    /* 新语法，专门创建 BFC */
+display: flex / grid;  /* Flex/Grid 容器自带 BFC */
+position: absolute;    /* 绝对定位元素 */
+float: left/right;     /* 浮动元素 */
+```
+
+### BFC 解决的 3 个实际问题
+
+#### 问题1：子元素浮动，父元素高度塌陷
+
+```html
+<!-- 问题：父元素高度为 0 -->
+<style>
+.parent {
+  border: 2px solid red;
+  /* 没有 BFC，子元素浮动后父元素高度塌陷为 0 */
+}
+.child {
+  float: left;
+  height: 100px;
+}
+</style>
+<div class="parent">
+  <div class="child">浮动元素</div>
+</div>
+<!-- 结果：parent 的 border 看起来只有一条线 -->
+```
+
+**BFC 解决方案：**
+```css
+.parent {
+  border: 2px solid red;
+  overflow: hidden; /* 触发 BFC，父元素高度恢复 */
+}
+```
+
+#### 问题2：两个相邻元素的 margin 重叠
+
+```html
+<!-- 问题：两个 div 的 margin 重叠了 -->
+<style>
+.box1 { margin-bottom: 50px; }
+.box2 { margin-top: 50px; }
+/* 实际间距只有 50px，不是 100px */
+</style>
+```
+
+**BFC 解决方案：**
+```css
+/* 把其中一个元素放进 BFC 容器 */
+.wrapper {
+  overflow: hidden; /* 触发 BFC */
+}
+```
+
+#### 问题3：文字被浮动元素遮挡
+
+```html
+<!-- 问题：左边浮动图片，右边文字被压到图片下面 -->
+<style>
+.float-left {
+  float: left;
+  width: 200px;
+}
+.content {
+  /* 文字会被浮动元素影响，可能显示在浮动元素下面 */
+}
+</style>
+```
+
+**BFC 解决方案：**
+```css
+.content {
+  overflow: hidden; /* BFC 区域不会与浮动元素重叠，文字自动避开 */
+}
+```
+
+### 总结一句话
+
+**BFC = overflow: hidden**（这是最常用的触发方式，能解决浮动塌陷、margin重叠、浮动遮挡问题）。
+
+## position 定位
+
+| 值 | 特点 | 是否脱离文档流 | 参照物 |
+|---|------|---------------|-------|
+| static | 默认值，正常布局 | ❌ | 无 |
+| relative | 相对定位，偏移自身位置 | ❌ | 自身原位置 |
+| absolute | 绝对定位 | ✅ | 最近定位祖先 |
+| fixed | 固定定位 | ✅ | 视窗 |
+| sticky | 粘性定位 | ❌→✅ | 滚动容器 |
+
+```css
+/* 固定在底部 */
+.footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+}
+
+/* 粘性导航 */
+.nav {
+  position: sticky;
+  top: 0;
+}
+```
+
+## 水平垂直居中
+
+### 1. Flex 方案（推荐）
+```css
+.parent {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+```
+
+### 2. absolute + transform
+```css
+.parent {
+  position: relative;
+}
+.child {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+```
+
+### 3. absolute + margin: auto
+```css
+.parent {
+  position: relative;
+}
+.child {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: auto;
+  width: 100px;
+  height: 100px;
+}
+```
+
+### 4. Grid 方案
+```css
+.parent {
+  display: grid;
+  place-items: center;
+}
+```
+
+## 清除浮动
+
+### 1. 额外标签法（不推荐）
+```html
+<div class="parent">
+  <div class="float"></div>
+  <div style="clear: both;"></div>
+</div>
+```
+
+### 2. 伪元素法（推荐）
+```css
+.parent::after {
+  content: "";
+  display: block;
+  clear: both;
+}
+```
+
+### 3. BFC 法
+```css
+.parent {
+  overflow: hidden;
+  /* 或现代方案 */
+  display: flow-root;
+}
+```
+
+## 重排（Reflow）vs 重绘（Repaint）
+
+### 重排（Reflow）
+元素的位置、尺寸发生变化，需要重新计算布局。
+
+触发重排的操作:
+- 添加/删除可见 DOM 元素
+- 元素尺寸变化（width、height、padding、margin、border）
+- 内容变化（文本数量、字体大小）
+- 浏览器窗口尺寸变化
+- 读取某些属性：offsetWidth、scrollTop、clientTop 等
+
+### 重绘（Repaint）
+元素的外观发生变化，但尺寸不变。
+
+触发重绘的操作：
+- color、background-color
+- visibility
+- outline、border-color（不影响尺寸时）
+
+### 性能优化建议
+
+#### 1. 减少重排
+
+| 做法 | 原因 | 示例 |
+|-----|------|-----|
+| 批量修改样式 | 避免多次触发重排 | 改 class 代替逐个改 style |
+| 批量修改 DOM | 减少 DOM 操作次数 | 用 documentFragment |
+| 动画元素脱离文档流 | 动画不影响其他元素 | 设置 absolute/fixed |
+| 读写分离 | 避免强制同步布局 | 先读完再写，不要交替 |
+
+```js
+// ❌ 错误：读写交替，触发多次重排
+for (let i = 0; i < 10; i++) {
+  el.style.width = el.offsetWidth + 10 + 'px'; // 每次循环都重排
+}
+
+// ✅ 正确：先读完，再一次性写
+const width = el.offsetWidth; // 只触发一次
+for (let i = 0; i < 10; i++) {
+  el.style.width = width + i * 10 + 'px';
+}
+```
+
+```js
+// ❌ 错误：逐个插入 DOM
+for (let i = 0; i < 100; i++) {
+  list.appendChild(document.createElement('li'));
+}
+
+// ✅ 正确：用 documentFragment 批量插入
+const fragment = document.createDocumentFragment();
+for (let i = 0; i < 100; i++) {
+  fragment.appendChild(document.createElement('li'));
+}
+list.appendChild(fragment); // 只触发一次重排
+```
+
+#### 2. 减少重绘
+
+| 做法 | 原因 |
+|-----|------|
+| 用 opacity/transform 做动画 | 这些属性不触发重排 |
+| 避免频繁改动 color/background | 会触发重绘 |
+
+#### 3. 利用 GPU 加速
+
+```css
+/* 动画元素开启 GPU 加速 */
+.animate {
+  will-change: transform;  /* 提前告知浏览器会变化 */
+  transform: translateZ(0); /* 强制 GPU 渲染 */
+}
+
+/* 注意：不要滥用 will-change，会增加内存占用 */
+```
+
+#### 总结：性能优化核心原则
+
+```
+重排 > 重绘 > GPU合成
+（性能消耗从大到小）
+
+优先级：
+1. 能用 GPU 合成 → 不触发重排重绘（最佳）
+2. 只触发重绘 → 避免重排
+3. 必须重排 → 批量处理，减少次数
+```
+
+## GPU 加速
+
+使用 GPU 渲染元素，减少 CPU 负担。
+
+### 触发 GPU 加速的属性
+- `transform: translateZ(0)` 或 `transform: translate3d(0, 0, 0)`
+- `will-change: transform`
+- `opacity`（配合动画）
+- `filter`
+
+```css
+/* GPU 加速动画 */
+.element {
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* 注意：不要滥用 will-change，会增加内存占用 */
+```
+
+## 响应式布局单位
+
+| 单位 | 说明 |
+|-----|------|
+| rem | 相对于根元素 font-size |
+| vw | 视窗宽度的 1% |
+| vh | 视窗高度的 1% |
+| % | 相对于父元素 |
+
+### rem 方案
+```css
+html {
+  font-size: 16px; /* 基准 */
+}
+.element {
+  width: 10rem; /* = 160px */
+}
+
+/* 响应式调整 */
+@media (max-width: 750px) {
+  html { font-size: 14px; }
+}
+```
+
+### vw 方案（移动端推荐）
+```css
+/* 1vw = 视窗宽度的 1% */
+/* 750px 设计稿：1vw = 7.5px */
+.element {
+  width: 100vw;
+  height: 50vh;
 }
 ```
 

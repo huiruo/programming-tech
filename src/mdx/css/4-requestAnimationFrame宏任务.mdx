@@ -148,7 +148,100 @@ export const testCode = `
 <CodePannel name='requestAnimationFrame-setTimeout' language='html' code={testCode} height='500px'/>
 
 
-## requestAnimationFrame-setTimeout的区别
+## requestAnimationFrame 和 setTimeout 的区别
+
+### 核心区别
+
+| 特点 | requestAnimationFrame | setTimeout |
+|-----|----------------------|------------|
+| 执行时机 | 浏览器重绘前执行 | 指定时间后执行 |
+| 刷新频率 | 自动跟随屏幕刷新率（通常 60fps = 16.7ms） | 手动设置，自己控制 |
+| 性能 | 更流畅，不会丢帧 | 可能丢帧、卡顿 |
+| CPU 节能 | 页面隐藏时自动暂停 | 页面隐藏也继续执行 |
+| 回调次数 | 每帧只执行一次 | 可能一帧执行多次 |
+
+### 为什么动画推荐用 requestAnimationFrame？
+
+**setTimeout 的问题：**
+
+```
+假设屏幕刷新率 60Hz（每 16.7ms 刷新一次）
+
+setTimeout(fn, 10)  // 设置 10ms 执行
+→ 问题：16.7ms 内执行了 1.67 次，造成丢帧
+
+setTimeout(fn, 20)  // 设置 20ms 执行
+→ 问题：比刷新慢，每帧没更新，动画不流畅
+
+setTimeout(fn, 16.7)  // 设置正好 16.7ms
+→ 问题：浏览器繁忙时会延迟执行，还是会丢帧
+```
+
+**requestAnimationFrame 的优势：**
+
+```
+requestAnimationFrame(fn)
+→ 自动跟随屏幕刷新率
+→ 60Hz 屏幕：每 16.7ms 执行一次
+→ 75Hz 屏幕：每 13.3ms 执行一次
+→ 每帧只执行一次，不丢帧
+→ 页面隐藏时自动暂停，节省 CPU
+```
+
+### 代码对比
+
+```js
+// ❌ setTimeout 实现动画（不推荐）
+function animate() {
+  box.style.left = parseInt(box.style.left) + 1 + 'px';
+  if (parseInt(box.style.left) < 200) {
+    setTimeout(animate, 16);  // 手动设置时间，可能不匹配刷新率
+  }
+}
+animate();
+
+// ✅ requestAnimationFrame 实现动画（推荐）
+function animate() {
+  box.style.left = parseInt(box.style.left) + 1 + 'px';
+  if (parseInt(box.style.left) < 200) {
+    requestAnimationFrame(animate);  // 自动跟随刷新率
+  }
+}
+animate();
+```
+
+### 执行时机对比
+
+```
+事件循环执行顺序：
+┌─────────────────────────────────┐
+│  宏任务执行                      │
+│  ↓                              │
+│  微任务执行                      │
+│  ↓                              │
+│  requestAnimationFrame 执行     │ ← 在渲染前执行
+│  ↓                              │
+│  浏览器渲染（重绘）              │
+│  ↓                              │
+│  下一个宏任务...                 │
+└─────────────────────────────────┘
+
+setTimeout 是宏任务，requestAnimationFrame 在渲染前执行
+所以它们的执行时机不同
+```
+
+### 总结
+
+| 场景 | 推荐 |
+|-----|------|
+| 动画、滚动、canvas 渲染 | requestAnimationFrame |
+| 定时任务、延迟执行 | setTimeout |
+| 需要精确控制时间 | setTimeout |
+| 需要节能、自动暂停 | requestAnimationFrame |
+
+**一句话：做动画用 requestAnimationFrame，做定时任务用 setTimeout。**
+
+### 代码示例
 export const testCode2 = `
 <!DOCTYPE html>
 <html lang="en">

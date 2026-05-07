@@ -1,7 +1,9 @@
 import CodePannel from '../CodePannel';
 
 ## transform：转换
-定义和用法：transform 属性向元素应用 2D 或 3D 转换。该属性允许我们对元素进行旋转、缩放、移动或倾斜
+### transform 的 5 种方法
+
+transform 属性向元素应用 2D 或 3D 转换，可以对元素进行旋转、缩放、移动或倾斜：
 
 * translate()
 * rotate()
@@ -37,6 +39,105 @@ div
 * 通过 skew() 方法，元素翻转给定的角度，根据给定的水平线（X 轴）和垂直线（Y 轴）参数：
 * matrix() 方法把所有 2D 转换方法组合在一起。
 matrix() 方法需要六个参数，包含数学函数，允许您：旋转、缩放、移动以及倾斜元素。
+
+### transform 和 translate 的区别
+
+**transform 是"大属性"，translate 是其中一个"小方法"**
+
+```
+transform（变换）= 父属性
+    ├── translate()  → 移动位置
+    ├── rotate()     → 旋转角度
+    ├── scale()      → 缩放大小
+    ├── skew()       → 倾斜变形
+    └── matrix()     → 组合以上所有
+```
+
+**类比理解：**
+
+| 类比 | CSS |
+|-----|-----|
+| 运动 = transform | 变换（大属性） |
+| 跑步 = translate | 移动（一种变换方式） |
+| 转圈 = rotate | 旋转（一种变换方式） |
+| 变大变小 = scale | 缩放（一种变换方式） |
+
+**写法：**
+
+```css
+/* transform 是属性名，translate 是方法名 */
+.box {
+  transform: translate(50px, 100px);  /* 移动 */
+  transform: rotate(30deg);           /* 旋转 */
+  transform: scale(2);                /* 缩放 */
+  
+  /* 可以组合写 */
+  transform: translate(50px) rotate(30deg) scale(1.5);
+}
+```
+
+### `transform: translate(-50%, -50%)`是什么意思？
+
+**这是水平垂直居中的经典写法**
+
+```css
+/* translate(x, y) 的参数 */
+transform: translate(-50%, -50%);
+/*         ↑        ↑
+        x轴偏移   y轴偏移
+        -50%表示相对元素自身宽度的一半（向左移动）
+        -50%表示相对元素自身高度的一半（向上移动）*/
+```
+
+**配合 position 实现居中：**
+
+```css
+.parent {
+  position: relative;
+}
+
+.child {
+  position: absolute;
+  top: 50%;              /* 定位到父元素中间（但元素左上角在中间） */
+  left: 50%;             /* 所以需要再往左上移动自身的一半 */
+  transform: translate(-50%, -50%);
+}
+```
+
+**图解理解：**
+
+```
+第一步：top: 50%; left: 50%
+┌─────────────────┐
+│                 │
+│       ┌──┐      │  ← 子元素左上角在中心点
+│       │子│ *    │     但整体偏右下
+│       └──┘      │
+│                 │
+└─────────────────┘
+        * 是父元素中心点
+
+第二步：translate(-50%, -50%)
+┌─────────────────┐
+│                 │
+│       ┌──┐      │
+│     * │子│      │  ← 子元素中心点对齐父元素中心点
+│       └──┘      │
+│                 │
+└─────────────────┘
+        * 是父元素中心点，现在也是子元素中心点
+```
+
+**⚠️ 注意：-50% 是相对于自身，不是父元素**
+
+```css
+/* 假设子元素宽度 100px，高度 80px */
+transform: translate(-50%, -50%);
+/* 等价于 */
+transform: translate(-50px, -40px);  /* 向左50px，向上40px */
+```
+
+---
 
 ### 方法1：translate():
 元素从其当前位置移动，根据给定的 left（x 坐标） 和 top（y 坐标） 位置参数
@@ -128,6 +229,113 @@ matrix() 方法需要六个参数，包含数学函数，允许您：旋转、�
 ```
 
 ## 动画-animation-transition
+
+### transition 和 animation 的区别
+
+**transition（过渡）= "被动"变化**
+
+需要触发条件（如 hover、click），从状态A变化到状态B。
+
+```css
+/* transition：鼠标悬停时，宽度从100px变成200px */
+.box {
+  width: 100px;
+  transition: width 1s;  /* 宽度变化需要1秒 */
+}
+
+.box:hover {
+  width: 200px;  /* 悬停触发变化 */
+}
+```
+
+**animation（动画）= "主动"播放**
+
+自动播放，可以设置多个关键帧（0%、25%、50%、100%），循环播放。
+
+```css
+/* animation：自动循环播放，不需要触发 */
+.box {
+  animation: myAnim 2s infinite;  /* 无限循环播放 */
+}
+
+@keyframes myAnim {
+  0%   { width: 100px; }   /* 开始状态 */
+  50%  { width: 200px; }   /* 中间状态 */
+  100% { width: 100px; }   /* 结束状态 */
+}
+```
+
+**对比：**
+
+| 特点 | transition | animation |
+|-----|------------|-----------|
+| 触发方式 | 需要事件触发（hover等） | 自动播放 |
+| 状态数量 | 只有两个状态（开始→结束） | 可以有多个关键帧 |
+| 循环播放 | 不能循环，一次性 | 可以循环（infinite） |
+| 控制精细度 | 简单，只能控制时长 | 精细，可以控制每一帧 |
+
+### transition 常用写法
+
+```css
+/* 完整写法 */
+transition: property duration timing-function delay;
+
+/* 示例 */
+transition: width 1s ease 0.5s;
+/*         ↑     ↑    ↑     ↑
+         属性  时长  缓动  延迟
+         要变化 原理用什么函数 开始前等多久 */
+
+/* 常用简写 */
+transition: width 1s;        /* 只写属性和时长 */
+transition: all 0.3s;        /* 所有属性都用0.3s过渡 */
+transition: width 1s, height 2s;  /* 多个属性分别设置 */
+```
+
+**timing-function 缓动函数：**
+
+| 值 | 效果 |
+|---|------|
+| linear | 匀速，从头到尾速度一样 |
+| ease | 慢→快→慢（默认，最自然） |
+| ease-in | 慢→快（开始慢） |
+| ease-out | 快→慢（结束慢） |
+
+### animation 常用写法
+
+```css
+/* 完整写法 */
+animation: name duration timing-function delay iteration-count direction;
+
+/* 示例 */
+animation: myAnim 2s ease 0s infinite alternate;
+/*         ↑      ↑   ↑    ↑     ↑        ↑
+         名称  时长 缓动 延迟  播放次数  方向 */
+
+/* 常用简写 */
+animation: myAnim 2s;           /* 只写名称和时长 */
+animation: myAnim 2s infinite;  /* 无限循环 */
+animation: myAnim 2s 3;         /* 播放3次 */
+```
+
+**关键帧 @keyframes：**
+
+```css
+@keyframes myAnim {
+  /* 方式1：用百分比控制每一帧 */
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.5); }
+  100% { transform: scale(1); }
+  
+  /* 方式2：用 from/to（等价于 0%/100%） */
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+```
+
+---
+
+### 代码示例
 export const testCode = `
 <!DOCTYPE html>
 <html>
