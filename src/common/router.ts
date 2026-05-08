@@ -16,7 +16,6 @@ export const sidebar: ISidebar[] = [
       { href: "/css/layout", label: "layout" },
       { href: "/css/horiz_vert", label: "horizontal vertical" },
       { href: "/css/grid", label: "grid" },
-      { href: "/css/margin", label: "margin" },
       { href: "/css/jsDom", label: "jsDom" },
       { href: "/css/gradient", label: "gradient" },
       { href: "/css/transform", label: "transform" },

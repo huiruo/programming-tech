@@ -431,6 +431,223 @@ float: left/right;     /* 浮动元素 */
 
 **BFC = overflow: hidden**（这是最常用的触发方式，能解决浮动塌陷、margin重叠、浮动遮挡问题）。
 
+### 清除浮动
+当一个容器中有浮动元素时，该容器可以被定义为BFC来防止其高度坍塌。通过将容器定义为BFC，可以清除浮动并使该容器的高度等于其内部元素的高度。
+
+当一个元素创建了BFC时，它会形成一个隔离的空间，该空间内的元素会按照一定规则进行排列和布局。overflow:hidden属性可以创建BFC，因为它可以触发CSS的“块级盒子化”规则，将元素变为一个块级盒子。
+
+例子：
+
+在一个容器（class为container）中放置了两个浮动元素（class为box1和box2）。由于浮动元素脱离了文档流，容器的高度会坍塌，导致容器高度不够容纳其中的元素。
+
+为了解决这个问题，我们可以将容器定义为BFC，方法是设置其overflow属性为hidden。这样容器就会包含其内部的浮动元素，并将其高度自适应内部元素的高度，从而避免了容器高度坍塌的问题。
+
+可以将一个容器定义为BFC，然后在其中放置两个元素，一个使用float属性向左浮动，另一个则不使用float属性。这样就可以创建一个自适应的两栏布局:
+
+export const test0A = `
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>index</title>
+  <style>
+    .container {
+      /* 将容器定义为BFC */
+      /* overflow: hidden; */
+      background: yellow;
+    }
+
+    .box {
+      width: 100px;
+      height: 100px;
+    }
+
+    .box1 {
+      float: left;
+      background-color: red;
+    }
+
+    .box2 {
+      float: left;
+      background-color: blue;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="box box1">
+      <div>hello</div>
+    </div>
+    <div class="box box2">
+      <div>hello 2</div>
+    </div>
+  </div>
+</body>
+
+</html>
+`
+
+<CodePannel code={test0A} name={'test0A'} height='400px' language='html'/>
+
+### 为什么要清除浮动？
+准确地说，并不是清除浮动，而是清除浮动后造成的影响
+
+再解释下就是在标准流下面一个父p没有设置高度属性,那么它的高度就会被子元素的高度撑开。但是如果这个父p中的子元素是浮动的话，如果父p下面再有一个兄弟p，那么这个兄弟p就会遮挡这个父元素。这个现象也叫浮动溢出。
+
+浮动带来的副作用 浮动会让元素脱离文档流，不再影响不浮动的元素（这里不影响是指在文档流里头不占位置，后边的元素忽视浮动元素的存在）。
+
+实则不然，浮动不再占据文档流的位置，也使浮动元素周围的元素表现的如同浮动元素不存在一样，给布局带来了一些副作用。
+
+如果我们不希望要这些效果，就需要清除浮动来解决后患，使后面的元素表现的跟浮动前一样
+
+1. 方式1，在浮动元素下添加一个空元素，并给该元素添加clear属性，可以清除浮动
+```html
+<div style="clear:both;"></div>
+```
+2. 使用overflow属性清除浮动
+>将包含浮动元素的容器元素的overflow属性设置为hidden或auto，可以清除浮动。
+```html
+<div style="overflow:hidden;">
+    <img src="example.jpg" style="float:left;">
+</div>
+```
+
+3. 使用伪元素清除浮动
+可以使用:before或:after伪元素在浮动元素后添加一个空元素，并给该元素添加clear属性，可以清除浮动。
+```html
+.clearfix::after {
+    content:"";
+    display:block;
+    clear:both;
+}
+```
+
+## margin合并-未修复
+margin合并:一个设置下外边距100px，一个设置上外边距100px，让两个元素相距200px。
+
+我们发现这两个元素之间，他们的margin-bottom和margin-top合并了，并且显示的是较大值。这种现象被称为margin合并。解决的方式也是通过触发bfc来解决
+
+* margin塌陷和margin重叠都是垂直方向上的，水平方向没有这些问题。
+* margin-bottom和margin-top合并了，并且显示的是较大值。这种现象被称为margin合并。	
+
+export const test2A = `
+<html>
+
+<head>
+	<meta charset="UTF-8">
+	<style type="text/css">
+		div.father {
+			width: 200px;
+			height: 200px;
+			background-color: rgb(219, 68, 101);
+			margin-left: 100px;
+			margin-top: 100px;
+		}
+
+		div.father div.son {
+			width: 100px;
+			height: 100px;
+			background-color: rgb(56, 248, 207);
+			margin-left: 50px;
+			margin-top: 50px;
+		}
+	</style>
+</head>
+
+<body>
+	<div style="width:500px;width: 600px;background:gray;overflow: hidden;">
+		<div class="father">
+			<div class="son">子-未修复</div>
+			父
+		</div>
+	</div>
+</body>
+
+</html>
+`
+
+<CodePannel code={test2A} name={'test2A'} height='400px' language='html'/>
+
+修复：
+
+export const test1A = `
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <style type="text/css">
+        div.father {
+            width: 200px;
+            height: 200px;
+            background-color: rgb(219, 68, 101);
+            margin-left: 100px;
+            margin-top: 100px;
+            padding: 1px; /* Prevent margin collapse */
+        }
+
+        div.father div.son {
+            width: 100px;
+            height: 100px;
+            background-color: rgb(56, 248, 207);
+            margin-left: 50px;
+            margin-top: 50px;
+        }
+    </style>
+</head>
+
+<body>
+    <div style="width:600px;background:gray;overflow: hidden;">
+        <div class="father">
+            <div class="son">子-未修复</div>
+            父
+        </div>
+    </div>
+</body>
+
+</html>
+`
+
+<CodePannel code={test1A} name={'test1A'} height='400px' language='html'/>
+
+## margin合并-修复
+margin合并和margin塌陷不一样，margin塌陷只添加了CSS，margin合并除了添加CSS，
+
+在两个相邻的块级元素之间，如果它们的margin相遇，则它们的margin会合并，造成不必要的空白。可以通过将其中一个元素定义为BFC来避免这种margin合并现象。
+
+export const test3A = `
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>index</title>
+  <style>
+    .parent {
+      overflow: hidden;
+    }
+
+    .child {
+      height: 50px;
+      margin: 10px;
+      background-color: gray;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="parent">
+    <div class="child"></div>
+    <div class="child"></div>
+  </div>
+</body>
+
+</html>`
+
+<CodePannel code={test3A} name={'test3A'} height='400px' language='html'/>
+
+
 ## position 定位
 
 | 值 | 特点 | 是否脱离文档流 | 参照物 |
