@@ -147,56 +147,6 @@ setTimeout(function(){
 
 <CodePannel code={testCode2} height='300px'/>
 
-## Node.js也是一个JS运行环境，支持异步同样要用Event Loop
-只不过服务端环境更复杂，对性能要求更高，所以 Node.js 对宏微任务都做了更细粒度的优先级划分：
-Node.js 里划分了 5 种宏任务，分别是:
-Timers、Pending、Poll、Check、Close
-
-又划分了 2 种微任务:
-* process.nextTick 的微任务
-* 其他的微任务
-
-Node.js 的 Event Loop 流程是执行当前阶段的一定数量的宏任务（剩余的到下个循环执行），然后执行所有微任务（node.js 11 之后改为了一个宏任务所有微任务了），一共有 Timers、Pending、Idle/Prepare、Poll、Check、Close 6 个阶段。
-
-Node.js 的事件循环和浏览器的事件循环之间的主要区别：
-
-1. **运行环境**:
-   - Node.js 是构建在 V8 JavaScript 引擎之上，它运行在服务器端操作系统上，用于处理服务器端应用程序的异步操作，如文件系统操作、网络请求、数据库查询等。
-   - 浏览器的事件循环运行在客户端浏览器中，用于处理前端 Web 应用程序的异步操作，如用户界面事件、XHR 请求、DOM 操作等。
-
-2. **事件源**:
-   - Node.js 的事件循环通常涉及处理 I/O 操作，例如文件读取、网络通信、数据库查询等，以及自定义事件。
-   - 浏览器的事件循环主要涉及处理用户交互和浏览器 API，例如点击事件、HTTP 请求、DOM 操作等。
-
-Node.js 中的宏任务通常包括一些可能需要较长时间才能完成的任务，这些任务通常是由特定的 Node.js 模块或全局函数触发的。常见的 Node.js 中的宏任务：
-* Timers Callback： 涉及到时间，肯定越早执行越准确，所以这个优先级最高很容易理解。
-* Pending Callback：处理网络、IO 等异常时的回调，有的 linux 系统会等待发生错误的上报，所以得处理下。
-* Poll Callback：处理 IO 的 data，网络的 connection，服务器主要处理的就是这个。
-* Check Callback：执行 setImmediate 的回调，特点是刚执行完 IO 之后就能回调这个。
-* Close Callback：关闭资源的回调，晚点执行影响也不到，优先级最低。
-
-1. **I/O 操作**:
-   - 文件系统操作（如读取文件或写入文件）。
-   - 网络请求（例如使用 `http`、`https` 模块发起的 HTTP 请求）。
-   - 数据库查询（例如使用 `mysql`、`mongodb` 模块进行的查询）。
-
-2. **定时器任务**:
-   - 使用 `setTimeout` 和 `setInterval` 设置的定时器任务，它们会在指定的时间后触发。
-   - 例如，`setTimeout` 和 `setInterval` 回调函数属于宏任务。
-
-3. **自定义事件**:
-   - Node.js 允许你创建自定义事件和触发器，这些自定义事件可能触发宏任务。
-   - 你可以使用 `EventEmitter` 类或其他事件处理模块来实现自定义事件。
-
-4. **网络通信**:
-   - Node.js 中的网络服务器和客户端通信也可以触发宏任务，特别是当涉及到网络套接字和数据流时。
-
-5. **操作系统操作**:
-   - 与操作系统交互的一些操作，如进程操作、子进程的创建和管理，也可以触发宏任务。
-
-6. **一些全局函数**:
-   - 一些全局函数，如 `setImmediate` 和 `fs.write`，也可以触发宏任务。
-
 ## event loop题目
 ### 经典案例
 <CodeBlock>
@@ -209,11 +159,25 @@ for (var i=1; i<=5; i++) {
 ```
 </CodeBlock>
 为什么会输出 `6 6 6 6 6`（很多人这里会懵）？
-- 这段 `for` 循环是 **同步代码**，会非常快地跑完；它做的事情只是“注册 5 个定时器回调”，并不会在 1s/2s… 处暂停等待。
-- `var i` 是 **函数作用域**（不是块级作用域）。整个循环里其实只有 **同一个 i 变量**，5 个 `timer` 回调闭包里引用的也是同一个 i。
-- 等到 1s、2s、… 后定时器回调真正开始执行时，`for` 早就结束了，i 已经自增到 `6`（循环退出条件 `i<=5` 不成立时的值），所以 5 次打印看到的都是 6。
 
-一句话：**回调里读到的 i，是“执行回调那一刻”的 i，而不是“创建回调那一刻”的 i。**
+先记住一个结论：**闭包/回调捕获的是“变量”（引用），不是“当时的值”（快照）。**  
+而 `var` 的 `i` 在整个 `for` 循环里只有一份，所以 5 个回调读的是同一个 `i`。
+
+用“时间线”把它跑一遍会更直观：
+- **t = 0ms（同步阶段）**：主线程开始跑 `for`，非常快就跑完了。每一轮循环做的只是“注册一个定时器回调”，并不会等待 1s/2s/…。
+  - i = 1：注册 `timer`（1s 后执行），回调里写的是 `console.log(i)`（注意：没有把 1 复制进去，只是说“将来执行时去读 i”）
+  - i = 2：注册 `timer`（2s 后执行），回调里同样是 `console.log(i)`
+  - ...
+  - i = 5：注册 `timer`（5s 后执行）
+- **for 结束时**：最后一次 `i++` 后，`i` 变成 **6**，此时 `i<=5` 不成立，循环退出。也就是说：**同步代码结束时，那一个唯一的 i 已经是 6**。
+- **t = 1000ms（异步回调执行）**：第一个 `timer` 开始执行，它此时去读 `i`，读到的是 6，所以打印 6。
+- **t = 2000ms、3000ms…**：后面的回调同理，执行时读到的 `i` 也都是 6，所以最终输出 `6 6 6 6 6`。
+
+一句话（背诵版）：**回调里读到的 i，是“执行回调那一刻”的 i；`var` 让所有回调共享同一个 i。**
+
+这和“宏任务/微任务”有没有关系？
+- 有关系，但 **不是根因**：`setTimeout` 的回调会以 **宏任务（task）** 的形式进入队列，所以它一定会等当前这段同步 `for`（当前宏任务）执行完、并且（如果有）微任务清空之后，才会开始执行回调。
+- 真正导致全是 6 的根因是 **作用域 + 闭包**：`var i` 在整个循环里只有同一个变量绑定，5 个回调都引用它；等回调开始执行时，这个 i 已经变成 6。
 
 ### 解决：
 核心思路：**让每次循环都拥有一个“独立的 i 值”**，这样回调执行时读到的就是那次循环的值。
@@ -278,5 +242,483 @@ console.log('global1');
     undefined
     timeout1
 * */
+```
+</CodeBlock>
+
+### 更多 Event Loop 经典题目（面试常考）
+
+题 1：同步 / 微任务 / 宏任务 顺序
+<CodeBlock>
+```js
+console.log('script start')
+
+setTimeout(() => console.log('setTimeout'), 0)
+
+Promise.resolve()
+  .then(() => console.log('then1'))
+  .then(() => console.log('then2'))
+
+console.log('script end')
+
+// script start
+// script end
+// then1
+// then2
+// setTimeout
+```
+</CodeBlock>
+
+题 2：微任务里再产生宏任务
+<CodeBlock>
+```js
+setTimeout(() => console.log('timeout1'), 0)
+
+Promise.resolve().then(() => {
+  console.log('then1')
+  setTimeout(() => console.log('timeout2'), 0)
+})
+
+// then1
+// timeout1
+// timeout2
+```
+</CodeBlock>
+
+题 3：`queueMicrotask` vs `Promise.then`
+<CodeBlock>
+```js
+queueMicrotask(() => console.log('microtask1'))
+
+Promise.resolve().then(() => console.log('microtask2'))
+
+console.log('sync')
+
+// sync
+// microtask1
+// microtask2
+```
+</CodeBlock>
+
+题 4：`async/await` 的“续写”是微任务
+<CodeBlock>
+```js
+async function main() {
+  console.log('a')
+  await 0
+  console.log('b')
+}
+
+console.log('start')
+main()
+console.log('end')
+
+// start
+// a
+// end
+// b
+```
+</CodeBlock>
+
+题 5：微任务“饿死”宏任务（理解卡顿）
+<CodeBlock>
+```js
+setTimeout(() => console.log('timeout'), 0)
+
+let count = 0
+function loop() {
+  queueMicrotask(() => {
+    count++
+    if (count < 3) loop()
+    console.log('micro', count)
+  })
+}
+
+loop()
+
+// micro 1
+// micro 2
+// micro 3
+// timeout
+```
+</CodeBlock>
+
+题 6：`MessageChannel`（宏任务）vs `Promise`（微任务）
+<CodeBlock>
+```js
+const channel = new MessageChannel()
+channel.port1.onmessage = () => console.log('message')
+
+Promise.resolve().then(() => console.log('then'))
+channel.port2.postMessage(0)
+
+// then
+// message
+```
+</CodeBlock>
+
+题 7：DOM 事件（宏任务）里插入微任务
+<CodeBlock>
+```js
+document.body.addEventListener('click', () => {
+  console.log('click')
+  Promise.resolve().then(() => console.log('then in click'))
+})
+
+// 触发一次点击（或手动点击页面一次）
+document.body.click()
+
+// click
+// then in click
+```
+</CodeBlock>
+
+题 8（Node）：`process.nextTick` vs `Promise.then` vs `setTimeout`
+<CodeBlock>
+```js
+// Node 环境
+setTimeout(() => console.log('timeout'), 0)
+
+Promise.resolve().then(() => console.log('then'))
+
+process.nextTick(() => console.log('nextTick'))
+
+// nextTick
+// then
+// timeout
+```
+</CodeBlock>
+
+
+## Nodejs事件循环
+1. nodejs是运行js的一个平台；
+2. nodejs在浏览器之外运行 V8 JavaScript 引擎（Google Chrome 的内核）；
+3. 单个进程中运行，一组异步的 I/O 原语，使用非阻塞范式编写；
+
+## Node.js也是一个JS运行环境，支持异步同样要用Event Loop
+只不过服务端环境更复杂，对性能要求更高，所以 Node.js 对宏微任务都做了更细粒度的优先级划分：
+Node.js 里划分了 5 种宏任务，分别是:
+Timers、Pending、Poll、Check、Close
+
+又划分了 2 种微任务:
+* process.nextTick 的微任务
+* 其他的微任务
+
+Node.js 的 Event Loop 流程是执行当前阶段的一定数量的宏任务（剩余的到下个循环执行），然后执行所有微任务（node.js 11 之后改为了一个宏任务所有微任务了），一共有 Timers、Pending、Idle/Prepare、Poll、Check、Close 6 个阶段。
+
+Node.js 的事件循环和浏览器的事件循环之间的主要区别：
+
+1. **运行环境**:
+   - Node.js 是构建在 V8 JavaScript 引擎之上，它运行在服务器端操作系统上，用于处理服务器端应用程序的异步操作，如文件系统操作、网络请求、数据库查询等。
+   - 浏览器的事件循环运行在客户端浏览器中，用于处理前端 Web 应用程序的异步操作，如用户界面事件、XHR 请求、DOM 操作等。
+
+2. **事件源**:
+   - Node.js 的事件循环通常涉及处理 I/O 操作，例如文件读取、网络通信、数据库查询等，以及自定义事件。
+   - 浏览器的事件循环主要涉及处理用户交互和浏览器 API，例如点击事件、HTTP 请求、DOM 操作等。
+
+Node.js 中的宏任务通常包括一些可能需要较长时间才能完成的任务，这些任务通常是由特定的 Node.js 模块或全局函数触发的。常见的 Node.js 中的宏任务：
+* Timers Callback： 涉及到时间，肯定越早执行越准确，所以这个优先级最高很容易理解。
+* Pending Callback：处理网络、IO 等异常时的回调，有的 linux 系统会等待发生错误的上报，所以得处理下。
+* Poll Callback：处理 IO 的 data，网络的 connection，服务器主要处理的就是这个。
+* Check Callback：执行 setImmediate 的回调，特点是刚执行完 IO 之后就能回调这个。
+* Close Callback：关闭资源的回调，晚点执行影响也不到，优先级最低。
+
+1. **I/O 操作**:
+   - 文件系统操作（如读取文件或写入文件）。
+   - 网络请求（例如使用 `http`、`https` 模块发起的 HTTP 请求）。
+   - 数据库查询（例如使用 `mysql`、`mongodb` 模块进行的查询）。
+
+2. **定时器任务**:
+   - 使用 `setTimeout` 和 `setInterval` 设置的定时器任务，它们会在指定的时间后触发。
+   - 例如，`setTimeout` 和 `setInterval` 回调函数属于宏任务。
+
+3. **自定义事件**:
+   - Node.js 允许你创建自定义事件和触发器，这些自定义事件可能触发宏任务。
+   - 你可以使用 `EventEmitter` 类或其他事件处理模块来实现自定义事件。
+
+4. **网络通信**:
+   - Node.js 中的网络服务器和客户端通信也可以触发宏任务，特别是当涉及到网络套接字和数据流时。
+
+5. **操作系统操作**:
+   - 与操作系统交互的一些操作，如进程操作、子进程的创建和管理，也可以触发宏任务。
+
+6. **一些全局函数**:
+   - 一些全局函数，如 `setImmediate` 和 `fs.write`，也可以触发宏任务。
+
+### 事件循环
+每个阶段的含义：
+```
+1.timers 阶段：这个阶段执行 timer（setTimeout、setInterval）的回调
+2.I/O callbacks 阶段：处理一些上一轮循环中的少数未执行的 I/O 回调
+3.idle, prepare 阶段：仅 node 内部使用
+4.poll 阶段：获取新的 I/O 事件, 适当的条件下 node 将阻塞在这里
+5.check 阶段：执行 setImmediate() 的回调
+6.close callbacks 阶段：执行 socket 的 close 事件回调
+
+外部输入数据–>轮询阶段(poll)–>检查阶段(check)–>关闭事件回调阶段(close callback)–>定时器检测阶段(timer)–>I/O 事件回调阶段(I/O callbacks)–>闲置阶段(idle, prepare)–>轮询阶段
+```
+
+js是单线程运⾏，异步操作特别重要。只要⽤到引擎之外的功能，就需要跟外部交互，从⽽形成异步操作。
+Node的异步语法⽐浏览器复杂，因为它可以跟内核对话，不得不搞了⼀个专门的库 libuv 做这件事。
+
+这个库负责各种回调函数的执⾏时间，毕竟异步任务最后还是要回到主线程，⼀个个排队执⾏，这就是事件循环。
+
+## 执行顺序
+当个v8引擎将js代码解析后传入libuv引擎后，循环首先进入poll阶段，poll阶段相当于整体同步代码的解析，会生成一个执行栈，同时会把setImmediate的回调放入check队列，在setTimeout() 和 setInterval()定时到期后把其回调事件放入timers队列，
+poll queue清空后，会转到check阶段，检查执行check队列，检查执行timer队列，之后进入到callbacks阶段，执行回调。check和timer两者的顺序是不固定的，受到代码运行的环境的影响。
+
+总结：
+poll轮询属于io观察者，process.nextTick()属于idle观察者, setImmediate()属于check观察者。
+
+在每一轮循环检查中,idle观察者先于I/O观察者,I/O观察者先于check观察者.
+
+第一次进入代码时，idle观察者不存在。
+
+## Node中的process.nextTick()
+process.nextTick()是node中一个特殊的队列，这些事件会在每一个阶段执行完毕准备进入下一个阶段时优先执行。也就是说process.nextTick()在阶段切换时执行。并且，不管其有多深的回调，都会被一次执行完毕。
+
+## Promise
+上面的阶段没有包括Promise，在node中，promise和浏览器中类似，执行在process.nextTick()之后，在setTimeout之前
+
+## 形象化理解
+固执的探险家(每个房间都要走到底)
+
+所有的代码就像是已经设定好的迷宫，而引擎就是去探险的人，我们称为小呆。
+
+小呆到达迷宫，已经有了地图，根据地图冒险。
+
+迷宫有六个房间，分别是timer, i/callback, ide prepare(内部使用，已封闭), poll, check， close callback，
+
+其中timer是虚拟现实房间，小呆随时可以看到里面的场景。
+
+其他的每个房间又五个房间，有的开放，有的不开放。
+
+探险规则：每次离开一个房间，都要检查有没有受伤（process.nextTick()）
+
+小呆首先进入poll房间，开始探险（执行poll 队列），之后进入check房间，timer房间（随机），探险完之后出来，进入close callback，探险完之后，进入io/callback房间，最后完成探险，离开。
+
+小呆说任务总算完成了。
+
+## 定时器
+```
+为了协调异步任务，Node 提供了四个定时器，让任务可以在指定的时间运⾏：setTimeout、setInterval、setImmediate、process.nextTick。前两个是语⾔的标准，后两个是 Node 独有的。它们的写法差不多，作⽤也差不多，不太容易区别。
+```
+
+见实例文件test1
+## 本轮循环和次轮循环
+异步任务可以分成两种：
+追加在本轮循环的异步任务、
+追加在次轮循环的异步任务。
+所谓 “循环”，指的是事件循环（event loop）。
+
+这是 JavaScript 引擎处理异步任务的⽅式，本轮循环⼀定早于次轮循环执⾏即可。
+Node 规定，process.nextTick 和 Promise 的回调函数，追加在本轮循环 即同步任务⼀旦执⾏完成，就开始执⾏它们。
+
+⽽ setTimeout、setInterval、setImmediate 的回调函数，追加在次轮循环。这就是说，上段代码的第三⾏ 和第四⾏，⼀定 ⽐第⼀⾏和第⼆⾏更早执⾏
+
+## process.nextTick()
+process.nextTick 这个名字有点误导，它是在本轮循环执⾏的，⽽且是所有异步任务⾥⾯最快执⾏的。Node 执⾏完所有同步任务，接下 来就会执⾏ process.nextTick 的任务队列。
+所以，下⾯这⾏代码是第⼆个输出结果。基本上，如果你希望异步任务尽可能快地执⾏，那就使⽤ process.nextTick。
+
+## 微任务
+根据语⾔规定，Promise 对象的回调函数，会进⼊异步任务⾥⾯的”微任务”（microTask）队列。微任务队列追加在 process.nextTick 队列的后⾯，也属于本轮循环。所以，下⾯的代码总是先输出 3，再输出 4。
+
+⾄此，本轮循环的执⾏顺序就讲完了：同步任务 => process.nextTick() => 微任务
+```js
+process.nextTick(() => console.log(3));
+Promise.resolve().then(() => console.log(4));
+// 注意，只有前⼀个队列全部清空以后，才会执⾏下⼀个队列。代码中，全部process.nextTick的回调函数，执⾏都会早于Promise
+process.nextTick(() => console.log(1));
+Promise.resolve().then(() => console.log(2));
+
+process.nextTick(() => console.log(5));
+Promise.resolve().then(() => console.log(4));
+/*
+3
+1
+5
+4
+2
+4
+*/
+```
+
+## 事件循环执⾏顺序
+Node 只有⼀个主线程，事件循环是在主线程上完成的。开始执⾏脚本时，会先进⾏事件循环的初始化，但是这时事件循环还没有开始，会先完成下⾯的事情： 
+
+同步任务、发出异步请求、规划定时器⽣效的时间、执⾏process.nextTick()等等。最后，上⾯这些事情都⼲完了，事件循环就正式开始了。事件循环会⽆限次地执⾏，⼀轮⼜⼀轮。
+
+只有异步任务的回调函数队列清空了，才会停⽌执⾏。每⼀轮的事件循环，分成六个阶段，这些阶段会依次执⾏:
+```
+1、timers: 这个阶段执行定时器队列中的回调如 setTimeout() 和 setInterval()。
+
+2、I/O callbacks:这个阶段执行几乎所有的回调。但是不包括close事件，定时器和setImmediate()的回调。
+3、idle, prepare 这个阶段仅在内部使用，可以不必理会。
+4、poll 等待新的I/O事件，node在一些特殊情况下会阻塞在这里。
+5、check  setImmediate()的回调会在这个阶段执行。
+6、close callbacks 例如socket.on('close', ...)这种close事件的回调。
+
+每个阶段都有⼀个先进先出的回调函数队列。只有⼀个阶段的回调函数队列清空了，该执⾏的回调函数都执⾏了，事件循环才会进⼊下⼀个阶段。简单介绍⼀下每个阶段的含义： 
+
+（1）timers：这个是定时器阶段，处理setTimeout()和setInterval()的回调函数。进⼊这个阶段后，主线程会检查⼀下当前时间，是否满⾜定时器的条件。如果满⾜就执⾏回调函数，否则就离开这个阶段。 
+（2）I/O callbacks：除了举出的这些操作回调函数，其他的回调函数都在这个阶段执⾏：setTimeout() 和 setInterval() 的回调函数、setImmediate() 的回调函数、⽤于关闭请求的回调函数，⽐如 socket.on(‘close’, …) 
+（3）idle, prepare：该阶段只供 libuv 内部调⽤，这⾥可以忽略。 
+（4）Poll：这个阶段是轮询时间，⽤于等待还未返回的 I/O 事件，⽐如服务器的回应、⽤户移动⿏标等等。这个阶段的时间会⽐较长。如果没有其他异步任务要处理（⽐如到期的定时器），会⼀直停留在这个阶段，等待 I/O 请求返回结果。 
+（5）check：该阶段执⾏ setImmediate() 的回调函数。 
+（6）close callbacks：该阶段执⾏关闭请求的回调函数，⽐如 socket.on('close', …)。
+```
+
+## 事件循环⽰例
+```js
+const fs = require('fs');
+const timeoutScheduled = Date.now();
+
+//异步任务⼀：100ms 后执⾏的定时器
+setTimeout(() => {
+const delay = Date.now() - timeoutScheduled;
+  console.log(`${delay}ms`);
+}, 100);
+
+// 异步任务⼆：⽂件读取后，有⼀个 200ms的回调函数
+fs.readFile('test.js', () => {
+const startCallback = Date.now();
+while (Date.now() - startCallback < 200) {
+//什么也不做
+  }
+});
+
+/*
+上⾯代码有两个异步任务，⼀个是 100ms 后执⾏的定时器，⼀个是⽂件读取，它的回调函数需要 200ms。请问运⾏结果是什么？ 
+脚本进⼊第⼀轮事件循环以后，没有到期的定时器，也没有已经可以执⾏的 I/O 回调函数，所以会进⼊ Poll 阶段，等待内核返回⽂件读取的结果。由于读取⼩⽂件⼀般不会超过 100ms，所以在定时器到期之前，Poll 阶段就会得到结果，因此就会继续往下执⾏。
+
+第⼆轮事件循环，依然没有到期的定时器，但是已经有了可以执⾏的 I/O 回调函数，所以会进⼊ I/O callbacks 阶段，执⾏ fs.readFile 的回调函数。这个回调函数需要 200ms，也就是说，
+在它执⾏到⼀半的时候，100ms 的定时器就会到期。但是，必须等到这个回调函数执⾏完，才会离开这个阶段。第三轮事件循环，已经有了到期的定时器，所以会在 timers阶段执⾏定时器。
+
+最后输出结果⼤概是 200 多毫秒。
+*/
+```
+
+## setTimeout 和 setImmediate
+由于 setTimeout 在 timers 阶段执⾏，⽽ setImmediate 在 check 阶段执⾏。所以，setTimeout 会早于 setImmediate 完成。
+```js
+setTimeout(() => console.log(1));
+setImmediate(() => console.log(2)
+```
+上⾯代码应该先输出 1，再输出 2，但是实际执⾏的时候，结果却是不确定，有时还会先输出 2，再输出 1。这是因为 setTimeout 的第⼆个参数默认为 0。 
+
+但是实际上，Node 做不到 0 毫秒，最少也需要 1 毫秒，根据官⽅⽂档，第⼆个参数的取值范围在 1 毫秒到 2147483647 毫秒之间。
+
+也就是说，setTimeout(f, 0) 等同于setTimeout(f, 1)。实际执⾏的时候，进⼊事件循环以后，有可能到了 1 毫秒，也可能还没到 1 毫秒，取决于系统当时的状况。 
+
+如果没到 1 毫秒，那么 timers 阶段就会跳过，进⼊ check 阶段，先执⾏ setImmediate 的回调函数。但是，下⾯的代码⼀定是先输出2，再输出 1。
+```js
+const fs = require('fs');
+fs.readFile('test.js', () => {
+  setTimeout(() => console.log(1));
+  setImmediate(() => console.log(2));
+});
+
+// 上⾯代码会先进⼊ I/O callbacks 阶段，然后是 check 阶段，最后才是 timers 阶段。因此，setImmediate 才会早于 setTimeout 执⾏。
+```
+
+## 例子1
+<CodeBlock>
+```js
+const fs = require('fs')
+const path = require('path')
+
+const wait = () => new Promise((resolove, reject) => {
+  setTimeout(resolove(true), 3)
+})
+fs.readFile(path.resolve(__dirname, './vue.config.js'), 'utf-8', async (err, data) => {
+  console.log('读取的文件内容')
+  await wait()
+  console.log('测试测试')
+  process.nextTick(() => {
+    console.log('nextTick')
+  })
+})
+
+setTimeout(() => {
+  console.log('定时器任务0')
+}, 0)
+
+
+setTimeout(() => {
+  console.log('定时器任务100')
+}, 1000)
+
+
+setImmediate(() => {
+  console.log('立即执行')
+})
+
+Promise.resolve().then(() => {
+  console.log('promise')
+})
+
+process.nextTick(() => {
+  console.log('外层nextTick')
+})
+
+console.log('外层同步')
+/*
+外层同步
+外层nextTick
+promise
+定时器任务0
+立即执行
+读取的文件内容
+测试测试
+nextTick
+定时器任务100
+*/
+```
+</CodeBlock>
+
+
+<CodeBlock>
+```js
+//下⾯两⾏，次轮循环执⾏
+setTimeout(() => console.log('setTimeout'));
+
+// 该方法用来把一些需要长时间运行的操作放在一个回调函数里,
+// 在浏览器完成后面的其他语句后,就立刻执行这个回调函数
+setImmediate(() => console.log('setImmediate'));
+
+// 下⾯两⾏，本轮循环执⾏
+process.nextTick(() => console.log('nextTick'));
+
+Promise.resolve().then(() => console.log('Promise'));
+
+// ⾸先，同步任务总是⽐异步任务更早执⾏。
+(() => console.log(5))();
+/*
+5
+nextTick
+Promise
+setTimeout
+setImmediate
+*/
+```
+</CodeBlock>
+
+<CodeBlock>
+```js
+process.nextTick(() => console.log(3));
+Promise.resolve().then(() => console.log(4));
+// 注意，只有前⼀个队列全部清空以后，才会执⾏下⼀个队列。代码中，全部process.nextTick的回调函数，执⾏都会早于Promise
+process.nextTick(() => console.log(1));
+Promise.resolve().then(() => console.log(2));
+
+process.nextTick(() => console.log(5));
+Promise.resolve().then(() => console.log(4));
+/*
+3
+1
+5
+4
+2
+4
+*/
 ```
 </CodeBlock>

@@ -40,7 +40,6 @@ export const sidebar: ISidebar[] = [
     type: "category",
     items: [
       { href: "/js/eventLoop", label: "Event Loop" },
-      { href: "/js/nodejseventLoop", label: "Nodejs Event Loop" },
       { href: "/js/vite", label: "Vite" },
       { href: "/js/nodejs", label: "Nodejs" },
       { href: "/js/asyncPromise", label: "Async Promise" },
