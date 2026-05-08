@@ -37,6 +37,61 @@ import CodePannel from '../CodePannel';
          ↑ Margin 在 Border 外面，不影响这三个高度
 ```
 
+## box-sizing
+`box-sizing` 决定你写的 `width/height` 计算的是哪一部分。
+
+### 两种盒模型怎么“算宽度”
+
+- `box-sizing: content-box`（默认，标准盒模型）
+  - 你写的 `width` 只包含 **content（内容区）**
+  - 元素最终占位宽度 = `width + padding-left/right + border-left/right`
+- `box-sizing: border-box`（常说的 IE 盒模型）
+  - 你写的 `width` 包含 **content + padding + border**
+  - 元素最终占位宽度 = `width`
+
+用一组具体数字建立直觉（`width: 200px; padding: 15px; border: 10px`）：
+
+| box-sizing | 你写的 width 算什么 | 最终占位宽度 | 内容区宽度 |
+|---|---|---|---|
+| `content-box` | 只算内容区 | `200 + 15*2 + 10*2 = 250px` | `200px` |
+| `border-box` | content + padding + border | `200px` | `200 - 15*2 - 10*2 = 150px` |
+
+### 使用场景
+
+**1）想固定“内容区”宽度时：用 `content-box` (默认，标准盒模型)（少见但合理）**
+
+例如排版型页面希望“正文内容”永远是 600px，padding 只是额外留白；这时 `content-box` 更符合“固定内容宽度”的诉求（但需要你接受最终占位会变大）。
+
+**2）做布局/组件时：优先 `border-box`（最常见）**
+
+原因：你写的 `width` 就是元素在页面上“占多少空间”。加了 padding/border 也不会把盒子撑大，能减少溢出、换行、对不齐等问题（栅格、两列布局、卡片、表单输入框都很典型）。
+
+常见的全局写法（很多项目默认就这么做）：
+
+```css
+/* 推荐：全局统一为 border-box，避免“算宽度” */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+```
+
+### 一个更直观的对比例子
+
+```html
+<style>
+.wrap { width: 400px; border: 1px solid #ccc; display: flex; gap: 10px; }
+.item { width: 50%; padding: 20px; border: 2px solid #333; }
+.contentBox { box-sizing: content-box; } /* 50% + padding + border => 很容易溢出/换行 */
+.borderBox { box-sizing: border-box; }   /* 50% 包含 padding/border => 不会撑破布局 */
+</style>
+<div class="wrap">
+  <div class="item contentBox">content-box</div>
+  <div class="item borderBox">border-box</div>
+</div>
+```
+
+补充：上面表格里算出来的 `150px` 是 **内容区高度/宽度（content box）**，不是 `line-height`（行高由 `line-height` 属性决定，跟盒模型是两回事）。
+
 **三个高度的区别：**
 
 | 属性 | 包含什么 | 用途 |
@@ -272,24 +327,6 @@ inline-block元素的宽度始终等于其内容宽度.  它具有块级元素�
     vertical-align: middle;
 }
 ```
-
-## box-sizing
-* box-sizing:content-box; width(宽度) + padding(内边距) + border(边框) = 元素实际宽度。
-* box-sizing:border-box; 指定盒模型为IE模型,即 border 与 padding 由元素已设空间转变。
-```html
-<style type="text/css">
-.box {
-  width: 200px;
-  height: 200px;
-  text-align: center;
-  border: 10px solid black;
-  padding: 15px;
-  box-sizing: border-box;
-}
-</style>
-```
-
-此时的行高：`line-height = height - border*2 - padding*2 = 200px - 10px*2 - 15px*2 = 150px;`因为此时，内容的其余空间被边框和填充占用，所以是元素的高减去边框和填充的空间，剩余即为内容空间
 
 ## BFC（块级格式化上下文）
 
