@@ -1,6 +1,10 @@
-import styles from "./page.module.css";
+import { Resume } from "@/components/resume";
 
 export default function Home() {
-  return <main className={styles.main}>
-    </main>
+  return (
+    <div>
+      <h1>Resume</h1>
+      <Resume />
+    </div>
+  )
 }

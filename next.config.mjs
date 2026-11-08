@@ -11,6 +11,9 @@ if (process.env.NODE_ENV === 'development') {
 // const nextConfig = {};
 
 const nextConfig = {
+  output: 'export',
+  trailingSlash: true,
+
   // Add support for MDX files
   pageExtensions: ['ts', 'tsx', 'md', 'mdx'], // Support .mdx and .md files as pages
 

@@ -77,6 +77,17 @@ const projects: Project[] = [
     ],
     note: '使用 Kotlin 开发轻量 Android WebView 容器，处理安全策略、内外链路由、生命周期恢复、返回栈与 Release 签名管理。',
   },
+  {
+    name: 'DeepSeek Harness 桌面 Agent 客户端',
+    techStack: ['Electron', 'React', 'TypeScript', 'Node.js', 'SQLite'],
+    description: '基于 Electron Main / Preload / Renderer 架构开发 DeepSeek Harness 桌面客户端，通过 IPC 连接界面与本地运行能力，覆盖安全隔离与本地配置管理。',
+    highlights: [
+      '集成 DeepSeek Harness 运行时和会话界面，支持多账号配置隔离、插件管理与 SQLite 本地数据持久化，并具备 Windows / macOS 构建打包实践。',
+      '启动完整 DeepSeek Harness runtime，插件优先复用标准 DSH / Cordis 机制：可原生加载的 DSH 插件直接复用。',
+      '需要 Robbot 账号、权限、本地存储或桌面能力时通过 Robbot adapter 接入；仅在无法复用 DSH 插件模型时实现 Robbot 原生插件。',
+    ],
+    links: [{ label: 'GitHub 仓库', href: 'https://github.com/robbot-labs/robbot' }],
+  },
   { name: '泰山啤酒小程序', description: '千万用户级啤酒商城，日流水达百万元。', note: '微信搜索“泰山原浆啤酒”即可体验。' },
   { name: '低代码商城设计器', description: '可视化搭建商城页面的低代码设计器。', links: [{ label: '在线体验（部署在 Vercel，需网络代理）', href: 'https://dcode-editor.vercel.app/#/' }, { label: 'GitHub 仓库', href: 'https://github.com/huiruo/dcode-editor' }] },
   { name: 'Web Clipper Chrome 扩展', description: '一键识别网页文章并导出 Markdown。', links: [{ label: 'GitHub 仓库', href: 'https://github.com/huiruo/web-clipper-extension' }] },

@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import { Sidebar } from "@/components/sidebar";
 import "./globals.css";
 import { NavWrapper } from "@/components/nav";
-
-const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Block-chain",
@@ -22,7 +19,7 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link data-rh="true" rel="icon" href="/logo.svg"></link>
       </head>
-      <body className={inter.className}>
+      <body>
         <div className='wrapper-box'>
           <NavWrapper />
 
