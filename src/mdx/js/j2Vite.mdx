@@ -4,9 +4,75 @@ import CodeBlock from '../../components/codeBlock';
 adv. 急速地；轻快地
 /viːt/
 
-vite:就是借助浏览器原生 ES Modules 能力，当浏览器发出请求时，为浏览器按需提供 ES Module 文件，浏览器获取 ES Module 文件会直接执行，即使首次启动的预构建也是使用速度惊人的esbuild完成，但是要优化的点：首屏、懒加载性能
+vite（更准确说是 **dev 环境**）：借助浏览器原生 ES Modules 能力，浏览器按 URL 发起模块请求，Vite dev server 对源码做按需 `transform` 后以 ESM 返回；同时用 esbuild 做依赖预构建（optimizeDeps）来减少请求数并兼容 CJS。需要注意：由于 dev 下源码是 unbundle 的，首屏/懒加载会更依赖缓存与分包策略（以及依赖预构建是否阻塞）。
 
-webpack:需要构建完整的依赖关系,打包成一个bundle.js
+webpack（更准确说是 **dev 的默认工作方式**）：先基于完整依赖图把源码+依赖打包成一个或多个 bundle（通常在内存里提供给 dev server），浏览器主要请求 bundle 而不是逐个请求源码模块；HMR 更新也是围绕 bundle/模块系统运行。生产环境则会输出多个 chunk/资源文件（并不总是“一个 bundle.js”）。
+
+## 比如lodash, react  lucide-react 等 vite 他会达成一个文件还是多个？
+不是。
+
+在 Vite 开发环境里，浏览器确实是“按模块 URL 请求”的，但 Vite 会把模块分两类处理：
+
+你的源码（src/**）：基本保持“一个源文件 ≈ 一个模块请求”，这样改动时 HMR 才能精确、快。
+依赖（node_modules）：通过 optimizeDeps 用 esbuild 预构建，把依赖变成“浏览器友好的 ESM 版本”，并且尽量减少请求数。
+所以不会出现“每个 npm 包拆成很多很多文件都要请求”的最坏情况；通常更接近：
+
+每个被用到的依赖包会有一个（或少量几个）预构建产物文件（放在 node_modules/.vite/ 或缓存目录），浏览器请求的是这些产物，而不是请求依赖包里原始的几十/几百个源码文件。
+个别依赖因为导出结构、动态引用、side effects、或预构建策略，会产生不止一个文件，但目标仍是减少网络请求而不是增加。
+
+### 疑问：
+每个被用到的依赖包会有一个（或少量几个）预构建产物文件（放在 node_modules/.vite/ 或缓存目录），浏览器请求的是这些产物，而不是请求依赖包里原始的几十/几百个源码文件。 这个和webpack 什么 区别？不就是webpack
+
+你抓到点了：“依赖预构建成少量文件”这件事，确实很像 webpack 的 bundle。但 Vite 和 webpack 的关键区别不在“有没有把依赖合起来”，而在 dev 时谁来负责模块加载、以及什么时候做转换/打包。
+
+webpack dev（bundle-first）:
+1. 启动时：先把“源码 + 依赖”整张依赖图交给 webpack 编译、打包成一个/多个 bundle（通常在内存里）。
+2. 浏览器侧：请求的是这些 bundle（不是按 ESM 模块逐个请求源码）。
+3. 改动时：往往需要重新构建一部分 bundle（哪怕有增量编译/HMR，本质仍是在“bundle 产物”层面更新）。
+
+Vite dev（serve-native-ESM + deps prebundle）:
+1. 启动时：只把依赖用 esbuild 预构建成少量 ESM 文件（node_modules/.vite/deps/*），让它们像“稳定静态资源”一样强缓存。
+2. 浏览器侧：源码按原生 ESM 一文件一请求加载；Vite server 对每个源码模块做按需 transform 后返回。
+3. 改动时：通常只让“变动的那个模块 + 到最近 HMR boundary 的链路”失效并重取，粒度更细。
+所以可以把它总结成一句话：
+- webpack：dev 时主要产出和更新的是 bundle
+- Vite：dev 时主要产出和更新的是 模块（ESM）；只把 依赖“bundle 化”来解决 CJS/请求数问题
+
+生产环境两者又会收敛：Vite 也会用 Rollup 做打包（同样会变成 chunk/bundle）。
+
+### 所以说二者只是开发环境的差别？上到生产都一样？
+开发环境（差别最大）
+  - webpack：bundle-first（编译打包后再给浏览器）
+  - Vite：native ESM + 按需 transform + 依赖预构建（浏览器按模块请求）
+
+生产环境（都会打包，但实现与产物策略不完全一样）
+- webpack：用 webpack 自己的打包器生态完成（loader/plugin、chunk 策略、runtime 注入等都按 webpack 体系）
+- Vite：默认用 Rollup 打包（Rollup 的 chunking/treeshake 语义 + Vite/Rollup 插件体系）
+
+结果都是“多个 chunk + 按需加载”，但 tree-shaking 细节、chunk 切分、CSS 处理、插件语义、以及边缘行为（CJS/ESM 混用、sideEffects 标注等）可能不一致。
+
+### 对“产品开发”（交付效率 + 线上体验）真正带来的主要是这些：
+- 启动与迭代更快：dev 启动不必先打完整 bundle；改一行代码通常只影响极少模块，HMR 更稳定、更快（大型项目差异更明显）。
+- 缓存收益更大：依赖预构建产物强缓存，二次冷启动/刷新更快；团队日常开发体感提升很明显。
+- 生产构建更成熟（Vite 默认 Rollup）：更强的 tree-shaking/代码分割语义一致性（尤其 ESM 依赖占比高时），产物更易做到“按需加载 + 更小体积”。
+- 工程复杂度变化：配置从“loader-centric（webpack）”变成“plugin + ESM 约定（Vite/Rollup）”；多数场景更轻，但遇到 CJS、monorepo、非标准包结构时需要额外处理（例如 optimizeDeps/include、SSR/worker 等边界）。
+
+一句话：主要提升开发效率与迭代体验，同时在“现代 ESM 依赖为主”的项目上，生产体积/分包也更容易做好；但不是无代价，边界依赖/兼容问题的处理方式会变。
+
+### vite可优化项目
+实际项目里，常见的优化点可以分成 dev（开发体验）和 build（生产体积/加载性能）两类：
+
+**Dev 优化**
+- `optimizeDeps.include/exclude`：把“扫描不到但运行时会用到”的依赖手动 include，或把不该预构建的依赖 exclude，减少二次预构建/冷启动抖动
+- `server.fs.strict` + 合理的 `resolve.alias`：减少奇怪的路径解析与重复模块（尤其 monorepo / workspace）
+- `cacheDir`：把缓存放到更稳定的位置（CI/多项目场景更有感），避免频繁重建 deps cache
+
+**Build 优化**
+- `build.rollupOptions.output.manualChunks`：把大依赖拆成更合理的 chunk（比如 `react`/`vendor`/业务模块），改善首屏与缓存命中
+- `build.sourcemap`：生产一般关闭或用更轻量的策略，减少产物体积与构建耗时
+- `build.cssCodeSplit`：按需拆 CSS，避免首屏加载不必要样式（视项目结构取舍）
+- `splitVendorChunkPlugin`/分析工具：用可视化报告找出真正的体积大头，再决定是拆分、按需引入还是替换依赖
+
 
 ## prod环境打包区别
 ### vite在生产环境的构建目前用的Rollup
@@ -89,72 +155,6 @@ Vite 在服务端维护一张 **Module Graph**（依赖/被依赖关系）：
 你可以理解为：浏览器负责“按 URL 拉取模块图”，Vite 负责“按需编译 + 维护编译态模块图”，两者配合才让 dev 变得很快。
 
 核心是基于浏览器的 type 为 module 的 script 可以直接下载 es module 模块实现的。
-
-
-## 比如lodash, react  lucide-react 等 vite 他会达成一个文件还是 多个？
-不是。
-
-在 Vite 开发环境里，浏览器确实是“按模块 URL 请求”的，但 Vite 会把模块分两类处理：
-
-你的源码（src/**）：基本保持“一个源文件 ≈ 一个模块请求”，这样改动时 HMR 才能精确、快。
-依赖（node_modules）：通过 optimizeDeps 用 esbuild 预构建，把依赖变成“浏览器友好的 ESM 版本”，并且尽量减少请求数。
-所以不会出现“每个 npm 包拆成很多很多文件都要请求”的最坏情况；通常更接近：
-
-每个被用到的依赖包会有一个（或少量几个）预构建产物文件（放在 node_modules/.vite/ 或缓存目录），浏览器请求的是这些产物，而不是请求依赖包里原始的几十/几百个源码文件。
-个别依赖因为导出结构、动态引用、side effects、或预构建策略，会产生不止一个文件，但目标仍是减少网络请求而不是增加。
-
-### 疑问：
-每个被用到的依赖包会有一个（或少量几个）预构建产物文件（放在 node_modules/.vite/ 或缓存目录），浏览器请求的是这些产物，而不是请求依赖包里原始的几十/几百个源码文件。 这个和webpack 什么 区别？不就是webpack
-
-你抓到点了：“依赖预构建成少量文件”这件事，确实很像 webpack 的 bundle。但 Vite 和 webpack 的关键区别不在“有没有把依赖合起来”，而在 dev 时谁来负责模块加载、以及什么时候做转换/打包。
-
-webpack dev（bundle-first）:
-1. 启动时：先把“源码 + 依赖”整张依赖图交给 webpack 编译、打包成一个/多个 bundle（通常在内存里）。
-2. 浏览器侧：请求的是这些 bundle（不是按 ESM 模块逐个请求源码）。
-3. 改动时：往往需要重新构建一部分 bundle（哪怕有增量编译/HMR，本质仍是在“bundle 产物”层面更新）。
-
-Vite dev（serve-native-ESM + deps prebundle）:
-1. 启动时：只把依赖用 esbuild 预构建成少量 ESM 文件（node_modules/.vite/deps/*），让它们像“稳定静态资源”一样强缓存。
-2. 浏览器侧：源码按原生 ESM 一文件一请求加载；Vite server 对每个源码模块做按需 transform 后返回。
-3. 改动时：通常只让“变动的那个模块 + 到最近 HMR boundary 的链路”失效并重取，粒度更细。
-所以可以把它总结成一句话：
-- webpack：dev 时主要产出和更新的是 bundle
-- Vite：dev 时主要产出和更新的是 模块（ESM）；只把 依赖“bundle 化”来解决 CJS/请求数问题
-
-生产环境两者又会收敛：Vite 也会用 Rollup 做打包（同样会变成 chunk/bundle）。
-
-### 所以说二者只是开发环境的差别？上到生产都一样？
-开发环境（差别最大）
-  - webpack：bundle-first（编译打包后再给浏览器）
-  - Vite：native ESM + 按需 transform + 依赖预构建（浏览器按模块请求）
-
-生产环境（都会打包，但实现与产物策略不完全一样）
-- webpack：用 webpack 自己的打包器生态完成（loader/plugin、chunk 策略、runtime 注入等都按 webpack 体系）
-- Vite：默认用 Rollup 打包（Rollup 的 chunking/treeshake 语义 + Vite/Rollup 插件体系）
-
-结果都是“多个 chunk + 按需加载”，但 tree-shaking 细节、chunk 切分、CSS 处理、插件语义、以及边缘行为（CJS/ESM 混用、sideEffects 标注等）可能不一致。
-
-### 对“产品开发”（交付效率 + 线上体验）真正带来的主要是这些：
-- 启动与迭代更快：dev 启动不必先打完整 bundle；改一行代码通常只影响极少模块，HMR 更稳定、更快（大型项目差异更明显）。
-- 缓存收益更大：依赖预构建产物强缓存，二次冷启动/刷新更快；团队日常开发体感提升很明显。
-- 生产构建更成熟（Vite 默认 Rollup）：更强的 tree-shaking/代码分割语义一致性（尤其 ESM 依赖占比高时），产物更易做到“按需加载 + 更小体积”。
-- 工程复杂度变化：配置从“loader-centric（webpack）”变成“plugin + ESM 约定（Vite/Rollup）”；多数场景更轻，但遇到 CJS、monorepo、非标准包结构时需要额外处理（例如 optimizeDeps/include、SSR/worker 等边界）。
-
-一句话：主要提升开发效率与迭代体验，同时在“现代 ESM 依赖为主”的项目上，生产体积/分包也更容易做好；但不是无代价，边界依赖/兼容问题的处理方式会变。
-
-### vite可优化项目
-实际项目里，常见的优化点可以分成 dev（开发体验）和 build（生产体积/加载性能）两类：
-
-**Dev 优化**
-- `optimizeDeps.include/exclude`：把“扫描不到但运行时会用到”的依赖手动 include，或把不该预构建的依赖 exclude，减少二次预构建/冷启动抖动
-- `server.fs.strict` + 合理的 `resolve.alias`：减少奇怪的路径解析与重复模块（尤其 monorepo / workspace）
-- `cacheDir`：把缓存放到更稳定的位置（CI/多项目场景更有感），避免频繁重建 deps cache
-
-**Build 优化**
-- `build.rollupOptions.output.manualChunks`：把大依赖拆成更合理的 chunk（比如 `react`/`vendor`/业务模块），改善首屏与缓存命中
-- `build.sourcemap`：生产一般关闭或用更轻量的策略，减少产物体积与构建耗时
-- `build.cssCodeSplit`：按需拆 CSS，避免首屏加载不必要样式（视项目结构取舍）
-- `splitVendorChunkPlugin`/分析工具：用可视化报告找出真正的体积大头，再决定是拆分、按需引入还是替换依赖
 
 ## 原理例子
 <CodeBlock>

@@ -1,0 +1,86 @@
+
+## skill
+一句话：
+现在的 all_feature-skill.md 是“提示词文档”；整理成真正 Skill 后，你只要在新窗口点名 a-trade-trend-shadow，Codex 就会自动加载这套规则。
+
+
+现在的 [all_feature-skill.md]
+只是“可复制提示词/上下文文档”。你在新窗口把它贴进去，模型就能接着理解任务。
+别人说的 Codex Skill 通常是一个可被 Codex 自动发现/调用的技能目录，结构类似：
+```
+某个技能目录/
+  SKILL.md
+  references/
+  scripts/
+```
+
+- 并且要放在 Codex 的 skills 目录或插件技能目录里，例如：
+```
+~/.codex/skills/your-skill-name/SKILL.md
+```
+
+所以区别是：
+| 类型 | 当前文件 |
+|---|---|
+| 可复制提示词 | 是 |
+| 项目内上下文文档 | 是 |
+| Codex 自动识别的 Skill | 不是 |
+| 新窗口自动加载 | 不会，除非你贴给它或让它读这个文件 |
+
+如果你只是想“任意窗口保存和复制”，现在这个文件够用。
+如果你想做成真正的 Codex Skill，需要创建类似：
+```
+/Users/ruo/.codex/skills/a-trade-trend-shadow/SKILL.md
+```
+
+## 如果整理成skill, 如何使用呢？
+如果整理成真正的 Codex Skill，用法大概是这样：
+1. 放到 Codex skills 目录
+```
+/Users/ruo/.codex/skills/a-trade-trend-shadow/SKILL.md
+```
+2. 新窗口里直接点名使用
+```
+使用 a-trade-trend-shadow skill，继续回测 round5mTrendShadow.ts，最近 200 轮胜率如何？
+```
+
+或者：
+```
+用 A-trade 趋势影子策略 skill，读取最新 round5m_with_klines_all.json 和 btc1s 真实 K 线，重新找最优参数。
+```
+
+3. Codex 会自动读取这个 Skill
+只要这个 skill 被安装/识别，新窗口里你点名它，Codex 就会先读 SKILL.md，然后按里面的规则做事。你就不用每次手动贴一大段上下文。
+实际 Skill 结构可以是：
+```
+/Users/ruo/.codex/skills/a-trade-trend-shadow/
+  SKILL.md
+```
+
+SKILL.md 里需要写清楚：
+```
+---
+name: a-trade-trend-shadow
+description: Continue A-trade poly-bot round5mTrendShadow backtests using real btc1s 5m/15m/1h monthly K-lines and existing all_feature scripts.
+---
+
+# A-trade Trend Shadow Skill
+
+Use this skill when the user asks to continue, backtest, optimize, or document the A-trade poly-bot trend shadow strategy.
+
+...
+```
+
+之后你在任意窗口说：
+```
+用 a-trade-trend-shadow skill，按最新数据回测当前参数
+```
+
+```
+它就应该知道要看：
+A-trade/poly-bot/src/strategies/round5mTrendShadow.ts
+A-trade/poly-bot/doc/exportData/round5m_with_klines_all.json
+A-trade/btc1s/btc5m
+A-trade/btc1s/btc15m
+A-trade/btc1s/btc1h
+```

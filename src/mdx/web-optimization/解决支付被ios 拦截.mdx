@@ -1,0 +1,85 @@
+```js
+const onExternalLink = (link: string, targetWindow?: Window | null) => {
+  if (userSetting?.app === AppVersionEnum.V1) {
+    eventExternalLink(link)
+  } else if (targetWindow) {
+    targetWindow.location.href = link
+  } else {
+    window.open(link, "_blank")
+  }
+}
+
+/*
+1.如果是 iOS，并且不是 App V1，就先打开一个空白新窗口。
+这个动作发生在用户点击事件的同步调用链里，所以 iOS/Safari 通常不会拦截。
+2.接口成功返回后，如果有 pay_url，不会再重新 window.open(pay_url)，而是复用刚才已经打开的空窗口：
+3.如果接口失败，或者没有 pay_url，就会把刚才预开的空窗口关掉：
+*/
+const onPay = (){
+  if (selectedChannel?.id && numeric) {
+    const payWindow =
+      userSetting?.app !== AppVersionEnum.V1 && isIOS() ? window.open("about:blank", "_blank") : null
+    setLoading(true)
+    try {
+      const res = await transPayApi({
+        id: selectedChannel?.id,
+        amount: numeric,
+        activity_type: selectedActivityType ?? 0,
+      })
+      if (res?.code === SUCCESS_CODE) {
+        setLoading(false)
+        if (isPage) {
+          router.push({
+            pathname: "/depositSub",
+            query: { id: res?.data?.id },
+          })
+        }
+
+        // ph新站点专属配置
+        const pay_url = res.data?.pay_url
+        if (pay_url) {
+          onExternalLink(pay_url, payWindow)
+        } else {
+          payWindow?.close()
+        }
+
+        setTransPayRes({
+          order_no: res.data?.order_no,
+          pay_url: res.data?.pay_url,
+          create_time: res.data?.create_time,
+          expire_time: res.data?.expire_time,
+          // TODO: 后端字段不统一 state --> amount
+          // amount: (res.data as any)?.state,
+          amount: res.data?.amount,
+          // 默认置为支付状态为初始值
+          state: res.data?.state || 0,
+          id: res.data?.id,
+          leave: res.data?.leave,
+        })
+
+        /*
+        if (userSetting?.app === AppVersionEnum.V1) {
+          eventRechargeClick(numeric / BALANCEbOOST)
+        }
+        */
+      } else {
+        payWindow?.close()
+        toast.message(res?.msg || t("Common.failed"), {
+          className: "toast-center-container",
+          duration: 4000,
+        })
+      }
+
+      setLoading(false)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars 
+    } catch (error) {
+      payWindow?.close()
+      toast.info("error", {
+        className: "toast-center-container",
+        duration: 2000,
+      })
+      setLoading(false)
+    }
+  }
+}
+```
