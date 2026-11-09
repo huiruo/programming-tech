@@ -2,6 +2,7 @@ export interface ISidebar {
   href: string
   label: string
   type?: 'category' | 'link'
+  isPrivate?: boolean
   items?: ISidebar[]
 }
 
@@ -299,5 +300,14 @@ export const sidebar: ISidebar[] = [
   {
     label: "Resume",
     href: "/resume",
+  },
+  {
+    label: "Interview",
+    href: "/interview",
+    type: "category",
+    isPrivate: true,
+    items: [
+      { href: "/interview/frontend", label: "前端", isPrivate: true },
+    ],
   },
 ];

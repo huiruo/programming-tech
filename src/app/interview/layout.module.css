@@ -1,0 +1,95 @@
+.gate {
+  display: grid;
+  min-height: 320px;
+  place-items: center;
+  padding: 32px 16px;
+}
+
+.card {
+  width: min(100%, 360px);
+  border: 1px solid #dbe3ee;
+  border-radius: 12px;
+  padding: 28px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 8%);
+}
+
+.title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 22px;
+}
+
+.description {
+  margin: 8px 0 22px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.form {
+  display: grid;
+  gap: 16px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.field input {
+  min-height: 40px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: #0f172a;
+  font: inherit;
+}
+
+.field input:focus {
+  border-color: #4f46e5;
+  outline: 2px solid rgb(79 70 229 / 20%);
+}
+
+.submit {
+  min-height: 40px;
+  border: 0;
+  border-radius: 7px;
+  color: #ffffff;
+  background: #4f46e5;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.submit:hover {
+  background: #4338ca;
+}
+
+.error {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .card {
+    border-color: #334155;
+    background: #111827;
+  }
+
+  .title, .field, .field input {
+    color: #e2e8f0;
+  }
+
+  .description {
+    color: #94a3b8;
+  }
+
+  .field input {
+    border-color: #475569;
+    background: #0f172a;
+  }
+}
