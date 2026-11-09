@@ -308,6 +308,8 @@ export const sidebar: ISidebar[] = [
     isPrivate: true,
     items: [
       { href: "/interview/frontend", label: "前端", isPrivate: true },
+      { href: "/interview/h5-performance", label: "H5 性能优化", isPrivate: true },
+      { href: "/interview/image-performance", label: "性能优化-图片处理", isPrivate: true },
     ],
   },
 ];

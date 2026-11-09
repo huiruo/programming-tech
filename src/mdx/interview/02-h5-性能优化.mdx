@@ -1,0 +1,181 @@
+# H5 性能优化总结
+
+H5 性能优化的目标不是单纯追求某个分数，而是让用户更快看到首屏、更快能操作页面，并在长时间使用时保持稳定。实践中应先用 Lighthouse、Chrome DevTools 的 Performance、Network 和 Memory 面板定位瓶颈，再针对资源、网络、渲染和运行时逐项优化。
+
+## 1. 先看什么指标
+
+- **FCP**：首次内容绘制，页面首次出现文字或图片的时间。
+- **LCP**：最大内容绘制，通常是首屏 Banner、Hero 图或最大文本块；应优先保证它尽快加载和绘制。
+- **CLS**：累计布局偏移；图片、广告或异步内容没有预留尺寸时，容易造成页面跳动。
+- **INP / 交互响应**：用户点击、输入后的反馈速度；长时间占用主线程会让输入、滚动和动画卡顿。
+- **内存与 CPU**：长列表、泄漏、频繁重渲染和高频事件会让页面使用越久越慢。
+
+优化流程：先建立性能基线并按真实网络、真实移动设备测试；从瀑布图和 Performance 时间线找出“最大资源、最长任务、最多布局偏移”，实施改动后再复测核心指标。不要只凭感觉优化。
+
+## 2. 首屏和静态资源
+
+### 缩小关键资源
+
+- 压缩并选择合适格式的图片；按展示尺寸提供资源，避免用大图缩放。
+- 对 JavaScript 使用 Tree Shaking、删除无用依赖，并将公共代码与业务代码合理拆包。
+- 压缩 CSS、JavaScript、HTML，避免首屏引入不需要的组件、编辑器、图表等大型依赖。
+- 字体只保留必要字重和字符集，预加载真正影响首屏的字体或关键图片。
+
+### 按优先级加载
+
+- 路由、非首屏模块使用动态导入/异步组件，降低初始 bundle；React 可用 `lazy` 与 `Suspense`，Vue 可用异步组件和路由懒加载。
+- 首屏 LCP 图片应立即加载（例如 Next.js `Image` 的 `priority`）；列表图、页尾图片和 iframe 才使用 `loading="lazy"` 或 `IntersectionObserver`。
+- `priority` 解决的是加载与解码时机，不等于缓存。不要给大量图片设置高优先级，否则会抢占首屏带宽。
+- 可对用户高概率进入的下一页使用 prefetch，但要控制范围，避免预取无用资源。
+- 骨架屏和 loading 状态可以改善等待感受，但不能替代真实的资源优化。
+
+### 避免布局偏移
+
+- 为图片、视频、广告位和异步模块明确设置宽高或稳定的容器比例。
+- 使用 `fill` 布局时，父容器必须有确定高度。
+- 避免资源加载后再插入页面顶部内容；必要时为动态内容预留空间。
+
+## 3. 网络、缓存和传输
+
+- 静态资源部署到 CDN，使用户从就近节点获取资源，并降低源站压力。
+- 为带内容哈希的 JS、CSS、图片配置长期强缓存，例如 `Cache-Control: public, max-age=31536000, immutable`；HTML 和频繁更新的数据使用较短缓存或协商缓存。
+- 合理利用浏览器内存缓存、磁盘缓存和 304 协商缓存，资源更新依赖文件名 hash，而不是盲目清缓存。
+- 升级 HTTPS/HTTP/2 或更高版本。HTTP/2 的多路复用和头部压缩可减少 HTTP/1.1 的连接排队问题；不要再为“减少请求数”机械合并所有资源，应结合缓存命中和拆包边界判断。
+- Service Worker 适合缓存 App Shell、静态资源和明确允许短暂过期的 GET 接口。接口缓存必须定义白名单、TTL、缓存 key（含 query 参数）、失效和降级策略，不能把所有接口一概缓存。
+
+## 4. 渲染与主线程
+
+- JavaScript、样式计算、布局、绘制共享主线程。长任务会阻塞输入、滚动和动画，造成掉帧。
+- 大计算、搜索、解析和数据处理移到 Web Worker；对无法迁移的任务分片或分帧执行，避免一次占用主线程过久。
+- 高频的 `scroll`、`resize`、`mousemove` 等事件使用节流/防抖；不调用 `preventDefault` 的滚动监听可设置 `passive: true`。
+- 动画优先使用 `requestAnimationFrame`，尽量改变 `transform`、`opacity`，减少频繁读写布局属性引起的回流与重绘。
+- 页面不可见时暂停轮询、动画和不必要的定时器，可通过 `visibilitychange` 恢复。
+
+## 5. DOM 和长列表
+
+- 减少不必要的 DOM 层级和隐藏但仍常驻的节点；批量更新 DOM，避免交替读取布局和写入样式。
+- 图片懒加载只延后资源请求，所有列表项仍会挂载到 DOM；数据量很大时不能只靠懒加载图片。
+- 长列表、聊天记录、评论流和表格应使用虚拟列表：只渲染可视区域及少量缓冲项，并复用 DOM 节点。常见选择包括 `react-virtual`、`react-window` 和 `react-virtualized`。
+- 瀑布流或高度不固定的内容需评估虚拟化实现成本；数据量不大时，`IntersectionObserver` 加图片占位通常更简单。
+
+## 6. React 和 Vue 层面的优化
+
+核心原则是减少无意义的组件更新、Virtual DOM 比对和真实 DOM 提交，而不是到处套缓存。
+
+- React：稳定 props 引用，必要时使用 `React.memo`、`useMemo`、`useCallback`；高开销计算只在依赖变化时执行；拆分大组件，缩小状态更新影响范围。
+- Vue：合理拆分组件和响应式状态，避免模板中重复执行昂贵计算；列表使用稳定 `key`，必要时采用 `computed` 缓存与异步组件。
+- 路由和重量级组件按需加载；模态框、富文本编辑器、图表等通常不应进入首屏包。
+- 缓存有成本：比较 props、保存结果和增加复杂度也会耗时。只有通过分析确认重复渲染或重复计算是瓶颈时才使用。
+
+## 7. 内存稳定性
+
+- 组件卸载时移除事件监听，清理 `setInterval`、`setTimeout`、`requestAnimationFrame`，并取消不再需要的请求或订阅。
+- 避免闭包、全局变量、Map/缓存长期持有大对象；为缓存设置容量和淘汰策略。
+- 大图、音视频、WebGL 纹理和 Buffer 按需加载；不用的 Worker 调用 `terminate()`，WebGL 资源显式释放。
+- 使用 Memory 面板和 heap snapshot 观察对象是否在多次进出页面后持续增长；区分 JS 堆、浏览器进程内存和磁盘缓存，避免误判。
+
+## 8. 项目实战 KeepAliveContainer 路由缓存
+
+### 为什么需要
+
+游戏大厅的首页、活动、充值、邀请、个人中心属于高频 Tab。若每次切换都重新卸载和挂载页面，会重复执行初始化逻辑、接口请求和图片解码，也会丢失筛选条件等组件本地状态。
+
+### 具体实现
+
+在 `src/components/layout/Layout.tsx` 中，页面统一交给 `KeepAliveContainer` 管理；`KEEP_ALIVE_ROUTES` 只包含 `/`、`/promotion`、`/deposit`、`/referral`、`/profile` 五个高频路由。
+
+- 容器用 `Map<pathname, CachedComponent>` 保存组件 ReactElement 和写入时间；白名单以外的页面保持普通挂载/卸载行为，避免低频页面常驻内存。
+- 切走的缓存页面仍保持挂载，用 `display: none` 控制显隐；切回时直接显示既有组件树，复用组件状态与已加载图片。
+- 缓存 TTL 为 10 分钟；首次访问或缓存过期时才创建新实例。写缓存时先在当前 render 使用新的 Map，再异步同步到 state，避免 `setState` 延迟造成首帧空白或闪动。
+- 当前 `Layout` 会在路径变化时将外层 `main` 滚动容器重置到顶部。因此这里已保留组件状态，但**没有**保留外层滚动位置；若产品需要恢复列表位置，应以 pathname 为 key 保存和恢复 `scrollTop`，不能在面试中误说已经实现。
+
+### KeepAlive 的代价与治理
+
+`display: none` 不会触发组件卸载，所以原本写在 `useEffect(fn, [])` 中的 WebSocket 订阅、轮询、定时器和动画仍可能在后台执行。项目额外封装了 `usePageActive`：首次进入与每次切回调用 `onActivate`，离开时执行其 cleanup 和 `onDeactivate`。高频副作用应接入该 Hook，在页面失活时暂停、激活时恢复，才能避免“切换变快但 CPU、内存和请求持续增长”。
+
+### 面试回答
+
+> 我把高频 Tab 做成按路由缓存的 KeepAliveContainer。页面切走后不卸载，只隐藏；切回时复用既有组件树和本地状态。缓存只覆盖五个高频路由，设置 10 分钟 TTL，过期后重建；低频页仍正常卸载，控制内存上限。隐藏组件的 effect 仍会运行，所以我用 usePageActive 管理轮询、订阅、定时器和动画的启停。现有外层滚动容器会回顶；若业务要求恢复滚动，会按路由保存并恢复 scrollTop。
+
+## 9. 项目实战 PWA 缓存
+
+项目采用 `@ducanh2912/next-pwa` 生成 Workbox Service Worker，生产环境注册、开发环境关闭。关键是控制缓存边界，而不是把整站资源都预下载。
+
+- 开启 `skipWaiting`、`clientsClaim`、`cleanupOutdatedCaches`：新版 worker 安装后可更快接管客户端，并移除陈旧缓存。
+- 预缓存单文件上限为 10 MB；过大的资源不进入预缓存，避免 Service Worker 安装时间、存储占用和失败率失控。
+- 图片使用 `CacheFirst` 运行时缓存，最多 200 条、缓存 30 天，接受状态码 0（跨域 opaque response）和 200；Google Fonts 与 gstatic 字体同为 CacheFirst，最多 10 条、缓存一年。
+- 通过 `publicExcludes` 与 Workbox `exclude` 排除 Next.js 内部构建文件，规避静态导出下的预缓存 404 问题。
+- 接口数据没有被该通用规则盲目缓存。对于实时余额、订单等数据，应由业务明确选择 NetworkFirst 或其他策略，并定义 TTL、缓存 key、失效条件和离线降级。
+
+PWA 与 FCM 同时接入时，同一个 scope 不能由两个 Service Worker 竞争控制权。应为 FCM 获取/注册指定 scope 的 worker，并在创建 token 前确认 worker 已 activated；排查时看 Application 面板中的 registration/scope，以及 `navigator.serviceWorker.getRegistrations()`。
+
+### 面试回答
+
+> PWA 的目标是提升重复访问和弱网体验，不是让首次访问下载所有资源。我的策略是图片、字体做带 TTL 和条数上限的 CacheFirst，限制预缓存单文件不超过 10MB；新版 worker 通过 skipWaiting 和 clientsClaim 尽快接管，同时清理旧缓存。交易和实时接口不走通用缓存规则，必须按数据一致性单独设计。PWA 和 FCM 共存时还要处理 Service Worker scope，避免两个 worker 抢占同一作用域。
+
+## 10. 项目实战 CDN external 与包拆分
+
+### CDN external
+
+客户端将 PixiJS、Swiper、Axios、Lodash 配置为 Webpack external，并在 `_document.tsx` 使用固定版本的 jsDelivr 资源注入对应全局变量 `PIXI`、`Swiper`、`axios`、`_`。这些依赖不再进入应用 bundle，收益是减少首屏 JS、利用 CDN 就近分发和浏览器/CDN 缓存复用。
+
+边界也必须说清：external 增加了第三方网络依赖和全局变量契约。上线需校验版本、加载顺序、CDN 可用性、CSP/SRI 与本地降级方案；不能把网络不稳定但首屏必需的依赖无条件外置。
+
+### Webpack 分包
+
+`next.config.ts` 基于 `splitChunks.cacheGroups` 按依赖和优先级拆出稳定 chunk，并将通用 `maxSize` 控制在约 500 KB：
+
+| Chunk | 内容 | 优化目的 |
+| --- | --- | --- |
+| `lib/react` | React、React DOM、scheduler | 全站稳定基础包，便于长期缓存 |
+| `lib/critical` | 国际化、Jotai、通知、Cookie | `_app` 首屏所需，与低频依赖隔离 |
+| `lib/data` | ahooks 等数据层 | 避免业务页重复打包 |
+| `lib/icons`、`lib/ui` | 图标、通用 UI | 允许按大小继续拆分 |
+| `lib/firebase`、`lib/mui` | 推送、重型 UI | 非首屏场景才下载 |
+| `lib/vendor`、`lib/lazy` | 其余依赖、低频能力 | 兜底分组，防止污染关键包 |
+
+分包不是越细越好：chunk 太碎会增加请求、调度和解析成本。应使用 Bundle Analyzer、Network waterfall 和真实弱网数据，验证首屏关键 chunk、缓存命中率、路由切换新增下载量和 LCP/INP 的变化。
+
+### 面试回答
+
+> 我先按关键路径划分依赖：React、状态和国际化单独形成稳定包；Firebase、MUI、图标等按页面或依赖组拆分，控制单 chunk 约 500KB。PixiJS、Swiper、Axios、Lodash 则通过 CDN external 移出业务 bundle。这样重点不是单纯减少请求，而是减少首屏 JS、提高可缓存资源的复用率；上线后我会用 Bundle Analyzer 和 Network 验证实际收益，并评估 CDN 稳定性和降级。
+
+### 什么时候选虚拟列表
+
+- 只有图片多、DOM 数量有限：优先分组懒渲染 + 图片懒加载，复杂度更低。
+- 卡片达到数百/数千，滚动已出现掉帧、内存增长或长任务：上虚拟列表。固定高度网格可使用 TanStack Virtual / react-window；不等高瀑布流还需处理高度测量与滚动锚点补偿。
+- 虚拟列表的 buffer 需要调参：太小会快速滚动白屏，太大又接近全量渲染。
+
+### 验证闭环
+
+1. **Network**：首屏只下载 LCP 和近视口资源；检查图片实际传输大小、CDN 格式和缓存命中。
+2. **Performance**：检查滚动期间的图片解码、长任务、掉帧和强制布局。
+3. **Memory**：反复切 Tab、切活动和滚动列表后，确认 DOM、图片状态缓存和 Cache Storage 不会无界增长。
+4. **RUM**：按页面、活动版本、设备档位和网络类型上报并比较 p75 LCP、CLS、INP、图片失败率、缓存命中率与资源体积；同时观察曝光、点击、转化等业务保护指标。
+
+### 60 秒面试回答
+
+> 对活动页和游戏列表，我会先区分首屏关键图、近视口资源和低优先级资源，而不是让所有图片同时下载。主 Banner 作为 LCP 资源优先加载并固定尺寸；卡片列表用 IntersectionObserver 提前一屏加载，非当前模块动态导入。图片在 CDN 按实际展示尺寸输出 AVIF/WebP，通过 sizes 或 loader 避免移动端下载大图。数据量继续增长时，我会用虚拟列表控制 DOM 数量，因为 lazy loading 只能减少图片请求，不能减少布局和内存成本。缓存上，稳定图标走带 TTL 和数量上限的 CacheFirst，活动素材使用版本化 URL 或 SWR。最后我会用 Network、Performance、Memory 和真实用户的 p75 LCP、CLS、INP 验证收益，而不是只看 Lighthouse 分数。
+
+### 使用边界
+
+这是通用优化设计，不代表当前项目已经全部实现。面试时应先说明项目现有的分组懒渲染、图片 lazy、CDN 和 PWA 图片缓存，再说“如果活动页资源继续增长，我会按以上策略升级”，这样既专业也可信。
+
+### 参考资料
+
+- [Next.js Image 组件文档](https://nextjs.org/docs/pages/api-reference/components/image)：`loading`、`preload`、`sizes`、`decoding`、`onError`，以及宽高对预留比例和 CLS 的作用。
+- [MDN Intersection Observer API](https://developer.mozilla.org/en-US/docs/Web/API/Intersection_Observer_API)：适合懒加载和无限滚动，避免在滚动事件中反复手动计算可见性。
+- [web.dev Optimize CLS](https://web.dev/articles/optimize-cls)：图片和动态内容应预留尺寸，CLS 的良好阈值为不高于 0.1。
+
+## 13. 面试表达范例
+
+“我会先用 Lighthouse 和 DevTools 定位问题，重点关注 LCP、CLS、交互长任务和内存增长。首屏上通过代码分割、CDN 与缓存缩小关键资源，给 LCP 图片高优先级并为媒体预留尺寸；非首屏资源再懒加载。运行时会控制 DOM 数量，长列表用虚拟列表，高耗时计算放到 Worker，高频事件节流并用 `requestAnimationFrame` 驱动动画。最后用性能面板复测，确认优化确实改善了核心指标。”
+
+## 参考笔记
+
+- `src/mdx/web-optimization/0-optimization.mdx`
+- `src/mdx/web-optimization/1-react-vue.mdx`
+- `src/mdx/web-optimization/interview/浏览器与性能优化.md`
+- `src/mdx/web-optimization/解决图片切换闪动.mdx`
+- `src/mdx/web-optimization/web内存占用优化.md`
+- `src/mdx/web-optimization/server-works缓存http.md`

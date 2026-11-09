@@ -1,0 +1,120 @@
+## 11. 项目示例 GameItem 多图片列表处理
+
+### 当前 GameItem 图片处理的拆解
+
+`src/components/views/home/game/gameItem.tsx` 的游戏卡片已经做了以下处理：
+
+| 层级 | 当前做法 | 解决的问题 |
+| --- | --- | --- |
+| 图片地址 | 相对路径拼接 `ImageBaseUrl`，绝对地址直接使用 | 统一走 Cloudflare Images 域名 `imagedelivery.net`，便于 CDN 分发 |
+| 组件渲染 | `React.memo` + 自定义 props 比较，URL、样式与事件用 Memo/Callback 稳定 | 减少父列表更新时卡片的无效渲染 |
+| 图片请求 | `next/image` 配合 `unoptimized`、`loading="lazy"` | 静态导出时直接使用图片 CDN；非视口图片延迟请求 |
+| 展示体验 | 固定卡片高度、图片初始透明，`onLoad` 后淡入 | 减少加载突兀感，容器已有高度可降低布局偏移风险 |
+| 跨组件复用 | 模块级 `imageCache` 保存 URL 的加载状态 | 切换 Tab 或卡片重新挂载后，已加载图片可直接显示，避免重复淡入 |
+
+列表层还有第二道保护：`gameListByTagId.tsx` 将游戏按组渲染，首组立即渲染，其余组通过 `IntersectionObserver` 在距视口 `600px` 时才挂载。它不仅延后图片请求，也延后整组 `GameItem` 的 React 渲染与 DOM 创建；比只给所有图片加 `loading="lazy"` 更能降低首屏主线程和 DOM 压力。
+
+### 优点 缺点与可优化空间
+
+**优点**
+
+- 分组 `IntersectionObserver` 与卡片级 `loading="lazy"` 形成两层延迟策略：先减少首屏 React/DOM 工作，再避免非可见图片过早占用网络。
+- 首组立即渲染、后续组提前 600px 挂载，兼顾首屏不白屏与连续滚动时的加载体验。
+- 卡片高度固定、加载后淡入，并复用已加载图片状态，能减少布局跳动和 Tab 切换时的图片闪烁。
+- `React.memo` 配合稳定的 URL、样式对象和事件回调，降低列表父组件更新对大量卡片的连带渲染。
+
+**缺点与可优化空间**
+
+- `unoptimized` 意味着 Next.js 不承担图片转码和尺寸派生；图片格式、尺寸、质量需要由 Cloudflare Images 的变体/URL 规则治理。当前 URL 固定使用 `/public`，若源图明显大于卡片实际显示尺寸，移动端仍可能下载过大文件。
+- 卡片容器只有固定高度，图片声明 `width={0}`、`height={0}` 且使用 `object-fill`。为了让浏览器更可靠地预留比例、避免图片拉伸，应提供真实宽高或稳定 `aspect-ratio`，并按设计选择 `object-cover` 或 `contain`。
+- `imageCache` 是无上限的模块级 `Map`，且目前只写入成功状态，`hasError` 尚未使用。长期浏览大量不同图片可能增长内存；应设置 LRU/数量上限，补充 `onError`、降级图与失败状态，避免失败图片始终透明。
+- 分组懒渲染会在组进入范围后永久挂载。数据达到数百/数千卡片时，仍应升级为虚拟列表/虚拟瀑布流，而不是只依赖图片懒加载。
+
+## 12. 通用处理方案 大型活动页与多图片列表
+
+这部分面试时不应背成 API 清单，核心是先判断：瓶颈是**网络与图片体积**、**DOM/渲染数量**，还是**滚动时的主线程与内存**。然后用“资源分层 + 传输适配 + DOM 控制 + 缓存与监控”的顺序说明方案。
+
+### 一套面试可讲清的决策框架
+
+| 层级 | 目标 | 具体策略 | 常见误区 |
+| --- | --- | --- | --- |
+| 首屏关键资源 | 尽快完成 LCP | 只让主 Banner/核心视觉图 `preload` 或高优先级加载，并预留尺寸 | 给整排图片都设 priority，反而抢占 JS 和 LCP 带宽 |
+| 近视口资源 | 滚到时已可见 | `IntersectionObserver` 提前约一屏加载；`rootMargin` 根据网速、卡片高度和滚动速度实测 | 所有图片同时请求，或等完全进入视口才开始请求导致白图 |
+| 低优先级模块 | 不阻塞首屏交互 | 活动规则、页尾、非当前 Tab 动态导入；首屏稳定后用 idle/fallback 队列分批预取 | 一次预取数百张图，造成网络和解码拥塞 |
+| 图片传输 | 不下载超出展示需要的字节 | CDN 按 160/320/640 等尺寸派生，优先 AVIF/WebP；用 `srcset`/`sizes` 或 Image loader 将渲染尺寸传给 CDN | 120px 卡片下载原始大图，或所有资源使用同一质量 |
+| 布局与解码 | 控制 CLS 与滚动抖动 | 所有媒体预留 `width`/`height` 或 `aspect-ratio`；非关键图 `decoding="async"`；占位图比例一致 | 图片加载后撑开布局，或滚动时集中解码大量图片 |
+| DOM 规模 | 控制长列表渲染成本 | 卡片数很大时采用虚拟列表/虚拟瀑布流，只保留可视区和少量 overscan buffer | 认为 `loading="lazy"` 已解决列表性能；它只减少网络请求 |
+| 缓存一致性 | 提升重复访问且不展示旧内容 | 稳定图标用 `CacheFirst` + 数量/TTL 上限；活动素材用版本化 URL 或 `StaleWhileRevalidate` | 对余额、订单等实时 API 套图片缓存策略 |
+
+### Next.js React 实现示例
+
+主 Banner 是唯一的 LCP 候选，才使用高优先级；其余图片不要设置 `priority`：
+
+```tsx
+import Image from "next/image"
+
+export function ActivityHero() {
+  return (
+    <Image
+      src="https://cdn.example.com/activity/hero-v3.webp"
+      alt="活动主视觉"
+      width={750}
+      height={420}
+      priority
+      sizes="(max-width: 420px) 100vw, 420px"
+      className="h-auto w-full"
+    />
+  )
+}
+```
+
+下面的卡片图片不会在组件首次渲染时创建 `<img>`。当占位容器进入视口前 `600px`，观察器才将其挂载；此时设为 `eager`，利用提前距离完成下载，而不是再等待浏览器原生 lazy 阈值。
+
+```tsx
+import { useEffect, useRef, useState } from "react"
+import Image from "next/image"
+
+function useNearViewport(rootMargin = "600px 0px") {
+  const ref = useRef<HTMLDivElement>(null)
+  const [shouldLoad, setShouldLoad] = useState(false)
+
+  useEffect(() => {
+    const node = ref.current
+    if (!node || shouldLoad) return
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setShouldLoad(true)
+        observer.disconnect()
+      }
+    }, { rootMargin, threshold: 0.01 })
+
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [rootMargin, shouldLoad])
+
+  return { ref, shouldLoad }
+}
+
+export function GameCardImage({ src, alt }: { src: string; alt: string }) {
+  const { ref, shouldLoad } = useNearViewport()
+
+  return (
+    <div ref={ref} className="relative aspect-[4/5] overflow-hidden rounded-xl bg-neutral-200">
+      {shouldLoad && (
+        <Image
+          src={src}
+          alt={alt}
+          fill
+          loading="eager"
+          decoding="async"
+          sizes="(max-width: 420px) 25vw, 105px"
+          className="object-cover"
+        />
+      )}
+    </div>
+  )
+}
+```
+
+如果项目使用图片 CDN 直链并设置了 `unoptimized`，仍应在 CDN URL 或自定义 loader 中根据 `sizes` 生成对应的宽度、格式和质量；否则 `sizes` 只表达布局意图，无法阻止 CDN 返回原图。
