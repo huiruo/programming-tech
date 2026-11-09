@@ -10,9 +10,7 @@ export const Sidebar = ({ isMobile = false }: { isMobile?: boolean }) => {
   return (
       <div className='sidebar-container'>
         <aside className="sidebar-content">
-          {/* <DocSidebarDesktop activePath={activePath} sidebar={sidebar} /> */}
           <DocSidebarDesktop activePath={activePath} sidebar={sidebar} />
-          {/* <DocSidebarDesktop activePath={activePath} sidebar={sidebar} /> */}
         </aside>
       </div>
   )

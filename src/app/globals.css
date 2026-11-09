@@ -216,7 +216,37 @@ ol li::marker {
   background: #e4e8ec;
   z-index: 88899;
   width: 100%;
+  border-bottom: 1px solid #d8e0e8;
+  box-shadow: 0 1px 10px rgb(15 23 42 / 5%);
 }
+
+.nav-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-left: 14px;
+  color: #1e293b;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.nav-menu-button,
+.nav-github-button {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: #334155;
+  background: transparent;
+  cursor: pointer;
+}
+
+.nav-menu-button { margin-left: 8px; }
+.nav-github-button { margin-right: 10px; }
+.nav-menu-button:hover,
+.nav-github-button:hover { background: #dbe4ef; }
 
 .wrapper-box {
   display: flex;
@@ -253,9 +283,15 @@ ol li::marker {
   height: 100vh;
   padding-top: 60px;
   padding-bottom: 20px;
-  background: linear-gradient(to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))) rgb(var(--background-start-rgb));
+  border-right: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.sidebar-content-mobile {
+  position: relative;
+  width: 100%;
+  padding-top: 0;
+  border-right: 0;
 }
 
 .empty-div {
@@ -276,4 +312,16 @@ ol li::marker {
   margin: 0 auto;
   margin-bottom: 50px;
   padding: 50px 10px 0px 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .nav { border-color: #1e293b; background: #111827; }
+  .nav-brand, .nav-menu-button, .nav-github-button { color: #e2e8f0; }
+  .nav-menu-button:hover, .nav-github-button:hover { background: #1e293b; }
+  .sidebar-content { border-color: #1e293b; background: #0f172a; }
+}
+
+@media screen and (max-width: 768px) {
+  .nav-brand span { display: none; }
+  .nav-brand { margin-left: 0; }
 }

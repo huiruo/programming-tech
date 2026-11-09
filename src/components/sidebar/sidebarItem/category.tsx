@@ -1,80 +1,66 @@
-import clsx from 'clsx';
-import {
-  useCallback,
-  useState,
-  type Dispatch,
-  type SetStateAction,
-} from "react";
+import clsx from "clsx";
+import { ChevronRight } from "lucide-react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { SidebarItem } from ".";
-import { ISidebar } from '@/common/router';
-import { isActiveSidebarItem } from '../utils';
-import styles from '../sidebar.module.css';
+import { ISidebar } from "@/common/router";
+import { isActiveSidebarItem } from "../utils";
+import styles from "../sidebar.module.css";
 
 interface Props {
   activePath: string;
   item: ISidebar;
-  index: number;
+  depth: number;
+  forceExpanded?: boolean;
+  onNavigate?: () => void;
 }
 
-export function useCollapsible({
-  initialState,
-}: {
-  /** The initial state. Will be non-collapsed by default. */
-  initialState?: boolean | (() => boolean);
-}): {
-  collapsed: boolean;
-  setCollapsed: Dispatch<SetStateAction<boolean>>;
-  toggleCollapsed: () => void;
-} {
-  const [collapsed, setCollapsed] = useState(initialState ?? false);
-
-  const toggleCollapsed = useCallback(() => {
-    setCollapsed((expanded) => !expanded);
-  }, []);
-
-  return {
-    collapsed,
-    setCollapsed,
-    toggleCollapsed,
-  };
-}
-
-export const ItemCategory = ({ item, activePath }: Props) => {
-
+export const ItemCategory = ({
+  item,
+  activePath,
+  depth,
+  forceExpanded = false,
+  onNavigate,
+}: Props) => {
   const isActive = isActiveSidebarItem(item, activePath);
+  const [expanded, setExpanded] = useState(isActive);
+  const isExpanded = forceExpanded || expanded;
 
-  const { collapsed, setCollapsed } = useCollapsible({
-    initialState: () => {
+  useEffect(() => {
+    if (isActive) setExpanded(true);
+  }, [isActive]);
 
-      return isActive ? false : true;
-    },
-  });
+  return (
+    <li className={styles.categoryItem}>
+      <button
+        className={clsx(styles.categoryButton, isActive && styles.categoryActive)}
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={isExpanded}
+        style={{ "--sidebar-depth": depth } as CSSProperties}
+      >
+        <span>{item.label}</span>
+        <ChevronRight
+          className={clsx(styles.chevron, isExpanded && styles.chevronExpanded)}
+          size={16}
+          aria-hidden="true"
+        />
+      </button>
 
-  const updateCollapsed = (toCollapsed = !collapsed) => {
-    setCollapsed(toCollapsed);
-  };
-
-  return <li>
-    <div
-      className={clsx('flex', styles.menuLink, {
-        [styles.menucaret]: collapsed,
-      })}
-      onClick={(e) => {
-        e.preventDefault();
-        updateCollapsed();
-      }}
-    >
-      {item.label}
-    </div>
-
-    <ul>
-      {!collapsed && Array.isArray(item.items) && item.items.map((cell, i) => (
-        <SidebarItem
-          key={i}
-          item={cell}
-          activePath={activePath}
-          index={i} />
-      ))}
-    </ul>
-  </li>
-}
+      {isExpanded && item.items && (
+        <ul className={styles.nestedList}>
+          {item.items.map((cell, index) => (
+            <SidebarItem
+              key={cell.href}
+              item={cell}
+              activePath={activePath}
+              index={index}
+              depth={depth + 1}
+              forceExpanded={forceExpanded}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+};

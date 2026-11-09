@@ -6,17 +6,23 @@ interface Props {
   activePath: string;
   item: ISidebar;
   index: number;
+  depth: number;
+  forceExpanded?: boolean;
+  onNavigate?: () => void;
 }
 
-export const SidebarItem = ({ item, index, activePath }: Props) => {
-  const { type = 'link' } = item
-
-  switch (type) {
-    case 'category':
-      return <ItemCategory item={item} index={index} activePath={activePath} />;
-    case 'link':
-      return <ItemLink item={item} index={index} activePath={activePath} />;
-    default:
-      <div>Error</div>
+export const SidebarItem = ({ item, activePath, depth, forceExpanded, onNavigate }: Props) => {
+  if (item.type === "category") {
+    return (
+      <ItemCategory
+        item={item}
+        activePath={activePath}
+        depth={depth}
+        forceExpanded={forceExpanded}
+        onNavigate={onNavigate}
+      />
+    );
   }
-}
+
+  return <ItemLink item={item} activePath={activePath} depth={depth} onNavigate={onNavigate} />;
+};

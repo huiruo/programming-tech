@@ -1,7 +1,7 @@
 "use client";
 
 import { Box } from "@mui/system";
-import { Menu } from "lucide-react";
+import { Github, Menu } from "lucide-react";
 import { useDrawerContext } from "../drawer/drawerContext";
 import { Drawer } from "../drawer";
 import { DocSidebarDesktop } from "../sidebar/desktop";
@@ -26,47 +26,41 @@ export const Nav = ({ isMobile }: { isMobile: boolean }) => {
       }}>
         <div className="flex">
           {isMobile && (
-            <Box
+            <button
+              className="nav-menu-button"
+              type="button"
               onClick={() => toggleDrawer("NavDrawer")}
-              component={Menu}
-              size={22}
-              color={"#000"}
-              sx={{
-                cursor: "pointer",
-                mr: "10px",
-              }}
-            />
+              aria-label="打开知识库导航"
+            >
+              <Menu size={21} aria-hidden="true" />
+            </button>
           )}
 
-          <Box
-            component={"img"}
-            alt="icon"
-            src="/logo.svg"
-            width={36}
-            sx={{
-              ml: "10px",
-              borderRadius: "20%",
-            }}
-          />
+          <a className="nav-brand" href="/" aria-label="返回首页">
+            <Box
+              component={"img"}
+              alt=""
+              src="/logo.svg"
+              width={32}
+              sx={{ borderRadius: "20%" }}
+            />
+            <span>Programming Tech</span>
+          </a>
         </div>
 
-        <Box
-          component={"img"}
-          alt="icon"
-          src="/github.svg"
-          width={30}
-          onClick={() => onGithub()}
-          sx={{
-            mr: "10px",
-            borderRadius: "50%",
-          }}
-        />
+        <button className="nav-github-button" type="button" onClick={onGithub} aria-label="在 GitHub 打开项目">
+          <Github size={21} aria-hidden="true" />
+        </button>
       </Box>
 
       <Drawer anchor={"left"} id="NavDrawer" width={220}>
         {isMobile && <div className="sidebarMobile-container">
-          <aside className="sidebar-content">
-            <DocSidebarDesktop activePath={activePath} sidebar={sidebar} />
+          <aside className="sidebar-content sidebar-content-mobile">
+            <DocSidebarDesktop
+              activePath={activePath}
+              sidebar={sidebar}
+              onNavigate={() => toggleDrawer("NavDrawer")}
+            />
           </aside>
         </div>}
       </Drawer>
