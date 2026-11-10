@@ -12,6 +12,17 @@ Webpack 优化要先区分两个方向；它们服务的人不同、看的是不
 
 Webpack 是一个模块打包器：从 `entry` 出发建立依赖图，把 JavaScript、CSS、图片等资源转换、组织为可被浏览器加载的静态文件。面试中不要只说“打包成一个 bundle”；现代 Webpack 会根据同步入口、动态 `import()` 与 `splitChunks` 输出多个 chunk，并注入运行时代码完成模块加载。
 
+## 实战
+项目实战：游戏 H5 的 CDN external 与分层分包
+基于项目实际配置总结了：
+- PixiJS、Swiper、Axios、Lodash external 到 jsDelivr CDN
+- React、首屏基础依赖、Firebase/MUI、图标/UI、低频功能等分层 splitChunks
+- maxSize: 500KB 的作用与不能机械套用的边界
+- PWA 图片与字体的 TTL/数量受控缓存
+- 静态导出下 images.unoptimized 的真实含义与图片优化缺口
+- CDN external 的同步脚本阻塞、稳定性、降级、CSP/SRI、注释与实现不一致等风险
+- 可直接用于面试的项目回答
+
 ## 1. 性能优化：面试先讲这一套
 
 ### 1）包分析（用户侧产物与加载性能）：不看产物就不要盲目拆包
@@ -134,11 +145,60 @@ module.exports = {
 | 用户侧 | 缓存命中 | 文件名、响应头、发布后的 Network | 小改业务代码后，稳定公共 chunk 不重新下载 |
 | 开发者侧 | 构建耗时 | 构建日志、cache 命中率、loader 耗时 | 冷启动与二次构建分开对比，二次构建明显受益 |
 
-## 2. 60 秒回答：Webpack 的工作过程
+## 2. 项目实战：游戏 H5 的 CDN external 与分层分包
+
+项目：`bfun-game-a`（Next.js 15 静态导出）。其 `next.config.ts` 在浏览器构建中扩展了 Webpack 配置，重点不是泛泛“拆包”，而是按首屏必要性和依赖稳定性划分下载与缓存边界。
+
+### 已落地 1：将超大通用库 external 到 CDN（用户侧首屏包）
+
+客户端构建将 `pixi.js`、`swiper`、`axios`、`lodash` 标记为 external；这些库不会被打进应用 JS，而是在 `src/pages/_document.tsx` 通过 jsDelivr 固定版本脚本加载，并映射为全局变量 `PIXI`、`Swiper`、`axios`、`_`。
+
+```ts
+// next.config.ts，浏览器端不再把这些依赖打进业务 chunk
+config.externals = [
+  ...(Array.isArray(config.externals) ? config.externals : []),
+  { "pixi.js": "PIXI" }, { swiper: "Swiper" },
+  { axios: "axios" }, { lodash: "_" },
+]
+```
+
+**收益**：降低应用 bundle 体积，依赖可借助 CDN 就近分发和缓存复用。
+**面试中必须说明的边界**：external 只是把下载责任从应用包转移到第三方网络，不会凭空消除下载；当前脚本以普通 `<script>` 写在 `<Head>`，需要重点验证其是否阻塞解析、CDN 不可用时的降级、CSP/SRI 与版本兼容。且代码仅判断 `!isServer`，实际没有按 `NODE_ENV` 限制，注释中“开发环境本地包”的说法和实现不完全一致，应以运行结果为准。
+
+### 已落地 2：按依赖性质分层 `splitChunks`（用户侧加载与缓存）
+
+项目设置 `maxSize: 500 * 1024`，并使用优先级缓存组拆出以下 chunk：
+
+| 分组 | 实际依赖 | 设计意图 |
+| --- | --- | --- |
+| `lib/react` | React、React DOM、scheduler | 全站首屏必需且稳定，利于长期缓存 |
+| `lib/critical` | `next-intl`、Jotai、Sonner、Cookie | `_app` 级别的基础能力，与低频功能隔离 |
+| `lib/data` | ahooks | 数据层避免被业务页重复打包 |
+| `lib/icons`、`lib/ui` | lucide、Radix、主题、轮播 | 通用 UI 独立，允许 `maxSize` 继续细分 |
+| `lib/firebase`、`lib/mui` | Firebase、MUI/Emotion | 重型、非所有页面都需要的依赖 |
+| `lib/vendor`、`lib/lazy` | 其他依赖、二维码/全屏等低频能力 | 兜底隔离，避免污染关键包 |
+
+这里的关键能力是按**稳定公共依赖、首屏基础能力、重型低频能力**拆分，而不是按 npm 包名机械拆分。`enforce: true` 的组会强制成块，`lib/icons`、`lib/ui` 等未强制的组仍可被 `maxSize` 拆开；上线后应通过 Bundle Analyzer 和弱网瀑布图检查 500KB 是否符合实际，而不是把它当成固定最佳值。
+
+### 已落地 3：静态资源运行时缓存（用户侧重复访问）
+
+项目用 `@ducanh2912/next-pwa` 配置 Workbox：图片为 `CacheFirst`，上限 200 条、30 天；Google Fonts / gstatic 字体上限 10 条、一年；单个预缓存资源不超过 10MB，并清理旧缓存。它不是 Webpack 的 `splitChunks` 优化，但与构建产物和 CDN 配合，改善重复访问和弱网体验。
+
+要点是它给缓存设置了 TTL、数量和资源边界，避免无限占用存储。实时接口没有被这个通用规则缓存；余额、订单等数据仍应按一致性需求单独设计。
+
+### 现有配置的边界：不能误说成“图片已被构建优化”
+
+项目是 `output: "export"`，且 `images.unoptimized: true`。这适合静态导出并直接使用图片 CDN，但意味着 Next.js 内置图片优化器没有在构建/请求阶段自动生成尺寸与格式变体。图片是否足够小，仍依赖 Cloudflare Images 等 CDN 提供按尺寸裁剪、WebP/AVIF 与质量参数；应从 Network 检查实际传输体积。
+
+### 项目实战面试回答
+
+> 在游戏 H5 项目里，我把 Webpack 优化分成两层：第一层是把 PixiJS、Swiper、Axios、Lodash external 到固定版本 CDN，减少应用 bundle；第二层在 `splitChunks` 中按 React 核心、首屏基础能力、Firebase/MUI 等重型低频依赖分层拆包，并把单 chunk 控制在约 500KB。静态资源侧再由 PWA 对图片和字体做有 TTL、数量上限的运行时缓存。上线后我会通过 Bundle Analyzer、Network 瀑布和弱网 LCP 验证首屏收益，同时验证 CDN 阻塞、版本和降级风险；不会只看“包变小”。
+
+## 3. 60 秒回答：Webpack 的工作过程
 
 > Webpack 从 entry 开始递归解析 `import` / `require`，建立模块依赖图。匹配到资源后，先由 loader 把源码转换成 JavaScript 可处理的模块，例如 Babel 转译 JS、css-loader 解析 CSS；再由 plugin 在构建生命周期的钩子中介入，例如生成 HTML、压缩资源、定义环境变量。随后根据同步依赖、动态 import 和 `splitChunks` 把 module 组织成多个 chunk，最后生成带 content hash 的 JS、CSS 等 asset 并写入 output。运行时负责按需加载异步 chunk、维护模块缓存。
 
-## 3. 核心概念：要能说清各自负责什么
+## 4. 核心概念：要能说清各自负责什么
 
 | 概念 | 职责 | 面试易错点 |
 | --- | --- | --- |
@@ -151,7 +211,7 @@ module.exports = {
 | `Compiler` | 整个构建生命周期的管理者，watch 模式下长期存在 | 不要和单次构建混淆 |
 | `Compilation` | 一次构建的上下文，包含 module、chunk、asset | 每次重新编译会创建新的 Compilation |
 
-## 4. 构建流程：初始化 → make → seal → emit
+## 5. 构建流程：初始化 → make → seal → emit
 
 1. **初始化**：读取配置与 CLI 参数，创建 `Compiler`，注册内置插件和用户插件，解析 entry。
 2. **make / build**：从入口递归构建模块。先匹配 `module.rules` 并执行 loader，解析模块中的依赖，再继续构建依赖，最终得到 Module Graph。
@@ -160,7 +220,7 @@ module.exports = {
 
 `Compiler` 的 hooks 适合处理全局生命周期；`Compilation` 的 hooks 面向本次构建中的模块、chunk、asset。编写插件时不要在每次 compilation 都重复注册全局监听。
 
-## 5. Loader 与 Plugin 的区别
+## 6. Loader 与 Plugin 的区别
 
 | 对比项 | Loader | Plugin |
 | --- | --- | --- |
@@ -171,7 +231,7 @@ module.exports = {
 
 Loader 的执行顺序是从右到左（或从下到上）。例如 `style-loader`、`css-loader`、`sass-loader` 中，Sass 先被编译为 CSS，再解析 CSS，最后开发环境注入页面。生产环境通常用 `MiniCssExtractPlugin` 提取 CSS 文件，而非 `style-loader`。
 
-## 6. 代码分割与缓存：为什么、怎么拆、不能怎么拆
+## 7. 代码分割与缓存：为什么、怎么拆、不能怎么拆
 
 代码分割的目标是缩小初始下载与解析量，并让稳定依赖跨版本复用缓存。
 
@@ -208,7 +268,7 @@ module.exports = {
 - `runtimeChunk: 'single'` 可把 Webpack runtime 与业务 chunk 分离，减少业务改动导致公共 chunk hash 一起变化的概率。
 - 不要机械按每个 npm 包拆 chunk。过度拆分会增加请求调度、解析与缓存管理成本；应以首屏关键路径、依赖复用度、路由访问方式和真实网络瀑布图决定。
 
-## 7. Tree Shaking：生效条件与失效原因
+## 8. Tree Shaking：生效条件与失效原因
 
 Tree Shaking 指在生产构建中，基于 ES Module 的静态结构标记未使用导出，并由压缩器删除无用代码。
 
@@ -219,7 +279,7 @@ Tree Shaking 指在生产构建中，基于 ES Module 的静态结构标记未�
 - `package.json` 的 `sideEffects` 用来声明哪些文件有副作用。错误写成 `false` 可能把全局 CSS、polyfill 等必要文件删除；可白名单保留：`["*.css", "./src/polyfills.ts"]`。
 - `import { debounce } from 'lodash'` 是否能有效摇树取决于包的模块格式与构建链路；对 CJS 大包，优先换 ESM 版本或使用按模块路径导入，并用产物分析验证。
 
-## 8. 构建速度优化：先量化再下手
+## 9. 构建速度优化：先量化再下手
 
 | 瓶颈 | 手段 | 注意点 |
 | --- | --- | --- |
@@ -231,13 +291,13 @@ Tree Shaking 指在生产构建中，基于 ES Module 的静态结构标记未�
 
 构建优化与运行时性能不同：构建耗时看 cache、loader 与解析范围；用户侧性能看产物体积、关键请求、缓存和运行时执行。两者都要用数据验证。
 
-## 9. HMR 的原理与边界
+## 10. HMR 的原理与边界
 
 开发服务器监听文件变化，重新编译受影响模块并通过 WebSocket 通知浏览器。浏览器下载 hot-update 文件；若模块或其父模块通过 `module.hot.accept` 接受更新，则替换模块并执行回调，尽量保留页面状态；没有可接受边界时才回退整页刷新。
 
 React Fast Refresh 是框架层对 HMR 的增强：它会判断组件导出与 Hook 是否可安全保留状态。不是所有修改都能保留状态，例如模块副作用、非组件导出变化或运行时错误都可能触发刷新。
 
-## 10. Module Federation：适用场景和风险
+## 11. Module Federation：适用场景和风险
 
 Module Federation 是 Webpack 5 的运行时模块共享机制。Host 可以异步加载 Remote 暴露的模块，双方可将 React 等依赖配置为 `shared` / `singleton`，减少重复下载和多实例问题。
 
@@ -251,7 +311,7 @@ new ModuleFederationPlugin({
 
 它适合多团队独立部署、需要运行时组合模块的场景；不等于“所有项目都应微前端化”。需要治理 Remote 版本兼容、加载失败降级、共享依赖版本、样式隔离、监控与发布顺序。它与 qiankun 等微前端框架不冲突：前者解决模块加载/共享，后者更关注应用生命周期与隔离。
 
-## 11. 常见追问
+## 12. 常见追问
 
 ### Webpack 和 Vite 的开发模式有什么不同？
 
@@ -269,6 +329,6 @@ Webpack 开发时以打包后的模块/chunk 为主要服务单元，启动和�
 
 开发优先增量构建与调试体验，通常需要 HMR、较快 source map，避免完整压缩；生产优先产物体积、缓存和稳定性，会启用压缩、内容 hash、抽离 CSS 等。使用 `webpack-merge` 维护 common、dev、prod 配置，减少重复但不要混淆目标。
 
-## 12. 面试收尾表达
+## 13. 面试收尾表达
 
 > 我不会只把 Webpack 当成“把文件合并起来”的工具。实际优化时，我先通过 stats 和 Bundle Analyzer 找到首屏大依赖与重复依赖，再用动态 import、splitChunks、contenthash 和 CDN 缓存缩短关键路径；构建慢则优先启用 filesystem cache、缩小 loader 处理范围。每次改动都会同时看构建时间、压缩后产物、Network 瀑布和 LCP，避免为了拆包而制造更多请求与解析开销。

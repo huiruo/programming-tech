@@ -311,6 +311,7 @@ export const sidebar: ISidebar[] = [
       { href: "/interview/h5-performance", label: "H5 性能优化", isPrivate: true },
       { href: "/interview/image-performance", label: "性能优化-图片处理", isPrivate: true },
       { href: "/interview/webpack", label: "Webpack", isPrivate: true },
+      { href: "/interview/nextjs", label: "Next.js", isPrivate: true },
     ],
   },
 ];

@@ -1,0 +1,162 @@
+# Next.js 面试总结
+
+Next.js 是 React 的全栈框架。它的核心价值不是“React 加一个路由”，而是让页面可以按场景选择服务端渲染、静态生成、增量更新和客户端交互，并把路由、数据请求、缓存、图片优化、SEO 和部署约束放到统一的工程模型中。
+
+## 30 秒开场回答
+
+> 我把 Next.js 理解为 React 的渲染和交付框架。普通 React SPA 默认在浏览器完成首屏渲染；Next.js 可以把适合 SEO、首屏性能和共享缓存的内容放到服务端或构建阶段生成，再只把交互部分交给客户端。实际项目中我会先按页面的数据实时性和交互复杂度选择 SSG、ISR、SSR 或纯客户端渲染，再通过 Server Components、路由级拆包、图片/字体优化和缓存策略控制首屏体积与更新成本。它的难点不只是 API，而是要同时理清运行时、缓存边界和部署能力。
+
+## 1. 最关键：四种渲染策略如何选
+
+| 策略 | HTML 何时生成 | 适合场景 | 代价 / 注意点 |
+| --- | --- | --- | --- |
+| SSG（静态生成） | build 时 | 文档、营销页、低频内容页 | 内容更新需要重新构建或配合 ISR |
+| ISR（增量静态再生） | 首次构建后按 `revalidate` 更新 | 商品详情、资讯、活动页 | 要设计可接受的旧数据窗口和失效路径 |
+| SSR（动态服务端渲染） | 每次请求 | 强个性化、必须实时的数据 | 服务端计算和接口延迟会影响 TTFB，需谨慎缓存 |
+| CSR（客户端渲染） | 浏览器拿到 JS 后 | 登录后面板、强交互局部区域 | 首屏 SEO 和可见内容不应完全依赖它 |
+
+面试不要把它们说成互斥关系。一个页面可以**服务端先输出壳和可 SEO 内容**，再让 Client Component 拉取用户私有数据并处理交互。
+
+### App Router 中的判断方式
+
+App Router 里页面和布局默认是 Server Component。`fetch` 的缓存策略及动态 API 决定路由的静态/动态特征：
+
+```tsx
+// 可复用缓存的数据：适合内容页；最长 60 秒可见旧数据
+const article = await fetch(`https://api.example.com/articles/${slug}`, {
+  next: { revalidate: 60 },
+}).then((r) => r.json());
+
+// 每次请求拿新数据：例如与当前请求强相关的后台数据
+const profile = await fetch('https://api.example.com/me', {
+  cache: 'no-store',
+}).then((r) => r.json());
+```
+
+`revalidate` 不是“每 60 秒一定同步刷新所有用户页面”，而是缓存重新验证规则；具体更新时机还受部署平台和请求命中影响。对于 CMS 更新这类明确事件，优先结合按路径或按 tag 的按需失效，而不是一味把时间设得很短。
+
+## 2. App Router、Pages Router 与路由 API
+
+| 项目结构 | 定位 | 常用路由 API |
+| --- | --- | --- |
+| `app/`（App Router） | 当前主线，支持 Server Components、嵌套路由、流式 UI | `next/navigation` 的 `useRouter`、`useParams`、`useSearchParams` |
+| `pages/`（Pages Router） | 成熟稳定，存量项目常见 | `next/router`、`getServerSideProps`、`getStaticProps` |
+
+两套 Router 不能混用其 hooks。Pages Router 中 `router.query` 在客户端首次渲染可能尚未完整，因此常配合 `router.isReady`；App Router 中用 `useParams()` / `useSearchParams()` 读取参数，**没有** `router.isReady`。
+
+App Router 里：
+
+- `layout.tsx` 负责跨子路由保留的布局，适合导航、主题、Provider；不要把频繁变化的数据请求都堆在根 layout。
+- `loading.tsx` 是该路由段的 Suspense 加载 UI，`error.tsx` 是客户端错误边界，`not-found.tsx` 处理 404。
+- `[id]` 是动态段，`[...slug]` 是 catch-all，`[[...slug]]` 是可选 catch-all。
+- `Link` 提供客户端导航和可控预取；`router.push` 用于用户可返回的跳转，`replace` 适合登录回跳、筛选条件校正等不应留下历史记录的场景。
+
+## 3. Server Component 与 Client Component
+
+Server Component 运行在服务端，可以直接读数据库或调用内部服务，其代码及服务端依赖不会进入浏览器 JS；Client Component 用 `'use client'` 标记，才能使用 state、effect、浏览器 API 和事件处理。
+
+```tsx
+// app/products/page.tsx：服务端取数，减少客户端瀑布请求
+import AddToCartButton from './AddToCartButton';
+
+export default async function ProductPage() {
+  const product = await getProduct();
+  return <AddToCartButton productId={product.id} />;
+}
+
+// app/products/AddToCartButton.tsx
+'use client';
+export default function AddToCartButton({ productId }: { productId: string }) {
+  return <button onClick={() => addToCart(productId)}>加入购物车</button>;
+}
+```
+
+边界原则：**尽量把 `'use client'` 下沉到真正需要交互的叶子组件**。一旦组件是 Client Component，它的可达依赖会进入客户端图；同时 Server Component 传给 Client Component 的 props 必须可序列化，不能把函数、数据库连接或复杂实例直接传过去。
+
+## 4. 缓存：面试最容易混淆的点
+
+Next.js 的缓存不能只回答“有缓存”。至少分清：
+
+| 层级 | 缓存什么 | 失效 / 风险 |
+| --- | --- | --- |
+| Request Memoization | 同一次服务端渲染内的重复 GET 请求 | 只在一次请求生命周期内，不能替代跨请求缓存 |
+| Data Cache | `fetch` 结果等可复用数据 | 用 `revalidate`、tag / path 失效；私有数据不能误缓存 |
+| Full Route Cache | 静态路由的 RSC payload 与 HTML | 数据失效会影响路由缓存；动态路由通常不依赖它 |
+| Router Cache | 浏览器端已访问/预取的路由片段 | 刷新、导航及失效策略影响用户何时看到新内容 |
+| CDN / 浏览器 HTTP 缓存 | 静态 JS、CSS、图片等 HTTP 资源 | hash 资产适合长缓存，HTML/入口文档不宜永久强缓存 |
+
+回答项目案例时可以这样说：
+
+> 公共内容我使用 ISR 或 CDN 缓存降低源站压力；登录态、余额、订单等用户私有且一致性敏感的数据使用 `no-store` 或服务端鉴权后短生命周期策略；后台更新内容后通过按 tag / 路径失效主动刷新，避免用户长期看到旧内容。静态 hash 资源长期缓存，但 HTML 保持可更新，从而保证新版本资源可被发现。
+
+## 5. 性能优化：先量化，再选手段
+
+1. **减少客户端 JS**：优先 Server Component；图表、编辑器、地图、客服 SDK 等低频重模块用 `dynamic()` 或事件触发的 `import()` 延迟加载。
+2. **避免请求瀑布**：服务端能并行的数据用 `Promise.all`；不要让父组件取完数据才开始触发无依赖的子请求。
+3. **图片和字体**：`next/image` 明确尺寸或 `sizes`，避免 CLS；使用合适的远程图片白名单/loader；用 `next/font` 自托管并减少字体变体。
+4. **路由与加载体验**：对高概率目标使用 `Link` 预取；用 `loading.tsx`、Suspense 做分段骨架，而不是整页白屏等待。
+5. **度量验证**：看真实 Web Vitals（LCP、INP、CLS）和 Network waterfall，再对比优化前后首屏 JS、接口耗时、缓存命中率；不能只报 bundle 变小。
+
+```tsx
+import dynamic from 'next/dynamic';
+
+// 编辑器不进入首屏包；若依赖 window，可关闭 SSR
+const RichEditor = dynamic(() => import('./RichEditor'), {
+  ssr: false,
+  loading: () => <p>编辑器加载中…</p>,
+});
+```
+
+`ssr: false` 是浏览器专属库的兼容手段，不是常规性能开关；对需要 SEO 的主体内容使用它会牺牲服务端 HTML。
+
+## 6. SEO、鉴权与安全
+
+- App Router 用 `metadata` / `generateMetadata` 输出 title、description、canonical、OG；动态详情页应基于服务端可信数据生成，避免重复和空元信息。
+- 用 `sitemap`、`robots` 管理可索引范围；登录页、筛选结果、内部后台通常不应被索引。
+- 鉴权不能只依赖客户端路由守卫。服务端页面、Route Handler / Server Action 都必须再次校验 session 与权限；中间件适合做快速路径拦截或重定向，但不应承载重型业务查询。
+- 不把密钥放进 `NEXT_PUBLIC_*`。该前缀会被编译进客户端；服务端密钥只在服务端环境读取。
+
+## 7. 部署模式与常见坑
+
+| 模式 | 适用 | 限制 |
+| --- | --- | --- |
+| Node / Serverless 运行时 | SSR、Route Handler、按需 revalidate | 需要支持 Next 运行时的托管平台，注意冷启动与连接管理 |
+| Edge Runtime | 靠近用户、轻量鉴权/重定向 | API 和 Node.js 兼容性受限，不适合重计算或多数数据库驱动 |
+| `output: 'export'` 静态导出 | 纯静态站、对象存储/CDN 托管 | 没有按请求执行的 SSR、Route Handler、服务端图片优化和按需 ISR；动态路由需在构建期可确定 |
+
+**静态导出不等于没有 SPA 体验。** 导出后的站点仍可用 Next 的客户端路由完成不刷新的导航；它失去的是请求时服务端能力，而不是 `Link` / `router.push` 本身。项目选择前先确认是否需要登录态 SSR、动态接口、图片优化器和内容实时更新。
+
+## 8. 项目优化回答（可直接复述）
+
+> 我负责过一个移动端 Next.js 业务项目，目标是兼顾接近 App 的切换体验和多地区内容交付。架构上把公共内容与登录态数据拆开：公共活动和内容页使用静态生成或可再验证缓存，用户余额、订单、权限等走服务端鉴权和不缓存请求。交互组件把 `'use client'` 控制在 tab、弹窗、表单等边界内，图表/游戏 SDK/编辑器等大依赖按路由或触发时动态加载。  
+> 
+> 体验上我用路由预取、分段 `loading`、图片尺寸约束和 PWA 静态资源缓存减少切换等待与布局抖动；发布后通过 Web Vitals、Network 瀑布和包分析验证效果。工程上还处理了多语言、环境配置以及 PWA 与消息推送 Service Worker 的作用域隔离：主 PWA SW 控制站点根路径，消息 SW 使用独立 scope，并在获取推送 token 时显式传入对应 registration，避免两个 SW 互相抢控制权。
+
+## 9. 高频追问速答
+
+### Next.js 和 React SPA 的差别？
+
+React 是 UI 库，默认需要自行组合路由、打包、SSR 和数据方案；Next.js 在 React 之上提供约定式路由、服务端渲染/组件、数据缓存、产物优化和部署模型。Next.js 不是天然更快，只有正确减少客户端工作、合理缓存和避免服务端瀑布才会更快。
+
+### SSR 一定比 CSR 快吗？
+
+不一定。SSR 能更早给出可见 HTML、改善 SEO，但会增加服务端计算与 TTFB；若服务端串行请求多个慢接口，可能比 CSR 更差。应看 LCP、TTFB、服务端耗时和用户网络条件，混合渲染往往更合理。
+
+### 为什么 Server Component 不能直接 `useState`？
+
+它不在浏览器持续运行，职责是服务端取数和生成 RSC payload；交互状态、事件和浏览器 API 必须放在 Client Component。这样可以减少需要下发到浏览器的 JS。
+
+### `router.refresh()` 做什么？
+
+它会请求并合并当前路由最新的 Server Component payload，尽量保留不受影响的客户端状态和浏览器状态；它不是“强制清空所有缓存”。如果服务端数据仍命中缓存，结果仍可能是旧数据，所以更新写操作后还需设计正确的缓存失效。
+
+### 如何处理 keep-alive？
+
+先确认是否真有需求：layout 天然会在同一布局段导航时保留；表单、筛选条件可用 URL、全局状态或持久化存储恢复。不要为了“像 App”把所有页面常驻内存。对主 tab 等少量高频页面，可在明确的内存上限和失效策略下保留状态；进入详情页后仍应允许释放低频重页面。
+
+## 面试收尾清单
+
+- 先说页面按**数据实时性、SEO、个性化、交互重量**选择渲染策略。
+- 再说 App Router 的 Server / Client Component 边界和客户端 JS 控制。
+- 最后落到缓存失效、指标验证、运行时与部署限制。
+- 项目案例一定包含：问题、方案、边界、用什么指标验证，而不仅是罗列 API。
