@@ -1,0 +1,331 @@
+# TypeScript 常用面试题
+
+## 1. `any`、`unknown`、`never` 有什么区别？
+
+- `any` 会跳过类型检查：可以对它做任何操作，也可以赋值给任何类型。适合渐进式迁移，但应尽量避免扩散。
+- `unknown` 表示“类型未知的值”。赋给具体类型或读取属性前，必须先通过类型守卫缩小类型，因此比 `any` 安全。
+- `never` 表示不可能出现的值，例如永远抛错的函数、无限循环函数，或已被穷尽处理的联合类型分支。
+
+```ts
+function fail(message: string): never {
+  throw new Error(message);
+}
+
+function printLength(value: unknown) {
+  if (typeof value === 'string') {
+    console.log(value.length);
+  }
+}
+```
+
+## 2. `interface` 和 `type` 有什么区别？
+
+两者都能描述对象形状，也都可以被扩展。通常用 `interface` 描述对象、类或对外 API，用 `type` 表达联合、交叉、映射和条件类型等更灵活的类型组合。
+
+关键差异是：`interface` 支持同名声明合并，`type` 不支持；`type` 可以为基本类型、元组、联合类型起别名。
+
+```ts
+interface User {
+  id: string;
+}
+interface User {
+  name: string;
+}
+
+type Status = 'idle' | 'loading' | 'success' | 'error';
+type WithTime<T> = T & { createdAt: Date };
+```
+
+## 3. 什么是联合类型、交叉类型和类型缩小？
+
+联合类型 `A | B` 表示值是其中一种；交叉类型 `A & B` 表示值同时满足两种类型。对联合类型使用属性前，需要通过 `typeof`、`in`、`instanceof` 或自定义类型守卫进行类型缩小。
+
+```ts
+type Result =
+  | { ok: true; data: string }
+  | { ok: false; error: string };
+
+function handleResult(result: Result) {
+  if (result.ok) {
+    return result.data; // 此处为 { ok: true; data: string }
+  }
+  return result.error;
+}
+```
+
+## 4. `keyof`、`typeof` 和索引访问类型如何配合使用？
+
+- `keyof T` 得到类型 `T` 的属性名联合。
+- 类型位置的 `typeof value` 从变量推导其类型。
+- `T[K]` 取得 `T` 中键 `K` 对应的属性类型。
+
+```ts
+const settings = { theme: 'dark', pageSize: 20 };
+type Settings = typeof settings;
+type SettingKey = keyof Settings; // 'theme' | 'pageSize'
+
+function getSetting<K extends SettingKey>(key: K): Settings[K] {
+  return settings[key];
+}
+```
+
+## 5. 泛型的作用是什么？`extends` 有什么用？
+
+泛型让函数、接口或类在保留调用方具体类型的同时复用逻辑。`extends` 可以为泛型参数添加约束，确保实现中使用的属性确实存在。
+
+```ts
+function first<T>(items: T[]): T | undefined {
+  return items[0];
+}
+
+function getId<T extends { id: string }>(item: T) {
+  return item.id;
+}
+```
+
+## 6. `extends` 在条件类型中表示什么？
+
+条件类型的语法是 `T extends U ? X : Y`：当 `T` 可赋值给 `U` 时返回 `X`，否则返回 `Y`。当 `T` 是裸类型参数且为联合类型时，会对每个成员分发计算。
+
+```ts
+type ToArray<T> = T extends unknown ? T[] : never;
+type Value = ToArray<string | number>; // string[] | number[]
+
+type NonNullableValue<T> = T extends null | undefined ? never : T;
+```
+
+用方括号包住可阻止分发：`[T] extends [U] ? X : Y`。
+
+## 7. 映射类型和工具类型的原理是什么？
+
+映射类型会遍历已有类型的键并生成新类型。内置的 `Partial`、`Required`、`Readonly`、`Pick`、`Record`、`Exclude`、`Omit` 等工具类型，大多是映射类型或条件类型的组合。
+
+```ts
+type User = { id: string; name: string; age: number };
+
+type Editable<T> = {
+  -readonly [K in keyof T]?: T[K];
+};
+
+type UserPatch = Partial<User>;
+type UserPreview = Pick<User, 'id' | 'name'>;
+type UserMap = Record<string, User>;
+```
+
+## 8. 如何理解结构类型系统？
+
+TypeScript 是结构类型系统：类型兼容主要看成员结构，而不是类型名。只要对象至少包含目标类型所需的属性，就通常可以赋值；这也被称为“鸭子类型”。
+
+```ts
+type Point = { x: number; y: number };
+
+const point3D = { x: 1, y: 2, z: 3 };
+const point: Point = point3D; // 合法
+```
+
+注意：对象字面量直接赋值时会进行额外属性检查，以便更早发现拼写错误。
+
+## 9. `enum`、字符串字面量联合应如何选择？
+
+前端业务中通常优先使用字符串字面量联合或 `as const` 对象：它没有普通 `enum` 的额外运行时代码，和接口返回值也更自然。需要枚举对象、反向映射或跨语言约定时，再评估是否使用 `enum`。
+
+```ts
+const Status = {
+  Idle: 'idle',
+  Loading: 'loading',
+  Success: 'success',
+} as const;
+
+type Status = (typeof Status)[keyof typeof Status];
+```
+
+## 10. 什么是可辨识联合？如何做穷尽检查？
+
+可辨识联合为每个成员提供同名且值不同的标识字段，例如 `type` 或 `kind`。`switch` 中配合 `never` 能让新增分支时在编译期暴露漏处理的问题。
+
+```ts
+type Action =
+  | { type: 'add'; value: number }
+  | { type: 'remove'; id: string };
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled action: ${JSON.stringify(value)}`);
+}
+
+function reduce(action: Action) {
+  switch (action.type) {
+    case 'add': return action.value;
+    case 'remove': return action.id;
+    default: return assertNever(action);
+  }
+}
+```
+
+## 11. `as`、非空断言 `!` 和 `satisfies` 分别适合什么场景？
+
+- `as T` 是类型断言，只影响编译期，不会做运行时转换或校验；应优先用类型守卫替代不可靠的断言。
+- `value!` 是非空断言，告诉编译器该值不是 `null` / `undefined`，仅在逻辑已经保证时使用。
+- `satisfies` 会检查值满足目标类型，同时尽量保留表达式自身更精确的推导结果，适合配置对象。
+
+```ts
+type Route = { path: string; auth: boolean };
+
+const routes = {
+  home: { path: '/', auth: false },
+  profile: { path: '/profile', auth: true },
+} satisfies Record<string, Route>;
+```
+
+## 12. `tsconfig` 中常见的严格配置有哪些？
+
+项目应优先开启 `strict: true`。其中常被问到的包括：
+
+- `strictNullChecks`：`null` 和 `undefined` 不能随意赋给其他类型。
+- `noImplicitAny`：禁止隐式 `any`。
+- `noUncheckedIndexedAccess`：索引访问结果会包含 `undefined`，避免数组越界或缺失键被忽略。
+- `exactOptionalPropertyTypes`：区分“属性不存在”和“属性存在但值为 `undefined`”。
+- `skipLibCheck`：跳过 `.d.ts` 文件检查以提升构建速度；它是性能权衡，不等于关闭业务代码的类型检查。
+
+## 13. `infer` 的作用是什么？
+
+`infer` 只能在条件类型的 `extends` 子句中使用，用来声明一个待推导的类型变量。它常用于从已有类型结构中提取函数返回值、Promise 内部值、数组元素类型等。
+
+```ts
+type ReturnValue<T> = T extends (...args: never[]) => infer R ? R : never;
+type ArrayItem<T> = T extends (infer Item)[] ? Item : never;
+type UnwrapPromise<T> = T extends Promise<infer Value> ? Value : T;
+
+type A = ReturnValue<() => { id: string }>; // { id: string }
+type B = ArrayItem<number[]>; // number
+type C = UnwrapPromise<Promise<string>>; // string
+```
+
+内置的 `ReturnType`、`Parameters`、`Awaited` 等工具类型都能用类似思路理解。
+
+## 14. 什么是函数重载？什么时候改用联合类型？
+
+函数重载通过多个调用签名描述“不同入参对应不同返回值”；实现签名必须兼容所有重载签名，且不会暴露给调用方。若只是参数可以为多种类型、返回值并不随参数变化，联合类型通常更简洁。
+
+```ts
+function format(value: number): string;
+function format(value: Date): string;
+function format(value: number | Date): string {
+  return typeof value === 'number'
+    ? value.toFixed(2)
+    : value.toISOString();
+}
+
+format(12.3);
+format(new Date());
+```
+
+不要为了覆盖少量分支写出大量重载；可辨识联合配合类型缩小通常更容易维护。
+
+## 15. `.d.ts`、`declare` 和模块声明分别是什么？
+
+`.d.ts` 是声明文件，只提供类型信息，不生成 JavaScript。`declare` 表示某个值、函数或模块由其他运行时代码提供，当前文件只描述它的类型。
+
+为没有类型定义的包补充最小声明时，可创建独立的声明文件：
+
+```ts
+// src/types/legacy-sdk.d.ts
+declare module 'legacy-sdk' {
+  export function createClient(token: string): {
+    request(path: string): Promise<unknown>;
+  };
+}
+```
+
+模块声明文件含有顶层 `import` 或 `export` 时是模块作用域；若要扩展全局类型，应使用 `declare global`，并确保文件以模块方式加载。为第三方库补类型时，优先使用官方或 DefinitelyTyped 的类型定义，避免用 `declare module 'xxx';` 直接把整个包降级为 `any`。
+
+## 16. `public`、`private`、`protected`、`readonly` 如何选择？
+
+- `public`：默认可从外部访问。
+- `private`：仅类内部可访问；TypeScript 的 `private` 是编译期约束。
+- `protected`：类内部和子类可访问，外部不可访问。
+- `readonly`：属性只能在声明处或构造函数中赋值，不能重新赋值。
+
+JavaScript 的 `#field` 才是运行时私有字段。抽象类适合复用实现和约束子类；接口更适合约束对象能力或解耦依赖。实际业务中优先组合而不是深层继承。
+
+```ts
+abstract class Repository<T> {
+  protected readonly cache = new Map<string, T>();
+  abstract find(id: string): Promise<T | undefined>;
+}
+```
+
+## 17. 为什么现代前端项目通常不用 `namespace`？
+
+`namespace` 是 TypeScript 早期组织代码的方式，会生成 IIFE 等运行时代码，并依赖全局或合并声明。在现代项目中，ES Module 的 `import` / `export` 具有明确依赖关系、天然支持打包和按需加载，因此优先使用模块。`namespace` 主要见于旧项目或少数全局类型声明场景。
+
+## 18. TypeScript 能保证接口数据在运行时安全吗？
+
+不能。类型在编译后大多会被擦除，网络响应、`localStorage`、URL 参数和用户输入在运行时都不可信。TypeScript 只能约束“代码如何使用数据”，不能校验数据本身；边界处仍需要运行时校验。
+
+```ts
+type User = { id: string; name: string };
+
+function isUser(value: unknown): value is User {
+  return typeof value === 'object'
+    && value !== null
+    && typeof (value as Record<string, unknown>).id === 'string'
+    && typeof (value as Record<string, unknown>).name === 'string';
+}
+
+const data: unknown = await fetch('/api/user').then((res) => res.json());
+if (!isUser(data)) throw new Error('Invalid user payload');
+```
+
+复杂项目可在接口边界使用 Zod、Valibot 等 schema 库校验，并从 schema 推导 TypeScript 类型，避免类型定义和运行时规则脱节。
+
+## 19. 如何将一个 JavaScript 项目逐步迁移到 TypeScript？
+
+先建立可编译、可发布的最小配置，而不是一次性重写：
+
+1. 启用 `allowJs` 与 `checkJs`，先通过 JSDoc 获得部分检查能力。
+2. 从公共工具函数、接口层、状态模型等边界清晰且复用高的文件开始改为 `.ts` / `.tsx`。
+3. 为 API 响应、组件 Props 和核心领域模型建立明确类型，优先消除边界处的 `any`。
+4. 逐步收紧 `strict`、`noImplicitAny` 等配置；遗留代码可暂时隔离，但要有清理计划。
+
+迁移的目标不是“零断言”，而是让关键数据流和重构风险获得可靠的类型保护。不要用大面积 `as any` 让编译通过，这会把问题推迟到运行时。
+
+## 20. React 中常见的 TypeScript 类型问题有哪些？
+
+Props 应由业务需求显式定义，不要习惯性使用 `React.FC`；需要子节点时直接声明 `children`。事件类型可从 React 命名空间获取，`useRef` 则应区分 DOM 引用和可变值引用。
+
+```tsx
+type SearchProps = {
+  initialValue?: string;
+  onSubmit(value: string): void;
+  children?: React.ReactNode;
+};
+
+function Search({ initialValue = '', onSubmit, children }: SearchProps) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
+    onSubmit(event.target.value);
+  }
+
+  return <input ref={inputRef} defaultValue={initialValue} onChange={handleChange} />;
+}
+```
+
+对于泛型组件，应让类型参数由 `items`、`value`、`onChange` 等 Props 推导；处理异步状态时，使用可辨识联合表达 loading、success、error，比多个可选布尔值更不容易出现非法状态。
+
+## 21. 什么是协变、逆变？为什么函数参数容易产生兼容性问题？
+
+可以简单理解为：返回值只被“读取”，通常可协变；函数参数会被“传入”，为了安全通常需要逆变检查。启用 `strictFunctionTypes` 后，不能把只接受更窄参数的函数赋给需要接受更宽参数的位置，否则调用方可能传入该函数无法处理的值。
+
+```ts
+type Animal = { name: string };
+type Dog = Animal & { bark(): void };
+
+let acceptAnimal: (animal: Animal) => void;
+const acceptDog = (dog: Dog) => dog.bark();
+
+// strictFunctionTypes 下不安全：调用方可能传入普通 Animal
+// acceptAnimal = acceptDog;
+```
+
+面试中重点说明其本质：类型系统要保证“在目标位置允许的所有调用方式”，赋进去的函数都能正确处理。

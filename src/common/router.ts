@@ -314,6 +314,8 @@ export const sidebar: ISidebar[] = [
       { href: "/interview/nextjs", label: "Next.js", isPrivate: true },
       { href: "/interview/javascript", label: "JavaScript 常用", isPrivate: true },
       { href: "/interview/browser-basics", label: "浏览器基本原理", isPrivate: true },
+      { href: "/interview/websocket", label: "WebSocket", isPrivate: true },
+      { href: "/interview/typescript", label: "TypeScript", isPrivate: true },
     ],
   },
 ];
