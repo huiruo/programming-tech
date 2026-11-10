@@ -1,0 +1,274 @@
+# Webpack 面试总结
+重点放在拆包、缓存、构建加速和包分析。
+
+Webpack 优化要先区分两个方向；它们服务的人不同、看的是不同指标，也不能混为一谈。
+
+| 优化方向 | 为谁优化 | 重点指标 | 最常用手段 |
+| --- | --- | --- | --- |
+| **构建性能（开发者体验）** | 本地开发和 CI/CD | 冷启动、二次构建、HMR、CI 耗时 | filesystem cache、缩小 loader 范围、SWC/esbuild、减少无效解析 |
+| **产物与加载性能（用户体验）** | 线上访问用户 | 初始 JS、请求瀑布、缓存命中、LCP/INP | 包分析、动态导入、`splitChunks`、Tree Shaking、`contenthash` + CDN 缓存 |
+
+下面四类高频优化的归属是：**包分析**用于定位用户侧产物问题；**代码分割**减少用户首屏下载和解析；**浏览器缓存**改善用户重复访问；**构建加速**缩短本地和 CI 等待。构建变快不等于首屏变快，包变小也不一定能提升构建速度；面试时先按这两条线说明，再讲具体方案。
+
+Webpack 是一个模块打包器：从 `entry` 出发建立依赖图，把 JavaScript、CSS、图片等资源转换、组织为可被浏览器加载的静态文件。面试中不要只说“打包成一个 bundle”；现代 Webpack 会根据同步入口、动态 `import()` 与 `splitChunks` 输出多个 chunk，并注入运行时代码完成模块加载。
+
+## 1. 性能优化：面试先讲这一套
+
+### 1）包分析（用户侧产物与加载性能）：不看产物就不要盲目拆包
+
+先生成 `stats.json` 或接入 `webpack-bundle-analyzer`，依次找出：最大的依赖、重复安装的依赖、进入初始 chunk 的低频模块、没有被 Tree Shaking 移除的代码。再结合浏览器 Network 确认它是否真的阻塞首屏。
+
+```js
+// webpack.config.js：构建后查看模块归属、gzip 体积和重复依赖
+const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer');
+
+module.exports = {
+  plugins: [new BundleAnalyzerPlugin({ analyzerMode: 'static' })],
+};
+```
+
+常见发现和处理：
+
+| 发现 | 常用处理 |
+| --- | --- |
+| 图表、富文本、编辑器进入首屏包 | 改为路由级或点击后 `import()` |
+| 同时出现多个 lodash、moment、UI 库版本 | 收敛依赖版本，检查 lockfile 与包的 transitive dependency |
+| `lodash` / icon 库被整包引入 | 使用 ESM 版本、按需导入，或替换为更小的工具函数 |
+| 某个业务 chunk 巨大 | 看它是否混入公共依赖；按路由/功能边界拆出，而不是按文件数量硬拆 |
+
+### 2）代码分割（用户侧加载性能）：优先拆“非首屏、低频、重”的能力
+
+最实用的是路由懒加载、弹窗/抽屉懒加载，以及图表、编辑器、地图、客服 SDK、推送 SDK 等重依赖懒加载。`import()` 是异步边界，用户真正触发时 Webpack 才下载对应 chunk。
+
+```tsx
+// React：只在打开编辑器时请求其代码；Suspense 需要提供加载态
+const RichEditor = React.lazy(() => import('./RichEditor'));
+
+function EditDialog({ open }: { open: boolean }) {
+  if (!open) return null;
+  return (
+    <React.Suspense fallback={<div>编辑器加载中…</div>}>
+      <RichEditor />
+    </React.Suspense>
+  );
+}
+```
+
+`splitChunks` 用于把多个入口/异步 chunk 重复使用的依赖抽成公共包。比较常见的分法是：React 这种全站稳定基础包独立；业务首屏依赖独立；图表、Firebase、MUI 等重型低频依赖单独拆出。不要把每一个 npm 包都拆开，否则 HTTP 请求、JS 解析和调度开销会反过来变大。
+
+```js
+// webpack.config.js：示例，具体阈值需根据产物分析调整
+optimization: {
+  splitChunks: {
+    chunks: 'all',
+    cacheGroups: {
+      react: {
+        test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+        name: 'react',
+        priority: 30,
+      },
+      charts: {
+        test: /[\\/]node_modules[\\/](echarts|chart\.js)[\\/]/,
+        name: 'charts',
+        priority: 20,
+      },
+    },
+  },
+}
+```
+
+### 3）浏览器缓存（用户侧重复访问性能）：让没变的代码不重复下载
+
+产物文件名用 `contenthash`。只要文件内容没变化，文件名就不变，CDN/浏览器就可以长期复用旧缓存；业务代码变化只会让对应 chunk 更新。`runtimeChunk: 'single'` 将 runtime 分开，避免业务 chunk 改动时公共包因 runtime 映射变化而频繁改 hash。
+
+```js
+module.exports = {
+  output: {
+    filename: 'js/[name].[contenthash:8].js',
+    chunkFilename: 'js/[name].[contenthash:8].chunk.js',
+    assetModuleFilename: 'assets/[name].[contenthash:8][ext]',
+  },
+  optimization: {
+    runtimeChunk: 'single',
+    moduleIds: 'deterministic',
+  },
+};
+```
+
+部署侧再给带 hash 的 JS/CSS/图片配置 `Cache-Control: public, max-age=31536000, immutable`；HTML 不能长期强缓存，因为它负责引用新版本的 hash 文件。发布后在 Network 中验证：改一个业务模块时，React 等稳定包应仍是 `from disk cache` / `304`，而不是全部重新下载。
+
+### 4）构建速度（开发者体验）：Webpack 5 最常用的是持久化缓存
+
+本地二次构建慢时，首先开启文件系统缓存；然后缩小 Babel 等 loader 的处理范围。绝大多数 `node_modules` 已经编译过，不应再次经过 Babel；但个别未转译的第三方包要加入白名单。
+
+```js
+const path = require('path');
+
+module.exports = {
+  cache: {
+    type: 'filesystem',
+    buildDependencies: { config: [__filename] },
+  },
+  module: {
+    rules: [{
+      test: /\.[jt]sx?$/,
+      include: path.resolve(__dirname, 'src'),
+      use: 'babel-loader',
+    }],
+  },
+  resolve: {
+    // 只保留项目实际使用的扩展名，减少无效文件探测
+    extensions: ['.ts', '.tsx', '.js'],
+  },
+};
+```
+
+大型项目还可评估用 SWC/esbuild 替换 Babel 的纯转译工作；但 Babel plugin、polyfill、装饰器等兼容要求必须先验证，不能为了提速直接替换。
+
+### 一张实战检查表
+
+| 优化方向 | 排查对象 | 怎么看 | 达标后的验证 |
+| --- | --- | --- |
+| 用户侧 | 首屏 JS 与 LCP | Network waterfall、Lighthouse、Web Vitals | 首屏只请求必要 chunk；重模块不再阻塞 LCP |
+| 用户侧 | 包体与重复依赖 | `stats.json`、Bundle Analyzer | 压缩后体积下降，且没有把公共包拆得过碎 |
+| 用户侧 | 缓存命中 | 文件名、响应头、发布后的 Network | 小改业务代码后，稳定公共 chunk 不重新下载 |
+| 开发者侧 | 构建耗时 | 构建日志、cache 命中率、loader 耗时 | 冷启动与二次构建分开对比，二次构建明显受益 |
+
+## 2. 60 秒回答：Webpack 的工作过程
+
+> Webpack 从 entry 开始递归解析 `import` / `require`，建立模块依赖图。匹配到资源后，先由 loader 把源码转换成 JavaScript 可处理的模块，例如 Babel 转译 JS、css-loader 解析 CSS；再由 plugin 在构建生命周期的钩子中介入，例如生成 HTML、压缩资源、定义环境变量。随后根据同步依赖、动态 import 和 `splitChunks` 把 module 组织成多个 chunk，最后生成带 content hash 的 JS、CSS 等 asset 并写入 output。运行时负责按需加载异步 chunk、维护模块缓存。
+
+## 3. 核心概念：要能说清各自负责什么
+
+| 概念 | 职责 | 面试易错点 |
+| --- | --- | --- |
+| `entry` | 构建入口，可配置单入口或多入口 | 入口不是最终只有一个文件的保证 |
+| `module` | 依赖图中的资源单位，JS、CSS、图片都可成为模块 | 模块不等于最终文件 |
+| `loader` | 按文件匹配规则，从右到左转换模块内容 | loader 是“转换内容”，不是在生命周期里任意扩展能力 |
+| `plugin` | 监听 Webpack hooks，介入整个构建过程 | Plugin 能影响构建、产物、优化，范围比 loader 更广 |
+| `chunk` | Webpack 按加载/拆分规则组织的一组 module | 一个 chunk 可生成多个 asset，例如 JS 和抽出的 CSS |
+| `asset` | 最终输出到 `output` 的文件 | 浏览器实际请求的是 asset |
+| `Compiler` | 整个构建生命周期的管理者，watch 模式下长期存在 | 不要和单次构建混淆 |
+| `Compilation` | 一次构建的上下文，包含 module、chunk、asset | 每次重新编译会创建新的 Compilation |
+
+## 4. 构建流程：初始化 → make → seal → emit
+
+1. **初始化**：读取配置与 CLI 参数，创建 `Compiler`，注册内置插件和用户插件，解析 entry。
+2. **make / build**：从入口递归构建模块。先匹配 `module.rules` 并执行 loader，解析模块中的依赖，再继续构建依赖，最终得到 Module Graph。
+3. **seal**：按入口、动态 import 与优化规则将 module 分配为 chunk，运行 `splitChunks`、Tree Shaking、压缩等优化，生成 Chunk Graph 和 asset 内容。
+4. **emit**：触发输出相关 hooks，将 asset 写到文件系统；开发模式通常由 dev server 保存在内存中提供服务。
+
+`Compiler` 的 hooks 适合处理全局生命周期；`Compilation` 的 hooks 面向本次构建中的模块、chunk、asset。编写插件时不要在每次 compilation 都重复注册全局监听。
+
+## 5. Loader 与 Plugin 的区别
+
+| 对比项 | Loader | Plugin |
+| --- | --- | --- |
+| 工作对象 | 单个匹配到的模块内容 | 整个构建过程、依赖图和产物 |
+| 典型用途 | `babel-loader`、`css-loader`、`sass-loader` | `HtmlWebpackPlugin`、`DefinePlugin`、`MiniCssExtractPlugin` |
+| 执行方式 | 在 `module.rules` 中按规则匹配，可串联 | 在 `plugins` 中实例化，通过 Tapable hooks 注册 |
+| 记忆方式 | 把“文件变成模块” | 在“构建的某个阶段做事” |
+
+Loader 的执行顺序是从右到左（或从下到上）。例如 `style-loader`、`css-loader`、`sass-loader` 中，Sass 先被编译为 CSS，再解析 CSS，最后开发环境注入页面。生产环境通常用 `MiniCssExtractPlugin` 提取 CSS 文件，而非 `style-loader`。
+
+## 6. 代码分割与缓存：为什么、怎么拆、不能怎么拆
+
+代码分割的目标是缩小初始下载与解析量，并让稳定依赖跨版本复用缓存。
+
+```ts
+// 命中时才下载该 chunk；适合路由、图表、编辑器等非首屏能力
+const ChartPanel = React.lazy(() => import('./ChartPanel'));
+```
+
+```js
+// webpack.config.js
+module.exports = {
+  optimization: {
+    runtimeChunk: 'single',
+    splitChunks: {
+      chunks: 'all',
+      cacheGroups: {
+        react: {
+          test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
+          name: 'react',
+          priority: 20,
+        },
+      },
+    },
+  },
+  output: {
+    filename: '[name].[contenthash:8].js',
+    chunkFilename: '[name].[contenthash:8].chunk.js',
+  },
+};
+```
+
+- `import()` 会形成异步边界；`splitChunks` 负责提取公共依赖、避免多入口重复打包。
+- `contenthash` 让内容未变的 asset 保持文件名不变，可以配合 CDN 长期强缓存；HTML 不宜长期缓存，因为它需要引用最新 hash 文件。
+- `runtimeChunk: 'single'` 可把 Webpack runtime 与业务 chunk 分离，减少业务改动导致公共 chunk hash 一起变化的概率。
+- 不要机械按每个 npm 包拆 chunk。过度拆分会增加请求调度、解析与缓存管理成本；应以首屏关键路径、依赖复用度、路由访问方式和真实网络瀑布图决定。
+
+## 7. Tree Shaking：生效条件与失效原因
+
+Tree Shaking 指在生产构建中，基于 ES Module 的静态结构标记未使用导出，并由压缩器删除无用代码。
+
+要点：
+
+- 使用静态 `import` / `export`，避免用 CommonJS `require` 作为可摇树优化的主要入口。
+- 生产模式默认开启相关优化；最终删除通常由压缩器完成，不是只靠 Webpack “分析”即可。
+- `package.json` 的 `sideEffects` 用来声明哪些文件有副作用。错误写成 `false` 可能把全局 CSS、polyfill 等必要文件删除；可白名单保留：`["*.css", "./src/polyfills.ts"]`。
+- `import { debounce } from 'lodash'` 是否能有效摇树取决于包的模块格式与构建链路；对 CJS 大包，优先换 ESM 版本或使用按模块路径导入，并用产物分析验证。
+
+## 8. 构建速度优化：先量化再下手
+
+| 瓶颈 | 手段 | 注意点 |
+| --- | --- | --- |
+| 二次构建慢 | Webpack 5 `cache: { type: 'filesystem' }` | 缓存依赖配置、lockfile 与环境；CI 注意缓存命中与失效 |
+| JS 转译慢 | 缩小 `babel-loader` 范围，排除多数 `node_modules`；可评估 SWC/esbuild | 少数未转译第三方包仍可能需要纳入规则 |
+| 模块解析慢 | 配置 `resolve.extensions`、`alias`，避免不必要的解析尝试 | 不要为了快而滥用 alias，需保证路径边界清晰 |
+| 大型依赖重复处理 | 合理拆包、升级依赖、检查重复版本 | DLL 是旧方案；新项目通常优先持久缓存和合理 splitChunks |
+| 生产压缩慢 | 开发与生产配置分离，按需 source map | 不能为了构建速度关闭生产压缩而不评估传输成本 |
+
+构建优化与运行时性能不同：构建耗时看 cache、loader 与解析范围；用户侧性能看产物体积、关键请求、缓存和运行时执行。两者都要用数据验证。
+
+## 9. HMR 的原理与边界
+
+开发服务器监听文件变化，重新编译受影响模块并通过 WebSocket 通知浏览器。浏览器下载 hot-update 文件；若模块或其父模块通过 `module.hot.accept` 接受更新，则替换模块并执行回调，尽量保留页面状态；没有可接受边界时才回退整页刷新。
+
+React Fast Refresh 是框架层对 HMR 的增强：它会判断组件导出与 Hook 是否可安全保留状态。不是所有修改都能保留状态，例如模块副作用、非组件导出变化或运行时错误都可能触发刷新。
+
+## 10. Module Federation：适用场景和风险
+
+Module Federation 是 Webpack 5 的运行时模块共享机制。Host 可以异步加载 Remote 暴露的模块，双方可将 React 等依赖配置为 `shared` / `singleton`，减少重复下载和多实例问题。
+
+```js
+new ModuleFederationPlugin({
+  name: 'host',
+  remotes: { design: 'design@https://cdn.example.com/remoteEntry.js' },
+  shared: { react: { singleton: true }, 'react-dom': { singleton: true } },
+});
+```
+
+它适合多团队独立部署、需要运行时组合模块的场景；不等于“所有项目都应微前端化”。需要治理 Remote 版本兼容、加载失败降级、共享依赖版本、样式隔离、监控与发布顺序。它与 qiankun 等微前端框架不冲突：前者解决模块加载/共享，后者更关注应用生命周期与隔离。
+
+## 11. 常见追问
+
+### Webpack 和 Vite 的开发模式有什么不同？
+
+Webpack 开发时以打包后的模块/chunk 为主要服务单元，启动和大规模依赖变更往往需要处理较多依赖图；Vite 开发时更多利用浏览器原生 ESM 按需提供源码模块，并预构建依赖。生产构建则两者都会产出优化后的静态资源；不能简单说 Vite “完全不打包”。
+
+### source map 如何选择？
+
+开发环境优先调试速度和定位体验，可使用较快的 eval 类 source map；生产环境在错误监控与源码泄露风险之间取舍，常上传隐藏 source map 到监控平台而不公开给浏览器。具体值应按项目调试与安全要求选择，不能照搬一种配置。
+
+### 如何分析包体积？
+
+先生成 `stats.json` 或使用 `webpack-bundle-analyzer` 看体积最大的 module、重复依赖和入口归属；再结合 Network 判断它是否处于首屏关键链路。优化后比较 gzip/brotli 大小、请求瀑布和 Web Vitals，避免只看未压缩的 bundle 数字。
+
+### 为什么开发环境不用生产配置？
+
+开发优先增量构建与调试体验，通常需要 HMR、较快 source map，避免完整压缩；生产优先产物体积、缓存和稳定性，会启用压缩、内容 hash、抽离 CSS 等。使用 `webpack-merge` 维护 common、dev、prod 配置，减少重复但不要混淆目标。
+
+## 12. 面试收尾表达
+
+> 我不会只把 Webpack 当成“把文件合并起来”的工具。实际优化时，我先通过 stats 和 Bundle Analyzer 找到首屏大依赖与重复依赖，再用动态 import、splitChunks、contenthash 和 CDN 缓存缩短关键路径；构建慢则优先启用 filesystem cache、缩小 loader 处理范围。每次改动都会同时看构建时间、压缩后产物、Network 瀑布和 LCP，避免为了拆包而制造更多请求与解析开销。
