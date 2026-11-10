@@ -312,6 +312,8 @@ export const sidebar: ISidebar[] = [
       { href: "/interview/image-performance", label: "性能优化-图片处理", isPrivate: true },
       { href: "/interview/webpack", label: "Webpack", isPrivate: true },
       { href: "/interview/nextjs", label: "Next.js", isPrivate: true },
+      { href: "/interview/javascript", label: "JavaScript 常用", isPrivate: true },
+      { href: "/interview/browser-basics", label: "浏览器基本原理", isPrivate: true },
     ],
   },
 ];
