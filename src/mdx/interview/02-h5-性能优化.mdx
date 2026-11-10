@@ -1,4 +1,16 @@
 # H5 性能优化总结
+作为“面试用 H5 性能优化”文档，主体已经足够完整了，尤其是你现在最有辨识度的：
+- KeepAlive 路由缓存与副作用治理
+- PWA、FCM scope、缓存边界
+- CDN external 与 Webpack 分包
+- 多图片列表的项目示例、缺点和通用方案
+- Next.js/React 具体实现与 60 秒表达
+不建议继续无限扩展，否则会从“可背、可讲”变成资料库。
+
+若还要补，只建议加 3 个高价值小节：
+1. 性能排查实战流程：Network → Performance → Memory → React Profiler，各自看什么、如何定位。
+2. 性能预算：首屏 JS、LCP 图、单图片体积、chunk 大小、缓存条目等设阈值，避免版本迭代后性能回退。
+3. 常见追问：preload vs prefetch、HTTP 缓存 vs Service Worker 缓存、懒加载 vs 虚拟列表、useMemo 何时反而变慢。
 
 H5 性能优化的目标不是单纯追求某个分数，而是让用户更快看到首屏、更快能操作页面，并在长时间使用时保持稳定。实践中应先用 Lighthouse、Chrome DevTools 的 Performance、Network 和 Memory 面板定位瓶颈，再针对资源、网络、渲染和运行时逐项优化。
 
@@ -170,6 +182,52 @@ PWA 与 FCM 同时接入时，同一个 scope 不能由两个 Service Worker 竞
 ## 13. 面试表达范例
 
 “我会先用 Lighthouse 和 DevTools 定位问题，重点关注 LCP、CLS、交互长任务和内存增长。首屏上通过代码分割、CDN 与缓存缩小关键资源，给 LCP 图片高优先级并为媒体预留尺寸；非首屏资源再懒加载。运行时会控制 DOM 数量，长列表用虚拟列表，高耗时计算放到 Worker，高频事件节流并用 `requestAnimationFrame` 驱动动画。最后用性能面板复测，确认优化确实改善了核心指标。”
+
+## 14. 性能排查实战流程
+
+性能排查的原则是先定位瓶颈，再选择工具；不要一开始就加缓存、`memo` 或懒加载。
+
+| 顺序 | 工具 | 重点看什么 | 常见结论与下一步 |
+| --- | --- | --- | --- |
+| 1 | Lighthouse / Web Vitals | LCP、CLS、INP、资源体积和机会项 | 形成基线；实验室分数只用于定位，最终以真实用户 p75 数据判断 |
+| 2 | Network | 首屏关键请求、Waterfall 排队、图片实际尺寸、缓存状态、重复请求 | 大图/大包先压缩或拆分；确认 LCP 图没有被 lazy 或低优先级资源阻塞 |
+| 3 | Performance | Long Task、JS 执行、样式计算、Layout、Paint、图片解码、掉帧 | 长计算移 Worker/切片；频繁 Layout 要批量读写 DOM；滚动掉帧检查监听与图片解码 |
+| 4 | Memory | JS Heap、Detached DOM、事件监听、Timer、Cache/Map 是否持续增长 | 多次进出页面和切 Tab 后对比 heap snapshot，修复没有释放的引用或设置缓存上限 |
+| 5 | React DevTools Profiler | 哪些组件反复 render、每次 render 耗时、更新来源 | 状态下沉、拆 Context、稳定 props；只在测到收益时使用 `memo`、`useMemo`、`useCallback` |
+
+推荐的实战表达：先在弱网和中低端机上复现，再录制 Performance trace。若 LCP 慢，优先沿关键请求链找图片、字体或 JS；若交互卡顿，看主线程长任务和重渲染；若越用越慢，看 Memory 增长与未清理副作用。每次改动后复测同一场景，避免把偶然波动当成优化收益。
+
+## 15. 性能预算与防回退
+
+性能预算是为关键体验设定可自动检查的上限，避免业务迭代后包体、图片和缓存悄悄膨胀。阈值应按产品网络、设备和历史基线设定；下面是移动端 H5 可作为起点的示例，不是绝对标准。
+
+| 项目 | 示例预算 | 检查方式 | 超标处理 |
+| --- | --- | --- | --- |
+| 初始 JS | 只覆盖首屏关键代码，设 gzip/brotli 体积上限 | CI 产物分析、Bundle Analyzer | 动态导入非首屏模块，移除/外置大依赖，检查重复依赖 |
+| 单个 chunk | 控制在可缓存、可快速解析的范围 | webpack stats / 构建产物报告 | 拆出重型依赖；避免把共享包切得过碎 |
+| LCP 图片 | 匹配实际展示尺寸，限制传输体积 | Network、CDN 日志、RUM | 生成 CDN 尺寸变体、AVIF/WebP，只预加载唯一 LCP 图 |
+| 图片与 SW 缓存 | 设置 `maxEntries`、TTL 与单项大小上限 | Cache Storage、存储配额/RUM | 版本化活动图，淘汰旧缓存，禁止无界 Map/Cache |
+| 用户体验 | p75 LCP ≤ 2.5s、CLS ≤ 0.1、INP ≤ 200ms 可作为目标 | RUM / CrUX / Web Vitals | 按页面、版本、设备和网络拆分定位，不只看平均值 |
+
+将预算放入 CI：构建后产出 stats，超过初始 JS、chunk 或图片规则即提示或阻断合并；上线后再用 RUM 做回归告警。预算的价值是持续防回退，不是为了追求一次性的 Lighthouse 高分。
+
+## 16. 常见追问与回答
+
+### preload 和 prefetch 有什么区别
+
+`preload` 用于当前页面马上需要的关键资源，会提高下载优先级，例如唯一 LCP Banner 或关键字体。`prefetch` 用于用户之后可能访问的资源，通常在浏览器空闲时获取，例如高概率跳转的下一页。两者都不能滥用：过多 preload 会争抢首屏带宽，过多 prefetch 会浪费流量和缓存空间。
+
+### HTTP 缓存和 Service Worker 缓存有什么区别
+
+HTTP 缓存由浏览器基于 `Cache-Control`、ETag 等响应头自动管理，适合内容哈希静态资源的长期缓存。Service Worker 缓存由应用代码拦截请求并决定策略，可实现 CacheFirst、NetworkFirst、StaleWhileRevalidate 和离线回退，但也需要自行管理版本、容量、一致性和更新。一般先正确配置 HTTP 缓存；只有离线、精细策略或复杂资源复用需要时再引入 Service Worker。
+
+### 懒加载和虚拟列表有什么区别
+
+图片/组件懒加载主要延后网络请求或挂载时机；数据量很大时，已经挂载的所有 DOM 仍会参与样式计算、布局、绘制和占用内存。虚拟列表只保留可视区附近的少量节点，解决的是 DOM 规模和滚动性能。少量卡片用懒加载即可；数百或数千项并且出现掉帧、长任务或内存增长时，考虑虚拟列表。
+
+### useMemo 什么时候反而变慢
+
+`useMemo` 自身也要保存结果、比较依赖，并可能增加代码复杂度。计算很轻、依赖频繁变化、结果没有传给 memo 子组件或没有避免实际工作时，使用它通常没有收益，甚至更慢。应先用 React Profiler 找到高开销重复计算或由不稳定引用导致的子组件渲染，再有针对性地加 `useMemo`/`useCallback`。
 
 ## 参考笔记
 
