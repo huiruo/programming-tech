@@ -1,3 +1,46 @@
+## 图片精灵
+项目大概率采用 Next.js（React）+ 图片精灵图（Sprite Sheet）技术。
+
+Sprite Sheet（精灵图）确实可以显著优化 H5 游戏的加载和渲染性能，
+尤其是你截图中这种大量使用图片按钮、装饰元素和游戏图标的页面。
+
+它的原理是把多个 UI 元素合并成一张图片，然后通过 CSS 的 background-position 或 Canvas 裁剪来显示不同区域。
+
+例如：
+```css
+.game-button {
+  width: 220px;
+  height: 60px;
+  background-image: url('/sprite.btn.png');
+  background-position: -10px -250px;
+  background-repeat: no-repeat;
+}
+```
+
+这种方案的优势：
+- 减少大量小图片的 HTTP 请求。
+- 保证游戏按钮、字体、特效的视觉一致性。
+- 适合复杂的游戏 UI、排行榜、活动页面。
+- 可以配合 CSS 动画、Canvas 或 PixiJS 使用。
+
+但需要区分：它主要优化资源请求和图片渲染，不一定能大幅降低整个页面的 CPU、内存消耗。
+
+如果使用 Canvas、PixiJS 等技术，精灵图还有一个非常重要的优势：
+
+减少纹理切换，提高渲染批处理效率。
+
+例如，游戏中有 50 个不同按钮：
+- 独立图片：可能需要切换多个 GPU 纹理。
+- 同一张精灵图：可以复用同一纹理，创造合批渲染的条件。
+这对动画密集、低端手机上的 H5 游戏尤其有价值。
+
+
+Spritesmith。
+
+项目依赖：[package.json (line 48)](/A-others-activity/specialNumRecharge/package.json:48) 中的 spritesmith@^3.5.1；并由自定义插件 [plugins/index.js](/Users/ruo/company-workspace/haixing-company/A-others-activity/specialNumRecharge/plugins/index.js) 调用它自动生成精灵图与坐标映射。
+
+Spritesmith 是 Node.js 生态里常用的精灵图生成库，适用于 React、Vue、原生 Web 等项目；项目只要能在构建阶段运行 Node，就能接入。
+
 ## 11. 项目示例 GameItem 多图片列表处理
 
 ### 当前 GameItem 图片处理的拆解
