@@ -93,3 +93,9 @@
     background: #0f172a;
   }
 }
+
+@media (max-width: 767px) {
+  .field input {
+    font-size: 16px;
+  }
+}

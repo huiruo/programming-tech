@@ -1,0 +1,282 @@
+# 多语言、主题与多站点：一个白标项目的实现思路
+
+在一个游戏或电商类项目中，经常会遇到这样的需求：同一套功能代码，要服务多个品牌站点；每个站点的 Logo、活动图、配色、货币、客服入口不同；部分站点需要葡萄牙语、英语或阿拉伯语，而阿拉伯语还要求从右到左（RTL）的界面布局。
+
+我参与的项目采用的是**构建时白标化（build-time white-labeling）**：业务代码保持一份，通过环境变量选择站点配置，在构建时生成该站点的主题和资源产物。
+
+## 总结
+- 负责游戏白标多站点前端方案，基于环境变量实现品牌资源、主题、货币及业务配置的快速切换。
+- 搭建国际化能力，使用 next-intl 管理中英葡阿多语言文案、默认语言与用户语言偏好。
+- 完成阿拉伯语 RTL 适配，通过 dir、Tailwind RTL 变体及图标镜像处理布局、表单与轮播方向。
+- 设计构建期资源与主题生成流程，实现同一套业务代码快速产出不同品牌站点。
+如果只能写一段：
+负责游戏白标多站点前端建设，基于环境变量和构建脚本实现品牌资源、主题、货币及业务配置的快速切换；使用 next-intl 完成中英葡阿多语言支持，并通过 RTL 布局、方向性图标镜像和轮播适配完成阿拉伯语站点交付。
+
+## 一、整体架构
+
+可以把配置拆成四个维度：
+
+| 维度 | 典型配置 | 作用 |
+| --- | --- | --- |
+| 品牌与资源 | `NEXT_PUBLIC_IMG_LOCAL` | 选择 Logo、banner、PWA 图标、活动图等资源包 |
+| 视觉主题 | `NEXT_PUBLIC_THEME` | 选择颜色 token 与渐变等视觉变量 |
+| 语言与区域 | `locale`、`NEXT_PUBLIC_LOCAL_KEY` | 选择文案、数字/货币格式及默认语言 |
+| 布局方向 | `NEXT_PUBLIC_DIR` | `ltr` 或 `rtl`，用于阿拉伯语界面镜像 |
+
+例如，一个阿拉伯站点可以这样配置：
+
+```env
+NEXT_PUBLIC_IMG_LOCAL=ar
+NEXT_PUBLIC_THEME=gold
+NEXT_PUBLIC_DIR=rtl
+NEXT_PUBLIC_CURRENCY=SAR
+NEXT_PUBLIC_LOCAL_KEY=ar-SA
+```
+
+构建命令会先执行 `rebuild`，再执行 Next.js build：
+
+```json
+{
+  "scripts": {
+    "rebuild": "node scripts/generateTheme.js && node scripts/syncSiteImages.mjs",
+    "build": "cp .env.prod .env.local && npm run rebuild && next build"
+  }
+}
+```
+
+这意味着每一次构建都会产出一个已经确定品牌、主题和基础方向的站点包；部署不同环境变量即可快速得到不同站点。
+
+## 二、多语言如何实现
+
+项目使用 `next-intl`，语言文件按 locale 拆分：
+
+```text
+public/messages/
+├── en.json
+├── pt.json
+└── ar.json
+```
+
+应用初始化时读取 `locale` Cookie，并动态导入相应 JSON，最后交给 `NextIntlClientProvider`：
+
+```tsx
+const locale = Cookies.get("locale") || defaultLocale
+
+useEffect(() => {
+  const loadMessages = async () => {
+    const msgs = await import(`../../public/messages/${locale}.json`)
+    setMessages(msgs.default || msgs)
+  }
+  loadMessages()
+}, [locale])
+
+return (
+  <NextIntlClientProvider locale={locale} messages={messages}>
+    <App />
+  </NextIntlClientProvider>
+)
+```
+
+组件中通过 `useTranslations` 使用语义化 key，而不是直接写文案：
+
+```tsx
+const t = useTranslations("Deposit")
+
+<button>{t("submit")}</button>
+```
+
+语言切换时，写入 Cookie、同步用户偏好，并让路由重新渲染：
+
+```tsx
+Cookies.set("locale", newLocale, { expires: 30, path: "/" })
+router.replace(router.asPath, undefined, { locale: newLocale })
+```
+
+### 默认语言
+
+默认语言与站点资源包绑定。例如巴西站默认葡语、英文站默认英语、阿拉伯站默认阿语：
+
+```ts
+const DEFAULT_LOCALE_BY_IMG_LOCAL = {
+  brl_pt: "pt",
+  "7BIGBET_en": "en",
+  ar: "ar",
+} as const
+
+const defaultLocale =
+  DEFAULT_LOCALE_BY_IMG_LOCAL[process.env.NEXT_PUBLIC_IMG_LOCAL || ""] || "en"
+```
+
+这样用户第一次进入时，就能得到符合该品牌市场的默认语言；用户手动选择后，则以 Cookie 为准。
+
+## 三、阿拉伯语 RTL 如何实现
+
+RTL 的难点不只是文字右对齐，而是整个阅读顺序、左右间距、绝对定位、箭头图标、轮播方向都需要镜像。
+
+项目将方向抽为统一常量：
+
+```ts
+export const DIR = process.env.NEXT_PUBLIC_DIR || "ltr"
+```
+
+### 1. 在布局容器上设置 `dir`
+
+页面或组件的根元素使用 `dir={DIR}`：
+
+```tsx
+<div dir={DIR} className="flex items-center">
+  ...
+</div>
+```
+
+浏览器会自动处理文本书写方向，flex 行布局也会按 RTL 的语义排列。对金额、手机号、邀请码等不应该倒序的内容，应局部强制 `dir="ltr"`。
+
+### 2. 使用方向变体，而不是写死左右
+
+Tailwind 提供 `ltr:` / `rtl:` 变体，可以将一套布局写在同一个 class 中：
+
+```tsx
+<input className="ltr:pl-14 ltr:pr-20 rtl:pr-14 rtl:pl-20" />
+
+<span className="absolute ltr:left-3 rtl:right-3">Currency</span>
+```
+
+对于少量复杂样式，也可以根据 `DIR` 拼接 class：
+
+```tsx
+<div className={DIR === "rtl" ? "mr-auto" : "ml-auto"} />
+```
+
+### 3. 镜像具有方向语义的图标
+
+“下一步”、返回、展开箭头等图标不能保持原方向：
+
+```tsx
+<ChevronRight className={DIR === "rtl" ? "scale-x-[-1]" : ""} />
+```
+
+轮播组件要额外设置 `direction` 或反向参数；否则手指滑动方向和视觉方向会不一致。
+
+### RTL 落地原则
+
+- 新组件优先使用 `start/end` 逻辑属性，或 `ltr:` / `rtl:` 变体。
+- 不要无条件写 `left/right`、`margin-left`、`padding-right`。
+- 金额、日期、手机号、验证码、邀请码等局部内容明确指定 `dir="ltr"`。
+- 每次改动都在 LTR 与 RTL 两个方向下验收，尤其是弹窗、表单、浮层与轮播。
+
+## 四、不同站点如何替换图片资源
+
+资源按照站点目录隔离：
+
+```text
+public/site/
+├── brl_pt/
+├── brl781_pt/
+├── 7BIGBET_en/
+├── ar/
+└── local/                 # 构建时生成
+```
+
+业务组件始终引用统一地址：
+
+```tsx
+<Image src="/site/local/logo.png" alt="logo" />
+<Image src="/site/local/icons/72x72.png" alt="app icon" />
+```
+
+构建脚本读取 `NEXT_PUBLIC_IMG_LOCAL`，把选中站点目录的内容复制到 `public/site/local`。因此组件不知道、也不关心当前到底是哪一个品牌：
+
+```ts
+const imgLocal = process.env.NEXT_PUBLIC_IMG_LOCAL || "brl_pt"
+const srcDir = path.join(siteDir, imgLocal)
+const localDir = path.join(siteDir, "local")
+
+// 清空 local 后，把 srcDir 内容递归复制进 local
+copyDirContents(srcDir, localDir)
+```
+
+这种方式的优点是资源路径稳定，业务组件零分支；缺点是一次构建只服务一个品牌，切站点需要重新构建。
+
+## 五、不同主题如何实现
+
+主题不在组件内大量写 `if/else`，而是抽象为设计 token。每个主题各有一个 CSS 文件：
+
+```text
+src/styles/themes/
+├── purple-theme.css
+├── green-theme.css
+└── gold-theme.css
+```
+
+主题文件定义同名变量，但值不同：
+
+```css
+@theme {
+  --color-main-primary: #262244;
+  --color-text-primary: #d9d2ff;
+  --color-btn-submit: #ffae10;
+  --color-gradient-btn-enable: linear-gradient(...);
+}
+```
+
+`generateTheme.js` 根据 `NEXT_PUBLIC_THEME` 选出主题文件，并生成唯一被全局导入的 `theme-variables.css`。组件只消费语义化 token：
+
+```tsx
+<section className="bg-main-primary text-text-primary">
+  <button className="bg-btn-submit">...</button>
+</section>
+```
+
+新增主题时，只需补齐一份 token 文件，不需要逐页修改颜色。
+
+## 六、如何快速新建一个站点
+
+推荐把新站流程标准化为下面六步：
+
+1. 复制一个最相近的 `public/site/<siteKey>` 目录，替换 Logo、banner、活动图、favicon、PWA 图标等，保持文件名和目录结构不变。
+2. 复用已有主题，或新建 `src/styles/themes/<theme>-theme.css`；新主题必须完整覆盖已有 token。
+3. 新建该站的环境文件，配置资源包、主题、方向、货币、API、客服与埋点等。
+4. 需要新语言时，复制并翻译 `public/messages/en.json`，再将 locale 加入支持列表和默认语言映射。
+5. 执行构建，让脚本生成当前主题与 `/site/local` 资源目录。
+6. 在目标语言、目标货币、LTR/RTL、移动端 PWA 图标与分享卡片几个维度进行验收。
+
+## 七、面试中可以主动说明的改进点
+
+现有方案已能快速复制站点，但还有进一步工程化空间。
+
+### 1. 用统一站点配置取代分散环境变量
+
+目前站点名、SEO title、分享域名、主题色、资源包等信息分散在 `.env`、`_app.tsx`、`_document.tsx` 中，部分内容存在硬编码。可以收敛到 `site.config.ts`：
+
+```ts
+export const sites = {
+  ar: {
+    locale: "ar",
+    dir: "rtl",
+    theme: "gold",
+    currency: "SAR",
+    assetDir: "ar",
+    seo: { title: "...", domain: "..." },
+  },
+}
+```
+
+构建脚本和前端都读取这一份配置，可以减少遗漏，并让新站配置更可审查。
+
+### 2. 明确构建时与运行时的边界
+
+当前资源和主题是构建时确定的，适合一个域名对应一个部署产物，隔离清晰、首屏资源更小。
+
+如果未来要让一个部署实例按 Host 动态服务多个品牌，则需要改为运行时读取域名，并将资源改成 `/site/<siteKey>/...` 或 CDN 路径；同时注意 SSR、缓存 key 和 SEO 元数据必须按站点隔离。
+
+### 3. 为 RTL 建立自动化检查
+
+RTL 最容易因为新页面写了固定 `left/right` 而回归。可以增加：
+
+- 逻辑 CSS 属性或 Tailwind RTL 变体的 lint 规范；
+- LTR/RTL 的 Playwright 截图回归测试；
+- 组件库层面的 RTL Storybook 场景。
+
+## 八、面试总结话术
+
+> 我们把多站点拆成资源、主题、国际化和方向四层。资源和主题在构建期由环境变量选择，业务组件只引用稳定的语义化 token 与 `/site/local` 路径，所以复制站点时基本不需要改业务代码。文本国际化用 `next-intl` 和按语言拆分的 JSON；阿拉伯语除翻译外，还通过 `dir=rtl`、Tailwind 的 RTL 变体和图标镜像处理布局方向。这个方案适合一站一构建的白标交付；如果要升级为单实例多域名，我会把站点配置收敛为统一 manifest，并在运行期按 Host 选择配置，同时加强 RTL 的视觉回归测试。

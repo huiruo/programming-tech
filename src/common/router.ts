@@ -316,6 +316,8 @@ export const sidebar: ISidebar[] = [
       { href: "/interview/browser-basics", label: "浏览器基本原理", isPrivate: true },
       { href: "/interview/websocket", label: "WebSocket", isPrivate: true },
       { href: "/interview/typescript", label: "TypeScript", isPrivate: true },
+      { href: "/interview/http", label: "HTTP", isPrivate: true },
+      { href: "/interview/i18n-theme", label: "多语言与主题", isPrivate: true },
     ],
   },
 ];
