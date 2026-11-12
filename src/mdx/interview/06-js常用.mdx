@@ -23,3 +23,280 @@ npm run dev                 # pnpm dev
 ```
 
 实际项目中应跟随仓库已有的锁文件和包管理器配置：有 `pnpm-lock.yaml` 时使用 pnpm，有 `package-lock.json` 时使用 npm。不要在同一项目中混用它们，以免锁文件不一致导致依赖版本漂移。
+
+# JavaScript 常用面试题
+
+## 1. JavaScript 有哪些数据类型？`typeof` 有什么局限？
+
+基本类型包括 `undefined`、`null`、`boolean`、`number`、`bigint`、`string`、`symbol`；其余值都是对象类型，包括函数、数组、日期、正则等。
+
+`typeof` 适合区分大多数基本类型和函数，但有两个常见陷阱：`typeof null === 'object'` 是历史遗留问题，数组、日期、正则也都会得到 `'object'`。需要精确判断内建对象时可用 `Object.prototype.toString`。
+
+```js
+typeof 1; // 'number'
+typeof 1n; // 'bigint'
+typeof (() => {}); // 'function'
+typeof null; // 'object'，历史遗留行为
+typeof []; // 'object'
+
+Object.prototype.toString.call([]); // '[object Array]'
+Object.prototype.toString.call(null); // '[object Null]'
+Array.isArray([]); // true，判断数组时优先使用
+```
+
+## 2. `==` 与 `===` 有什么区别？常见隐式转换陷阱有哪些？
+
+`===` 不做类型转换，比较类型和值；`==` 会先按抽象相等比较规则转换类型。业务代码默认使用 `===`，只有明确需要同时匹配 `null` 和 `undefined` 时，才可使用 `value == null`。
+
+```js
+0 == false; // true
+'' == false; // true
+[] == false; // true
+[] == ![]; // true
+null == undefined; // true
+null === undefined; // false
+NaN === NaN; // false
+Object.is(NaN, NaN); // true
+Object.is(+0, -0); // false
+```
+
+条件判断中，`false`、`0`、`-0`、`0n`、`''`、`null`、`undefined`、`NaN` 都是假值；空数组和空对象是真值。`||` 会把所有假值视为缺省，而 `??` 只在值为 `null` 或 `undefined` 时取右侧默认值。
+
+## 3. 什么是作用域、变量提升、暂时性死区和闭包？
+
+JavaScript 使用词法作用域：函数定义在何处决定它能访问哪些外层变量。`var` 的声明会提升并初始化为 `undefined`；`let`、`const` 也会提升，但从块开始到声明执行前处于暂时性死区（TDZ），访问会抛错。
+
+闭包是函数与其创建时所在词法环境的组合。它常用于封装状态、回调、柯里化和模块私有变量；若长期持有不再需要的大对象或 DOM 引用，也可能造成内存无法回收。
+
+```js
+function createCounter() {
+  let count = 0;
+  return () => ++count;
+}
+
+const next = createCounter();
+next(); // 1
+next(); // 2，内部函数仍能访问 count
+
+console.log(value); // undefined
+var value = 1;
+
+// console.log(name); // ReferenceError：处于 TDZ
+let name = 'Ada';
+```
+
+## 4. `this` 的指向如何确定？箭头函数有什么不同？
+
+普通函数的 `this` 由调用方式决定，而不是由定义位置决定：默认调用在严格模式下为 `undefined`；对象方法调用指向该对象；`call`、`apply`、`bind` 可显式指定；构造调用 `new` 会创建并绑定新对象。箭头函数没有自己的 `this`，它在定义时捕获外层 `this`，不能作为构造函数使用。
+
+```js
+const user = {
+  name: 'Ada',
+  normal() { return this.name; },
+  arrow: () => this.name,
+};
+
+user.normal(); // 'Ada'
+user.arrow(); // 通常不是 'Ada'，箭头函数不绑定 user
+
+function greet(prefix, suffix) {
+  return `${prefix} ${this.name}${suffix}`;
+}
+
+greet.call({ name: 'Ada' }, 'Hi', '!');
+greet.apply({ name: 'Ada' }, ['Hi', '!']);
+const greetAda = greet.bind({ name: 'Ada' }, 'Hi');
+greetAda('!');
+```
+
+`call` 与 `apply` 会立即调用，参数分别以列表和数组形式传入；`bind` 返回一个绑定了 `this` 和可选预置参数的新函数。
+
+## 5. 原型链、`new` 与 `class` 的本质是什么？
+
+对象通过内部原型链接到另一个对象；读取属性时会先查找自身，再沿原型链向上查找，直到 `null`。构造函数的 `prototype` 是其实例的原型。`class` 是基于原型继承的语法糖，并非另一套对象模型。
+
+`new Constructor(...args)` 大致会：创建一个新对象；将其原型设为 `Constructor.prototype`；以新对象为 `this` 执行构造函数；若构造函数显式返回对象，则返回该对象，否则返回新对象。
+
+```js
+function Person(name) {
+  this.name = name;
+}
+Person.prototype.sayHi = function () {
+  return `Hi, ${this.name}`;
+};
+
+const ada = new Person('Ada');
+Object.getPrototypeOf(ada) === Person.prototype; // true
+ada.sayHi(); // 'Hi, Ada'
+```
+
+不要用 `__proto__` 读写原型；读取使用 `Object.getPrototypeOf`，创建指定原型的对象使用 `Object.create`。
+
+## 6. 浅拷贝与深拷贝有什么区别？
+
+浅拷贝只复制对象第一层，嵌套对象仍共享引用；对象展开、`Object.assign`、数组的 `slice`/展开运算符都是浅拷贝。深拷贝会递归复制可复制的嵌套值，但必须明确需要保留哪些内建对象、循环引用和属性描述符。
+
+```js
+const source = { profile: { name: 'Ada' } };
+const shallow = { ...source };
+shallow.profile.name = 'Grace';
+source.profile.name; // 'Grace'
+
+const deep = structuredClone(source);
+deep.profile === source.profile; // false
+```
+
+`structuredClone` 支持循环引用、`Map`、`Set`、`Date` 等可结构化克隆的值，但不能克隆函数、DOM 节点、`WeakMap`/`WeakSet` 等。`JSON.parse(JSON.stringify(value))` 会丢失 `undefined`、函数和 `symbol`，将 `Date` 变为字符串，不能处理循环引用，也会改变 `NaN` 与 `Infinity`；它不是通用深拷贝方案。
+
+## 7. 如何遍历对象属性？属性顺序是什么？
+
+- `for...in`：遍历自身和原型链上**可枚举的字符串键**，通常需配合 `Object.hasOwn` 过滤继承属性。
+- `Object.keys`：自身可枚举字符串键；`Object.values`、`Object.entries` 对应值和键值对。
+- `Object.getOwnPropertyNames`：自身全部字符串键，含不可枚举键。
+- `Object.getOwnPropertySymbols`：自身 symbol 键。
+- `Reflect.ownKeys`：自身全部字符串键和 symbol 键，含不可枚举键。
+
+常规对象的键顺序为：整数索引键按升序、其余字符串键按插入顺序、symbol 键按插入顺序。不要把普通对象属性顺序作为复杂业务排序逻辑；需要明确顺序时使用数组或 `Map`。
+
+## 8. 防抖和节流有什么区别？
+
+防抖（debounce）会在连续触发停止一段时间后只执行一次，适合搜索建议、表单校验和窗口尺寸变化后的计算。节流（throttle）会限制一段时间内最多执行一次，适合滚动、拖拽和鼠标移动等持续高频事件。
+
+```js
+function debounce(fn, delay) {
+  let timerId;
+  function debounced(...args) {
+    clearTimeout(timerId);
+    timerId = setTimeout(() => fn.apply(this, args), delay);
+  }
+  debounced.cancel = () => clearTimeout(timerId);
+  return debounced;
+}
+
+function throttle(fn, interval) {
+  let lastTime = 0;
+  let timerId;
+  function throttled(...args) {
+    const now = Date.now();
+    const remaining = interval - (now - lastTime);
+    if (remaining <= 0) {
+      clearTimeout(timerId);
+      lastTime = now;
+      fn.apply(this, args);
+    } else if (!timerId) {
+      timerId = setTimeout(() => {
+        lastTime = Date.now();
+        timerId = undefined;
+        fn.apply(this, args);
+      }, remaining);
+    }
+  }
+  throttled.cancel = () => clearTimeout(timerId);
+  return throttled;
+}
+```
+
+组件销毁或监听移除时，应调用 `cancel` 并移除事件监听器，防止过期回调更新已卸载的页面。
+
+## 9. `Map`、`Set`、`WeakMap`、`WeakSet` 如何选择？
+
+- `Map`：任意类型键、保留插入顺序、提供 `size` 和遍历能力，适合键值映射和缓存。
+- `Set`：存储唯一值，适合去重与集合运算。
+- `WeakMap`：键必须是对象，键采用弱引用，不能遍历、没有 `size`；适合为对象附加元数据或私有缓存，且不阻止键对象回收。
+- `WeakSet`：弱引用对象集合，适合记录对象是否已处理。
+
+弱引用不等于“立即回收”，垃圾回收时机不可预测；因此不能把 `WeakMap`/`WeakSet` 用于需要枚举、计数或持久化的业务数据。
+
+## 10. Promise 的状态、链式调用与组合 API 如何理解？
+
+Promise 状态只能从 `pending` 变为 `fulfilled` 或 `rejected`，且一旦 settled 不再改变。`then` 总会返回一个新 Promise：回调返回普通值时会 resolve，返回 Promise/thenable 时会等待它，抛错或返回 rejected Promise 时会传递到后续 `catch`。
+
+| API | 成功条件 | 失败/结果 | 适用场景 |
+| --- | --- | --- | --- |
+| `Promise.all` | 全部成功 | 任一失败立即 reject | 所有结果都必需 |
+| `Promise.allSettled` | 全部结束 | 返回每项状态与结果 | 批量任务需收集完整结果 |
+| `Promise.race` | 最先 settled 的结果 | 最先成功或失败决定结果 | 超时竞争、取最快结果 |
+| `Promise.any` | 任一成功 | 全部失败才 reject（`AggregateError`） | 多个可替代来源 |
+
+```js
+fetchUser()
+  .then((user) => fetchOrders(user.id))
+  .then(renderOrders)
+  .catch(showError)
+  .finally(hideLoading);
+```
+
+错误处理应放在能恢复或展示错误的边界；不要吞掉异常，例如 `catch(() => {})`，否则会让失败静默。
+
+## 11. `async` / `await` 有哪些常见要点？如何控制并发？
+
+`async` 函数始终返回 Promise；返回普通值会包装成 fulfilled Promise，抛出异常会变成 rejected Promise。`await` 会暂停当前 `async` 函数的后续执行并在 Promise settled 后以微任务继续，异常可用 `try/catch` 处理。
+
+无依赖的异步请求应先同时创建，再一起等待，避免无意串行：
+
+```js
+async function loadPage() {
+  const userPromise = fetchUser();
+  const noticesPromise = fetchNotices();
+  const [user, notices] = await Promise.all([userPromise, noticesPromise]);
+  return { user, notices };
+}
+```
+
+需要限制并发量时，用任务队列维护“进行中数量”和“待执行任务”；不要对很长的数组直接 `Promise.all`，否则可能同时发起过多请求并压垮服务端或浏览器连接池。
+
+## 12. 浏览器事件循环的核心规律是什么？
+
+核心口诀是：**执行一个任务 → 清空全部微任务 → 浏览器有机会渲染 → 执行下一任务**。`Promise.then`、`await` 后续代码、`queueMicrotask` 和 `MutationObserver` 属于微任务；定时器、用户事件、网络事件回调属于任务来源。长同步任务或不断追加的微任务都会阻塞渲染和交互。
+
+```js
+console.log('sync');
+setTimeout(() => console.log('timer'), 0);
+Promise.resolve().then(() => console.log('microtask'));
+// sync → microtask → timer
+```
+
+完整流程、渲染时机与更多输出题见：[浏览器事件循环](./07-浏览器基本原理#5-浏览器事件循环event-loop)。
+
+## 13. CommonJS 和 ES Module 有什么区别？
+
+CommonJS 使用 `require` 和 `module.exports`，模块通常在运行时加载，导出更接近值的拷贝（对象属性变化等情况需结合引用理解）。ES Module 使用静态的 `import` / `export`，可在构建阶段分析依赖以支持 tree-shaking，导入的是只读的实时绑定（live binding）。
+
+```js
+// ESM：可静态分析；动态加载使用 import()
+import { format } from './format.js';
+const formatter = await import('./format.js');
+
+// CommonJS
+const { format: cjsFormat } = require('./format.cjs');
+```
+
+两种模块系统在循环依赖、顶层 `this`、文件扩展名和加载时机上都不同。项目应统一模块规范；需要动态按需加载时，使用 `import()`，并处理加载失败与 loading 状态。
+
+## 14. 浏览器事件捕获、冒泡与事件委托是什么？
+
+事件传播通常经历捕获阶段（外到内）、目标阶段、冒泡阶段（内到外）。事件委托是在父元素上监听冒泡事件，再根据 `event.target` 或 `closest()` 判断具体子元素；它适合动态列表，可减少大量监听器。
+
+```js
+list.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-action="remove"]');
+  if (!button || !list.contains(button)) return;
+  removeItem(button.dataset.id);
+});
+```
+
+- `event.stopPropagation()` 阻止事件继续传播，但不阻止同一元素上的其他监听器。
+- `event.preventDefault()` 阻止浏览器默认行为，例如链接跳转或表单提交；它不阻止传播。
+- `{ passive: true }` 告诉浏览器监听器不会调用 `preventDefault`，有助于滚动性能；被动监听器中调用 `preventDefault` 无效。
+
+并非所有事件都会冒泡，例如 `focus`、`blur`；委托时可改用会冒泡的 `focusin`、`focusout`，或使用捕获阶段监听。
+
+## 15. 前端常见内存泄漏有哪些？如何排查？
+
+JavaScript 有垃圾回收，但只要对象仍可从根对象访问，就不会被释放。常见问题包括：未移除的全局事件监听器和定时器、组件卸载后仍存活的订阅/请求回调、脱离文档却仍被 JavaScript 引用的 DOM、无限增长的缓存，以及闭包长期引用大对象。
+
+排查时先稳定复现操作路径，再用 Chrome DevTools 的 Memory 面板比较 Heap Snapshot 或记录 Allocation Timeline：重复进入/离开页面后检查实例数量和保留路径。修复应回到资源的创建边界，在组件卸载或任务取消时对称清理监听、计时器、订阅和缓存，并为缓存设置容量与淘汰策略。
+
+## 详细阅读
+
+[Promise 与 async/await](../promise/04-async-await) ｜ [Promise 高频题](../promise/题目) ｜ [浏览器事件循环详解](../js/j1EventLoop) ｜ [浏览器原理与渲染](./07-浏览器基本原理) ｜ [前端性能优化](./02-h5-性能优化)
