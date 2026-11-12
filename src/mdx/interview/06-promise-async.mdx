@@ -24,14 +24,43 @@
 - “可能渲染”不等于每轮一定渲染，浏览器会结合刷新率和页面状态决定。
 - 不是“所有微任务永远比所有宏任务优先”，而是**当前任务结束后清空微任务，再选择后续任务**。
 
-| 调度来源 | 类型或时机 | 实际开发中的作用 |
+### 浏览器中哪些是宏任务，哪些是微任务？
+
+| 分类 | 常见来源 | 关键特征 |
 | --- | --- | --- |
-| 初始脚本、点击事件、`setTimeout`、`MessageChannel` | task | 开启一段新的主线程工作 |
-| `Promise.then/catch/finally`、`await` 后续、`queueMicrotask` | microtask | 在当前任务结束后、可能渲染前继续工作 |
-| `MutationObserver` | 微任务检查点中通知 | 批量观察 DOM 变更 |
-| `requestAnimationFrame` | 下一次绘制前的渲染更新阶段 | 执行与下一帧视觉更新相关的工作 |
-| `requestIdleCallback` | 浏览器认为有空闲预算时 | 非关键、可延迟工作；不保证及时 |
-| Web Worker | 独立线程/事件循环 | 承担 CPU 密集计算，不能直接操作 DOM |
+| task（俗称宏任务） | 初始 `<script>`、`setTimeout`、`setInterval`、用户事件回调、`postMessage`、`MessageChannel`、网络事件回调 | 每次取一个任务执行；不同任务来源之间的先后顺序不能只靠名称推断 |
+| microtask（微任务） | `Promise.then/catch/finally`、`await` 后续代码、`queueMicrotask`、`MutationObserver` 回调 | 当前任务结束后持续清空，通常早于下一次渲染和下一个任务 |
+| 渲染阶段 | `requestAnimationFrame` | 在浏览器准备绘制下一帧之前执行，不是普通宏任务，也不是微任务 |
+| 空闲调度 | `requestIdleCallback` | 浏览器有空闲预算时执行，可能很晚，不适合必须及时完成的工作 |
+| 独立线程 | Web Worker 中的代码 | 在 Worker 线程执行，适合 CPU 密集计算，但不能直接操作 DOM |
+
+以下几项尤其容易被误分类：
+
+- `fetch` 本身不是宏任务或微任务。网络请求由浏览器处理；Promise settled 后，`.then` 和 `await` 后续才作为微任务执行。
+- `async` 函数调用时会先同步执行，遇到 `await` 才暂停；`await` 后续是微任务。
+- `requestAnimationFrame` 属于渲染更新步骤，不要为了答题方便把它归为宏任务。
+- Web Worker 不是一种任务队列；它有自己的线程和事件循环，消息回调仍要按各自线程的事件循环执行。
+- Node.js 的事件循环阶段和 `process.nextTick` 规则与浏览器不同。除非题目明确问 Node.js，否则应先声明这里讨论浏览器。
+
+### 常见问题与调度方式速查
+
+| 现象 | 根因 | 不合适的做法 | 优先方案 |
+| --- | --- | --- | --- |
+| 修改 DOM 后没有及时渲染 | 当前任务未结束，或后面还有大量微任务；浏览器尚未获得绘制机会 | 用 `Promise.then` 等待渲染 | 视觉更新用 `requestAnimationFrame`；若必须确认前一帧已有呈现机会，可等待后续帧 |
+| 点击、输入、滚动卡顿 | 长任务持续占用主线程，后续事件无法执行 | 仅用一个 `setTimeout` 延后整段重计算 | 减少工作量；可拆任务则分片并主动让出主线程；CPU 密集计算使用 Web Worker |
+| 大量 Promise 导致掉帧 | 微任务不断追加，微任务检查点迟迟不能结束 | 用 `await Promise.resolve()` 分片 | 跨到后续任务，例如 `scheduler.yield()`（需降级）或 `setTimeout`；重计算用 Worker |
+| 动画不流畅 | `setInterval` 与屏幕刷新不同步，回调还会漂移 | 假设每 16ms 一定执行一次 | 使用 `requestAnimationFrame`，并根据时间差计算动画进度 |
+| 搜索结果被旧请求覆盖 | 请求按发起顺序开始，但不保证按相同顺序完成 | 认为“先发的一定先回来” | 新请求取消旧请求（`AbortController`），并用请求序号只接收最新结果 |
+| 多个请求总体很慢 | 循环中的 `await` 把独立请求人为串行化 | 无依赖却逐个 `await` | 数量可控时用 `Promise.all`；数量大时使用并发池 |
+| 定时任务越跑越偏 | 定时器只保证最早可执行时间，主线程繁忙和限速都会造成延迟 | 把 `setInterval` 当作精确时钟 | 按 `performance.now()` 或墙上时间校正下一次调度 |
+| 低优先级工作影响交互 | 非关键工作与用户可见任务争抢主线程 | 页面加载后立刻同步执行全部工作 | 小型非关键任务可用 `requestIdleCallback` 并设置超时；重要任务不能依赖它及时执行 |
+
+选择调度方式时可以先问四个问题：
+
+1. 工作必须在本轮同步完成吗？必须同步读取结果时才保留同步执行。
+2. 工作必须在可能渲染前完成吗？是则使用微任务，但微任务中不能放重活。
+3. 工作是否与下一帧视觉效果有关？是则使用 `requestAnimationFrame`。
+4. 工作是否耗 CPU？优先使用 Worker；无法使用 Worker 时再分片，并在片段之间让出主线程。
 
 ## 2. 面试题：为什么设置 loading 后做计算，页面没有显示 loading？
 

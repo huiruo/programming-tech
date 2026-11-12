@@ -1,5 +1,113 @@
 # TypeScript 常用面试题
 
+## `export type` 中 `type` 的作用
+
+```ts
+export type {
+  MultiEditorIProps as MultiEditorProps,
+} from 'react-monaco-editor-lite';
+```
+
+这里的 `type` 表示导出的内容**只存在于 TypeScript 的类型空间中**，不会作为 JavaScript 运行时的值导出。
+
+这行代码从 `react-monaco-editor-lite` 重新导出了 `MultiEditorIProps` 类型，并将它重命名为 `MultiEditorProps`。其他文件可以这样使用：
+
+```ts
+import type { MultiEditorProps } from './types';
+```
+
+`export type` 和 `import type` 的好处是：
+
+- 明确区分类型和值，避免误以为该成员在运行时存在。
+- 编译后会被完全移除，不会产生额外的 JavaScript 代码。
+- 配合 `verbatimModuleSyntax` 等配置，可以避免类型导入被错误保留，并让模块依赖更清晰。
+
+需要注意，`type` 不只是声明类型别名的关键字。它出现在 `export type` 中时，强调的是“仅导出类型”。接口、类型别名以及其他只存在于类型空间中的声明都可以用这种方式导出。
+
+## TypeScript 静态类型有什么好处？
+
+TypeScript 的主要能力之一，是在 JavaScript 之上增加静态类型系统。类型检查主要发生在编译阶段，最终生成的代码仍然是 JavaScript。
+
+- **更早发现错误**：属性拼写错误、参数类型不匹配、遗漏空值处理等问题，可以在运行前暴露。
+- **重构更可靠**：修改函数签名或数据结构时，编译器能定位受影响的调用方。
+- **编辑器体验更好**：类型为自动补全、跳转、查找引用和安全重命名提供依据。
+- **类型即文档**：函数的参数、返回值和数据结构比注释更精确，并且会随代码一起接受检查。
+- **适合大型项目协作**：接口和泛型可以明确模块边界，降低不同模块之间的沟通成本。
+- **补充 JavaScript 的抽象能力**：接口、访问修饰符、抽象类等语法有助于表达设计意图。
+
+但 TypeScript 的类型默认只在编译期有效，不能代替运行时校验。接口响应、用户输入、本地存储等外部数据仍应使用 Zod、Valibot 或手写类型守卫进行验证。
+
+## 基础类型
+
+### 1. 布尔、数字和字符串
+
+```ts
+const visible: boolean = true;
+const count: number = 10;
+const title: string = 'TypeScript';
+```
+
+### 2. 数组和只读数组
+
+```ts
+const ids: number[] = [1, 2, 3];
+const names: Array<string> = ['Tom', 'Jack'];
+const readonlyIds: readonly number[] = [1, 2, 3];
+```
+
+### 3. 元组
+
+元组表示长度和每个位置的类型都已知的数组。
+
+```ts
+const entry: [id: number, name: string] = [1, 'Tom'];
+```
+
+### 4. 枚举
+
+```ts
+enum Direction {
+  Up,
+  Down,
+}
+```
+
+`enum` 通常会生成运行时代码。前端业务中也常使用字符串字面量联合或 `as const` 对象代替它。
+
+### 5. `any` 和 `unknown`
+
+`any` 会关闭类型检查；`unknown` 在使用前必须先缩小类型，因此接收未知数据时应优先选择 `unknown`。
+
+### 6. `null` 和 `undefined`
+
+开启 `strictNullChecks` 后，它们不能随意赋给其他类型。可选属性和可选参数通常会包含 `undefined`。
+
+### 7. `void`
+
+`void` 常用于表示函数调用方不应使用其返回值。
+
+```ts
+function log(message: string): void {
+  console.log(message);
+}
+```
+
+### 8. `never`
+
+`never` 表示永远不会出现的值，常用于永远抛出异常的函数和联合类型的穷尽检查。
+
+### 9. `object`、`Object` 和 `{}`
+
+- `object` 表示非原始类型，通常比另外两者更符合直觉。
+- `Object` 接近 JavaScript 原型链上的包装对象类型，一般不建议用它描述普通对象。
+- `{}` 表示任意非 `null`、非 `undefined` 的值，并不表示“空对象”。
+
+描述对象结构时，应声明具体属性或使用 `Record<PropertyKey, unknown>` 等更明确的类型。
+
+---
+
+# 高频面试题
+
 ## 1. `any`、`unknown`、`never` 有什么区别？
 
 - `any` 会跳过类型检查：可以对它做任何操作，也可以赋值给任何类型。适合渐进式迁移，但应尽量避免扩散。
@@ -258,27 +366,67 @@ abstract class Repository<T> {
 
 `namespace` 是 TypeScript 早期组织代码的方式，会生成 IIFE 等运行时代码，并依赖全局或合并声明。在现代项目中，ES Module 的 `import` / `export` 具有明确依赖关系、天然支持打包和按需加载，因此优先使用模块。`namespace` 主要见于旧项目或少数全局类型声明场景。
 
-## 18. TypeScript 能保证接口数据在运行时安全吗？
+## 18. `import type` 和普通 `import` 有什么区别？
 
-不能。类型在编译后大多会被擦除，网络响应、`localStorage`、URL 参数和用户输入在运行时都不可信。TypeScript 只能约束“代码如何使用数据”，不能校验数据本身；边界处仍需要运行时校验。
+`import type` 只能导入类型，编译后会被移除；普通 `import` 可以导入运行时的值。在启用严格的模块语法配置时，将类型导入明确写成 `import type`，可以避免意外的运行时依赖和循环依赖。
 
 ```ts
-type User = { id: string; name: string };
+import { createUser } from './user';
+import type { User } from './user';
+
+const user: User = createUser();
+```
+
+类和枚举同时存在于值空间与类型空间中。如果运行时需要调用构造函数或读取枚举成员，就不能只用 `import type`。
+
+## 19. 类型推断、类型注解和类型断言有什么区别？
+
+- **类型推断**：编译器根据表达式自动得出类型，例如 `const count = 1`。
+- **类型注解**：开发者声明变量或参数应满足的类型，例如 `const count: number = 1`。
+- **类型断言**：开发者告诉编译器“把它当作某类型”，例如 `value as User`，但不会执行运行时验证。
+
+能准确推断时不必重复注解；处理外部数据时不能用断言冒充校验。
+
+## 20. 什么是协变、逆变和双向协变？
+
+它们描述复合类型之间的可赋值关系：
+
+- 返回值通常是协变的：返回更具体的类型可以赋给返回更宽泛类型的函数。
+- 开启 `strictFunctionTypes` 后，函数参数通常按逆变方式检查。
+- 为兼容常见 JavaScript 写法，方法参数仍可能采用更宽松的双向协变检查。
+
+面试中重点不在背术语，而在理解：若错误地允许一个只能处理 `Dog` 的函数充当可以处理所有 `Animal` 的函数，运行时就可能收到它无法处理的对象。
+
+## 21. `Promise<void>`、`void` 和 `Promise<never>` 有什么区别？
+
+- `void`：同步函数没有供调用方使用的返回值。
+- `Promise<void>`：异步操作会结束，但成功结果没有可用值。
+- `Promise<never>`：Promise 不可能成功得到值，例如函数最终总会抛错；实践中较少直接标注。
+
+`async` 函数总是返回 `Promise`，因此异步无返回值函数应标注为 `Promise<void>`，而不是 `void`。
+
+## 22. TypeScript 能保证运行时类型安全吗？
+
+不能。TypeScript 编译后类型会被擦除，而且类型系统允许断言、`any` 等逃生通道。来自网络、表单、URL、存储和第三方脚本的数据，都必须在运行时验证。
+
+```ts
+type User = { id: string };
 
 function isUser(value: unknown): value is User {
   return typeof value === 'object'
     && value !== null
-    && typeof (value as Record<string, unknown>).id === 'string'
-    && typeof (value as Record<string, unknown>).name === 'string';
+    && 'id' in value
+    && typeof value.id === 'string';
 }
-
-const data: unknown = await fetch('/api/user').then((res) => res.json());
-if (!isUser(data)) throw new Error('Invalid user payload');
 ```
 
-复杂项目可在接口边界使用 Zod、Valibot 等 schema 库校验，并从 schema 推导 TypeScript 类型，避免类型定义和运行时规则脱节。
+## 23. 装饰器是什么？使用时要注意什么？
 
-## 19. 如何将一个 JavaScript 项目逐步迁移到 TypeScript？
+装饰器可以对类及其成员附加行为或元数据，常见于依赖注入、ORM 和框架声明。面试时要区分旧版实验性装饰器与新版 ECMAScript 装饰器：两者的语义、签名和配置并不完全相同，不能直接混用。
+
+装饰器会增加隐式行为和框架耦合。业务代码中应先确认项目的 TypeScript 版本、`tsconfig` 配置及框架要求，再决定采用哪套实现。
+
+## 24. 如何将一个 JavaScript 项目逐步迁移到 TypeScript？
 
 先建立可编译、可发布的最小配置，而不是一次性重写：
 
@@ -289,7 +437,7 @@ if (!isUser(data)) throw new Error('Invalid user payload');
 
 迁移的目标不是“零断言”，而是让关键数据流和重构风险获得可靠的类型保护。不要用大面积 `as any` 让编译通过，这会把问题推迟到运行时。
 
-## 20. React 中常见的 TypeScript 类型问题有哪些？
+## 25. React 中常见的 TypeScript 类型问题有哪些？
 
 Props 应由业务需求显式定义，不要习惯性使用 `React.FC`；需要子节点时直接声明 `children`。事件类型可从 React 命名空间获取，`useRef` 则应区分 DOM 引用和可变值引用。
 
@@ -312,20 +460,3 @@ function Search({ initialValue = '', onSubmit, children }: SearchProps) {
 ```
 
 对于泛型组件，应让类型参数由 `items`、`value`、`onChange` 等 Props 推导；处理异步状态时，使用可辨识联合表达 loading、success、error，比多个可选布尔值更不容易出现非法状态。
-
-## 21. 什么是协变、逆变？为什么函数参数容易产生兼容性问题？
-
-可以简单理解为：返回值只被“读取”，通常可协变；函数参数会被“传入”，为了安全通常需要逆变检查。启用 `strictFunctionTypes` 后，不能把只接受更窄参数的函数赋给需要接受更宽参数的位置，否则调用方可能传入该函数无法处理的值。
-
-```ts
-type Animal = { name: string };
-type Dog = Animal & { bark(): void };
-
-let acceptAnimal: (animal: Animal) => void;
-const acceptDog = (dog: Dog) => dog.bark();
-
-// strictFunctionTypes 下不安全：调用方可能传入普通 Animal
-// acceptAnimal = acceptDog;
-```
-
-面试中重点说明其本质：类型系统要保证“在目标位置允许的所有调用方式”，赋进去的函数都能正确处理。
