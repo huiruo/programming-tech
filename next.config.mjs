@@ -1,5 +1,6 @@
 import { setupDevPlatform } from '@cloudflare/next-on-pages/next-dev';
 import remarkGfm from 'remark-gfm';
+import rehypeSlug from 'rehype-slug';
 
 // Here we use the @cloudflare/next-on-pages next-dev module to allow us to use bindings during local development
 // (when running the application with `next dev`), for more information see:
@@ -28,6 +29,7 @@ const nextConfig = {
           options: {
             providerImportSource: '@/mdx-components',
             remarkPlugins: [remarkGfm],
+            rehypePlugins: [rehypeSlug],
           },
         },
       ],

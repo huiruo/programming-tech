@@ -3,6 +3,7 @@ import { Sidebar } from "@/components/sidebar";
 import { PwaRegistration } from "@/components/pwa/PwaRegistration";
 import "./globals.css";
 import { NavWrapper } from "@/components/nav";
+import { ArticleToc } from "@/components/articleToc";
 
 export const metadata: Metadata = {
   title: "Programming Tech",
@@ -44,6 +45,7 @@ export default function RootLayout({
               <article className="article">
                 {children}
               </article>
+              <ArticleToc />
             </main>
           </div>
         </div>

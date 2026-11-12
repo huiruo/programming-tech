@@ -285,6 +285,7 @@ export const sidebar: ISidebar[] = [
     type: "category",
     items: [
       { href: "/golang/development", label: "Golang 开发" },
+      { href: "/golang/development-2", label: "Golang 开发 2" },
     ],
   },
   {

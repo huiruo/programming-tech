@@ -1,0 +1,900 @@
+# Golang 初级面试题
+
+这份题库面向初级 Go 后端岗位。回答问题时，建议先给出结论，再解释原因，最后结合一个简单场景或代码示例。
+
+## 一、语言与类型
+
+### 1. Go 有哪些常见的内置类型？零值是什么？
+
+**参考答案：**
+
+- 布尔类型 `bool` 的零值是 `false`。
+- 整数、浮点数和复数的零值是 `0`。
+- 字符串 `string` 的零值是空字符串 `""`。
+- 指针、切片、Map、函数、接口和 channel 的零值是 `nil`。
+- 数组和结构体的零值，是其每个元素或字段各自的零值。
+
+Go 倾向于让类型的零值可以直接使用。例如 `sync.Mutex` 的零值就是一个未加锁的互斥锁。
+
+```go
+var enabled bool
+var count int
+var name string
+var numbers []int
+var user struct {
+	ID   int
+	Name string
+}
+
+fmt.Println(enabled, count, name) // false 0 ""
+fmt.Println(numbers == nil)       // true
+fmt.Printf("%+v\n", user)         // {ID:0 Name:}
+```
+
+### 2. `var`、`:=` 和 `const` 有什么区别？
+
+**参考答案：**
+
+- `var` 可以在包级或函数内声明变量，也可以只声明而不显式初始化。
+- `:=` 是短变量声明，只能在函数内部使用，并且左侧至少要有一个新变量。
+- `const` 声明编译期常量，值必须能在编译期确定，不能使用 `:=`。
+
+```go
+var name string       // 零值是 ""
+age := 18             // 只能写在函数内
+const timeout = 3     // 无类型常量
+```
+
+### 3. Go 中的值传递是什么意思？
+
+**参考答案：**
+
+Go 的参数传递都是值传递：调用函数时，会复制实参的值。传入指针时，复制的是指针值，因此函数可以通过这份指针副本修改它指向的数据。
+
+切片、Map 和 channel 虽然也会被复制，但复制的是包含底层数据引用的描述信息，所以函数内的操作可能影响调用方看到的数据。这不代表 Go 使用了引用传递。
+
+```go
+func changeNumber(n int) { n = 100 }
+func changeByPointer(n *int) { *n = 100 }
+func changeSlice(values []int) { values[0] = 100 }
+
+n := 1
+changeNumber(n)
+fmt.Println(n) // 1：函数修改的是副本
+
+changeByPointer(&n)
+fmt.Println(n) // 100：通过复制后的指针访问原变量
+
+values := []int{1, 2}
+changeSlice(values)
+fmt.Println(values) // [100 2]：切片描述指向同一底层数组
+```
+
+### 4. `byte` 和 `rune` 有什么区别？
+
+**参考答案：**
+
+- `byte` 是 `uint8` 的别名，通常表示一个字节。
+- `rune` 是 `int32` 的别名，通常表示一个 Unicode 码点。
+- `len(string)` 返回 UTF-8 编码后的字节数，不是字符数。
+- 使用 `for range` 遍历字符串时，得到的是字节下标和 rune。
+
+```go
+s := "Go语言"
+fmt.Println(len(s))                    // 8 个字节
+fmt.Println(utf8.RuneCountInString(s)) // 4 个字符
+```
+
+### 5. Go 的类型转换和类型断言有什么区别？
+
+**参考答案：**
+
+类型转换用于可转换的具体类型之间，写法是 `T(value)`。类型断言用于接口值，写法是 `value.(T)`，用于判断接口中保存的动态值是否为指定类型。
+
+```go
+n := int64(10) // 类型转换
+
+var v any = "go"
+s, ok := v.(string) // 类型断言；ok 可避免断言失败时 panic
+```
+
+## 二、数组、切片与 Map
+
+### 6. 数组和切片有什么区别？
+
+**参考答案：**
+
+- 数组长度是类型的一部分，`[3]int` 和 `[4]int` 是不同类型；数组赋值和传参会复制全部元素。
+- 切片是对底层数组一段连续区域的描述，包含指针、长度和容量；切片本身不存放所有元素。
+- 数组长度固定，切片可以通过 `append` 动态增长。
+
+```go
+array := [3]int{1, 2, 3}
+arrayCopy := array
+arrayCopy[0] = 100
+fmt.Println(array)     // [1 2 3]：数组被完整复制
+fmt.Println(arrayCopy) // [100 2 3]
+
+slice := []int{1, 2, 3}
+sliceCopy := slice
+sliceCopy[0] = 100
+fmt.Println(slice)     // [100 2 3]：两个切片共享底层数组
+fmt.Println(sliceCopy) // [100 2 3]
+
+slice = append(slice, 4) // append 返回新的切片描述
+fmt.Println(slice)       // [100 2 3 4]
+```
+
+### 7. 切片的长度和容量分别是什么？
+
+**参考答案：**
+
+- 长度 `len(s)` 是当前切片可访问的元素数量。
+- 容量 `cap(s)` 是从切片起点到底层数组末尾最多可容纳的元素数量。
+
+对切片再次切片时要注意共享底层数组，修改其中一个切片的元素，其他共享该区域的切片也可能观察到变化。
+
+```go
+base := []int{10, 20, 30, 40, 50}
+s := base[1:3]
+
+fmt.Println(s)      // [20 30]
+fmt.Println(len(s)) // 2
+fmt.Println(cap(s)) // 4：从下标 1 到底层数组末尾
+
+s[0] = 200
+fmt.Println(base) // [10 200 30 40 50]
+```
+
+### 8. `append` 后为什么必须接收返回值？切片如何扩容？
+
+**参考答案：**
+
+`append` 会返回一个新切片。容量足够时，它通常复用原底层数组；容量不足时，会申请更大的底层数组并复制数据。因此必须写成 `s = append(s, value)`。
+
+扩容倍率属于运行时实现细节，不能依赖固定的“每次翻倍”。业务代码只应依赖扩容后原有元素仍被保留。
+
+```go
+s := make([]int, 0, 1)
+s = append(s, 1)
+s = append(s, 2) // 可能更换底层数组
+```
+
+### 9. 如何正确复制切片？
+
+**参考答案：**
+
+直接赋值只会复制切片描述信息，两个切片仍可能共享底层数组。需要独立副本时，可使用 `copy` 或 `append`。
+
+```go
+src := []int{1, 2, 3}
+dst := make([]int, len(src))
+copy(dst, src)
+
+// Go 1.21+ 也可以使用 slices.Clone(src)
+```
+
+若切片元素是指针、Map、切片或其他引用型数据，上面仍只是浅拷贝，深拷贝需要继续复制元素指向的数据。
+
+### 10. `nil` 切片和空切片有什么异同？
+
+**参考答案：**
+
+两者长度和容量都可以是 0，也都能直接 `append`。不同点是 `nil` 切片等于 `nil`，空切片通常不等于 `nil`；JSON 编码时，默认情况下它们可能分别得到 `null` 和 `[]`。
+
+```go
+var a []int        // nil 切片
+b := []int{}       // 非 nil 空切片
+fmt.Println(a == nil, b == nil) // true false
+```
+
+### 11. Map 的常见操作和零值行为是什么？
+
+**参考答案：**
+
+从 `nil` Map 或不存在的键中读取是安全的，会得到元素类型的零值；向 `nil` Map 写入会 panic，因此写入前要用 `make` 或字面量初始化。
+
+```go
+m := make(map[string]int)
+m["go"] = 1
+
+value, ok := m["go"] // ok 表示键是否存在
+delete(m, "go")      // 删除不存在的键也是安全的
+```
+
+### 12. Map 为什么不能安全地并发读写？
+
+**参考答案：**
+
+普通 Map 没有为并发读写提供同步保障，并发写或读写可能产生数据竞争，运行时还可能直接报错。常见方案是：
+
+- 使用 `sync.Mutex` 或 `sync.RWMutex` 保护 Map。
+- 对读多写少、键集合相对稳定等适合的场景使用 `sync.Map`。
+- 通过单独的 goroutine 和 channel 串行管理状态。
+
+只读且没有任何 goroutine 修改的 Map，可以被多个 goroutine 并发读取。
+
+```go
+type SafeMap struct {
+	mu   sync.RWMutex
+	data map[string]int
+}
+
+func (m *SafeMap) Get(key string) (int, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	value, ok := m.data[key]
+	return value, ok
+}
+
+func (m *SafeMap) Set(key string, value int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data[key] = value
+}
+```
+
+### 13. 遍历 Map 的顺序固定吗？可以获取元素地址吗？
+
+**参考答案：**
+
+Map 的遍历顺序没有保证，不应依赖某次运行中观察到的顺序。Map 元素可能因扩容等操作移动，所以不能直接对 `m[key]` 取地址；若需要稳定修改复杂值，可以让 Map 保存指针，或取出值、修改后再写回。
+
+```go
+type User struct { Age int }
+
+users := map[string]User{"alice": {Age: 18}}
+user := users["alice"] // 先取出副本
+user.Age++
+users["alice"] = user // 修改后写回
+
+pointerUsers := map[string]*User{"bob": {Age: 20}}
+pointerUsers["bob"].Age++ // Map 保存指针时可以修改指向的对象
+```
+
+## 三、函数、错误与资源清理
+
+### 14. `make` 和 `new` 有什么区别？
+
+**参考答案：**
+
+- `new(T)` 为类型 `T` 分配零值空间，返回 `*T`。
+- `make` 只用于切片、Map 和 channel，负责初始化其运行时结构，返回类型本身而不是指针。
+
+```go
+p := new(int)             // *int，*p 的值是 0
+s := make([]int, 0, 10)   // []int
+m := make(map[string]int) // map[string]int
+ch := make(chan int, 1)   // chan int
+```
+
+是否分配在堆上由编译器的逃逸分析决定，不能简单理解为 `new` 一定在堆上。
+
+### 15. `defer` 的执行时机和顺序是什么？
+
+**参考答案：**
+
+`defer` 在外围函数即将返回时执行，多个 `defer` 按后进先出顺序运行。`defer` 语句中的函数参数在注册时就会求值。
+
+```go
+func demo() {
+	x := 1
+	defer fmt.Println(x) // 注册时保存 1
+	x = 2
+	defer fmt.Println(x) // 注册时保存 2
+} // 输出 2、1
+```
+
+常见用途是关闭文件、释放锁和回滚事务。资源获取成功后应尽快注册相应的 `defer`。
+
+### 16. `defer` 如何影响命名返回值？
+
+**参考答案：**
+
+函数执行 `return` 时，会先给返回值赋值，再执行 `defer`，最后真正返回。因此 `defer` 可以修改命名返回值。
+
+```go
+func answer() (n int) {
+	defer func() { n++ }()
+	return 41
+} // 返回 42
+```
+
+面试中要能解释执行顺序，但业务代码应避免用复杂的 `defer` 修改返回结果，以免降低可读性。
+
+### 17. Go 为什么通常用 `error`，而不是异常处理业务错误？
+
+**参考答案：**
+
+`error` 是一个内置接口，普通失败作为返回值显式处理，使调用者能够看到并决定重试、降级、包装或返回错误。`panic` 更适合程序无法继续维持正确状态、初始化失败或程序员错误，不应代替常规错误返回。
+
+包装错误时使用 `%w`，判断错误链时使用 `errors.Is`，提取特定错误类型时使用 `errors.As`，不要只比较错误字符串。
+
+```go
+if err != nil {
+	return fmt.Errorf("load user %d: %w", id, err)
+}
+```
+
+### 18. `panic` 和 `recover` 应该怎样使用？
+
+**参考答案：**
+
+`panic` 会停止当前函数的正常执行，沿调用栈执行已注册的 `defer`。`recover` 只有在同一 goroutine 的延迟函数中调用时，才能捕获正在传播的 panic。
+
+HTTP 服务可以在请求入口使用恢复中间件，避免单个请求导致整个进程退出，同时记录堆栈并返回 500。但恢复之后不能假装操作成功，也无法捕获另一个 goroutine 的 panic。
+
+```go
+func safeCall() (err error) {
+	defer func() {
+		if value := recover(); value != nil {
+			err = fmt.Errorf("operation panicked: %v", value)
+		}
+	}()
+
+	panic("unexpected state")
+}
+
+fmt.Println(safeCall()) // operation panicked: unexpected state
+```
+
+## 四、结构体、方法与接口
+
+### 19. 结构体的方法使用值接收者还是指针接收者？
+
+**参考答案：**
+
+- 方法需要修改接收者，或结构体较大、不希望复制时，通常使用指针接收者。
+- 小型、不可变语义的值可以使用值接收者。
+- 同一类型的方法尽量保持一致，不要无理由混用。
+
+方法集也不同：`T` 的方法集只包含值接收者方法，`*T` 的方法集包含值接收者和指针接收者方法。这会影响类型是否实现某个接口。
+
+```go
+type Counter struct { value int }
+
+func (c Counter) Value() int { return c.value }
+func (c *Counter) Add() { c.value++ }
+
+c := Counter{}
+c.Add()
+fmt.Println(c.Value()) // 1
+
+copy := c
+copy.Add()
+fmt.Println(c.Value(), copy.Value()) // 1 2
+```
+
+### 20. Go 如何实现组合？嵌入字段等于继承吗？
+
+**参考答案：**
+
+Go 没有传统面向对象语言中的类继承，通常使用结构体嵌入和接口实现组合。嵌入字段的方法可以被提升，方便外层值调用，但外层类型和被嵌入类型仍是不同类型，不存在“是一个”的继承关系。
+
+```go
+type Logger struct{}
+func (Logger) Println(msg string) {}
+
+type Server struct {
+	Logger
+}
+```
+
+### 21. Go 的接口是如何被实现的？
+
+**参考答案：**
+
+接口描述一组方法。类型只要拥有接口要求的全部方法，就隐式实现该接口，不需要显式声明。这使接口可以定义在使用方附近，并有利于解耦和测试替换。
+
+接口设计通常遵循“小而专一”，例如标准库的 `io.Reader` 只有一个 `Read` 方法。
+
+```go
+type Speaker interface {
+	Speak() string
+}
+
+type Dog struct{}
+func (Dog) Speak() string { return "wang" }
+
+func Say(s Speaker) {
+	fmt.Println(s.Speak())
+}
+
+Say(Dog{}) // Dog 不需要显式声明实现 Speaker
+```
+
+### 22. 为什么接口值可能“不等于 nil”？
+
+**参考答案：**
+
+接口值可以理解为“动态类型 + 动态值”。只有两者都为空时，接口才等于 `nil`。把一个值为 `nil` 的具体指针赋给接口后，接口仍保存了动态类型，所以接口本身不为 `nil`。
+
+```go
+type MyError struct{}
+func (*MyError) Error() string { return "failed" }
+
+var p *MyError = nil
+var err error = p
+fmt.Println(err == nil) // false
+```
+
+返回 `error` 时，应直接返回 `nil`，不要把有具体类型的 nil 指针装入接口后返回。
+
+### 23. 空接口 `interface{}` 和 `any` 有区别吗？
+
+**参考答案：**
+
+没有语义区别，`any` 是 `interface{}` 的预声明别名。它们可以保存任意类型的值，但取回具体值时通常需要类型断言或类型 switch。能使用具体类型或泛型表达约束时，不应为了方便滥用 `any`。
+
+```go
+func printValue(value any) {
+	switch v := value.(type) {
+	case int:
+		fmt.Println("int:", v)
+	case string:
+		fmt.Println("string:", v)
+	default:
+		fmt.Printf("unknown: %T\n", v)
+	}
+}
+
+printValue(10)   // int: 10
+printValue("go") // string: go
+```
+
+## 五、指针、内存与运行时基础
+
+### 24. Go 指针能做什么？和 C 指针有什么主要区别？
+
+**参考答案：**
+
+Go 指针保存某个值的地址，可通过 `&` 取地址、通过 `*` 解引用，常用于修改共享对象和避免大对象复制。Go 不支持常规指针算术，内存管理由运行时和垃圾回收器负责，因此日常业务代码比 C 更少直接操作内存地址。
+
+```go
+func rename(name *string) {
+	*name = "Gopher"
+}
+
+name := "Go"
+pointer := &name
+fmt.Println(*pointer) // Go
+
+rename(pointer)
+fmt.Println(name) // Gopher
+```
+
+### 25. 什么是逃逸分析？
+
+**参考答案：**
+
+编译器会分析变量的生命周期和使用方式，决定变量可以放在栈上还是必须放到堆上。例如局部变量的地址被返回并需要在函数结束后继续存在时，变量通常会逃逸到堆上。
+
+```go
+func number() *int {
+	n := 10
+	return &n // 安全；编译器保证 n 在返回后仍然有效
+}
+```
+
+是否逃逸由编译器决定。可以用 `go build -gcflags="-m"` 辅助分析，但不应在没有性能数据时过度优化。
+
+### 26. Go 的垃圾回收意味着不需要释放资源吗？
+
+**参考答案：**
+
+垃圾回收主要管理内存，并不会替你及时关闭文件、网络连接、响应体、数据库结果集或释放锁。此类资源仍需显式关闭，通常在成功获取资源后立即使用 `defer` 安排清理。
+
+```go
+func readFile(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close() // 文件描述符需要显式关闭
+
+	return io.ReadAll(file)
+}
+```
+
+## 六、并发
+
+### 27. goroutine 和操作系统线程有什么区别？
+
+**参考答案：**
+
+goroutine 是由 Go 运行时调度的轻量级执行单元，初始栈较小并可动态增长，创建和切换成本通常低于操作系统线程。因此一个程序可以创建大量 goroutine，但 goroutine 仍会占用内存和其他资源，数量必须受到控制。
+
+启动 goroutine 后，调用者不会自动等待它完成；需要用 `sync.WaitGroup`、channel 或其他同步手段管理生命周期。
+
+```go
+done := make(chan struct{})
+
+go func() {
+	fmt.Println("running in a goroutine")
+	close(done)
+}()
+
+<-done // 等待 goroutine 完成
+```
+
+**进程、线程和 goroutine 的区别：**
+
+| 对比项 | 进程 | 操作系统线程 | goroutine |
+| --- | --- | --- | --- |
+| 定义 | 操作系统进行资源分配和隔离的基本单位 | 操作系统进行 CPU 调度的基本单位 | Go 运行时调度的并发执行单元 |
+| 资源 | 拥有独立虚拟地址空间、文件描述符等资源 | 同一进程内的线程共享地址空间和大部分资源 | 运行在操作系统线程上，共享所属进程的资源 |
+| 创建和切换 | 成本通常最高 | 低于进程，但需要进入内核调度 | 通常更轻量，主要由 Go 运行时调度 |
+| 栈 | 不适用 | 通常预留较大的固定或有限增长空间 | 初始较小，可以动态增长和收缩 |
+| 通信方式 | 管道、Socket、共享内存等进程间通信 | 可直接读写共享内存，需要锁等同步手段 | 常使用 channel，也可以使用锁保护共享内存 |
+| 故障影响 | 进程间隔离较强，一个进程退出通常不会直接破坏其他进程 | 某个线程发生严重错误可能导致整个进程退出 | 未恢复的 panic 通常会导致整个 Go 进程退出 |
+
+可以简单理解为：一个进程可以包含多个线程，一个操作系统线程又可以在 Go 运行时的调度下执行多个 goroutine。goroutine 并不等于线程，Go 运行时通过 GMP 模型把大量 goroutine 调度到较少的操作系统线程上执行。
+
+**常见追问：** 线程之间共享进程内存，因此通信方便，但也可能发生数据竞争；进程之间隔离更强，但通信和切换成本通常更高。
+
+### 28. 简述 Go 的 GMP 调度模型。
+
+**参考答案：**
+
+- G（goroutine）表示待执行的任务。
+- M（machine）表示操作系统线程。
+- P（processor）保存运行 Go 代码所需的调度资源，并维护可运行 G 的队列。
+
+M 需要绑定 P 才能执行 Go 代码。`GOMAXPROCS` 主要控制可同时执行 Go 代码的 P 数量，不等于程序只能创建这么多线程或 goroutine。初级面试理解三者职责即可，不必背运行时源码细节。
+
+```go
+previous := runtime.GOMAXPROCS(2)
+fmt.Println("previous GOMAXPROCS:", previous)
+
+for i := 0; i < 100; i++ {
+	go work(i) // 100 个 G 会被调度到可用的 P 和 M 上执行
+}
+```
+
+### 29. 无缓冲 channel 和有缓冲 channel 有什么区别？
+
+**参考答案：**
+
+- 无缓冲 channel 的发送和接收必须同时准备好，双方在一次通信点完成同步。
+- 有缓冲 channel 在缓冲区未满时可以发送、非空时可以接收；满时发送阻塞，空时接收阻塞。
+
+```go
+unbuffered := make(chan int)
+buffered := make(chan int, 2)
+
+buffered <- 1
+buffered <- 2
+```
+
+缓冲只能吸收有限的生产消费速率差，不能代替正确的背压和生命周期设计。
+
+### 30. 谁应该关闭 channel？关闭后读写会怎样？
+
+**参考答案：**
+
+通常由发送方关闭 channel，用来表示不会再发送新值；接收方不应在无法确认其他发送者都已结束时关闭它。
+
+- 从已关闭且已排空的 channel 接收，会立即得到元素类型零值，`ok` 为 `false`。
+- 向已关闭的 channel 发送会 panic。
+- 重复关闭 channel 会 panic。
+- 关闭 `nil` channel 会 panic；对 `nil` channel 收发会永久阻塞。
+
+```go
+v, ok := <-ch
+if !ok {
+	// channel 已关闭并排空
+}
+```
+
+### 31. `select` 有什么作用？如何实现超时？
+
+**参考答案：**
+
+`select` 用于同时等待多个 channel 操作。若多个分支都已就绪，运行时会选择其中一个；若没有分支就绪且存在 `default`，立即执行 `default`，否则阻塞等待。
+
+```go
+select {
+case result := <-resultCh:
+	fmt.Println(result)
+case <-time.After(2 * time.Second):
+	fmt.Println("timeout")
+}
+```
+
+频繁循环时应考虑复用 `time.Timer`，避免反复创建计时器。服务代码通常还应监听 `ctx.Done()` 以响应取消。
+
+### 32. `sync.Mutex` 和 `sync.RWMutex` 如何选择？
+
+**参考答案：**
+
+`Mutex` 在临界区内只允许一个 goroutine。`RWMutex` 允许多个读锁同时持有，但写锁与所有其他锁互斥。读多、临界区有一定工作量时，`RWMutex` 可能有优势；临界区很短或写操作不少时，普通 `Mutex` 往往更简单。
+
+锁不应在使用后复制，持锁期间应避免耗时 I/O，解锁通常紧跟在加锁成功之后用 `defer` 注册。
+
+```go
+type Store struct {
+	mu   sync.RWMutex
+	data map[string]string
+}
+
+func (s *Store) Get(key string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value, ok := s.data[key]
+	return value, ok
+}
+
+func (s *Store) Set(key, value string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data[key] = value
+}
+```
+
+### 33. `sync.WaitGroup` 的正确用法是什么？
+
+**参考答案：**
+
+`WaitGroup` 用于等待一组 goroutine 完成。通常在启动 goroutine 前调用 `Add`，goroutine 退出时调用 `Done`，等待方调用 `Wait`。
+
+```go
+var wg sync.WaitGroup
+for i := 0; i < 3; i++ {
+	wg.Add(1)
+	go func(id int) {
+		defer wg.Done()
+		fmt.Println(id)
+	}(i)
+}
+wg.Wait()
+```
+
+不要在可能与 `Wait` 并发发生的 goroutine 内才调用 `Add`，也不要复制正在使用的 `WaitGroup`。
+
+### 34. `context.Context` 用来解决什么问题？
+
+**参考答案：**
+
+`context` 在调用链中传递取消信号、截止时间和请求范围的少量元数据。HTTP 请求、数据库访问和下游 RPC 应尽量共享同一条 context 链，使客户端断开或请求超时后，下游工作能够停止。
+
+```go
+ctx, cancel := context.WithTimeout(parent, 2*time.Second)
+defer cancel()
+
+select {
+case <-doWork(ctx):
+case <-ctx.Done():
+	return ctx.Err()
+}
+```
+
+`Context` 通常作为函数第一个参数传递，不存入结构体，不传 `nil`，也不用于传递普通业务参数。创建了取消函数后要调用它释放相关资源。
+
+## 七、标准库与后端工程实践
+
+### 35. 如何编写一个基本的 HTTP Handler？
+
+**参考答案：**
+
+`net/http` 中的 Handler 接口只有 `ServeHTTP(http.ResponseWriter, *http.Request)` 方法，也可以使用 `http.HandlerFunc` 适配普通函数。Handler 应校验方法和输入、设置响应头、选择正确状态码，并处理编码错误。
+
+```go
+func health(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+```
+
+生产服务还应配置读取、写入和空闲超时，并实现日志、恢复和请求追踪等中间件。
+
+### 36. JSON 编解码中常见的注意点有哪些？
+
+**参考答案：**
+
+- 只有导出字段（首字母大写）会被标准库 JSON 包访问。
+- 使用结构体标签控制字段名，例如 ``json:"user_id"``。
+- `omitempty` 会在字段为空值时省略字段，但要注意零值是否具有业务含义。
+- 面向流或 HTTP Body 时常用 `json.Decoder`；已有完整字节数据时可用 `json.Unmarshal`。
+- 不可信请求应限制 Body 大小，并按接口要求决定是否拒绝未知字段。
+
+```go
+type User struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+```
+
+### 37. `database/sql` 中的 `DB` 是一条数据库连接吗？
+
+**参考答案：**
+
+不是。`*sql.DB` 是并发安全的数据库访问句柄，内部维护连接池，通常在应用启动时创建并长期复用，而不是每个请求创建一个。
+
+应根据服务和数据库承载能力设置最大打开连接数、最大空闲连接数、连接最大存活时间，并使用 `QueryContext`、`ExecContext` 等接口传递请求 context。使用 `Rows` 后要关闭并检查遍历错误，事务结束时必须提交或回滚。
+
+```go
+db, err := sql.Open("driver-name", dsn)
+if err != nil {
+	return err
+}
+db.SetMaxOpenConns(20)
+db.SetMaxIdleConns(10)
+db.SetConnMaxLifetime(30 * time.Minute)
+
+rows, err := db.QueryContext(ctx, "SELECT id, name FROM users")
+if err != nil {
+	return err
+}
+defer rows.Close()
+
+for rows.Next() {
+	var id int64
+	var name string
+	if err := rows.Scan(&id, &name); err != nil {
+		return err
+	}
+}
+return rows.Err()
+```
+
+### 38. Go 如何编写测试和检查数据竞争？
+
+**参考答案：**
+
+测试文件以 `_test.go` 结尾，测试函数形如 `func TestXxx(t *testing.T)`。多个输入场景通常用表驱动测试和 `t.Run` 组织。
+
+```go
+func TestAdd(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b int
+		want int
+	}{
+		{"positive", 1, 2, 3},
+		{"zero", 0, 0, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Add(tt.a, tt.b); got != tt.want {
+				t.Fatalf("Add() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+```
+
+常用命令包括 `go test ./...`、`go test -race ./...` 和 `go test -cover ./...`。竞态检测器只能发现实际执行路径上的竞争，不能证明程序一定不存在竞争。
+
+## 八、综合编码题
+
+### 题目 1：实现并发安全计数器
+
+要求多个 goroutine 可以安全地增加并读取计数值。
+
+```go
+type Counter struct {
+	mu sync.Mutex
+	n  int64
+}
+
+func (c *Counter) Add(delta int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.n += delta
+}
+
+func (c *Counter) Value() int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.n
+}
+```
+
+**常见追问：** 如果操作只有简单整数加减，还可以使用 `sync/atomic`；若计数更新需要和其他状态保持不变量，互斥锁通常更容易保证正确性。
+
+### 题目 2：限制并发任务数量并支持取消
+
+下面使用带缓冲 channel 作为信号量，同时使用 context 提前停止提交任务。
+
+```go
+func Run(ctx context.Context, jobs []func(context.Context) error, limit int) error {
+	if limit <= 0 {
+		return errors.New("limit must be positive")
+	}
+
+	sem := make(chan struct{}, limit)
+	errCh := make(chan error, len(jobs))
+	var wg sync.WaitGroup
+
+	for _, job := range jobs {
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			wg.Wait()
+			return ctx.Err()
+		}
+
+		wg.Add(1)
+		go func(job func(context.Context) error) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if err := job(ctx); err != nil {
+				errCh <- err
+			}
+		}(job)
+	}
+
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		return err
+	}
+	return nil
+}
+```
+
+**常见追问：** 这份实现返回任意一个任务错误，但不会因首个错误自动取消其他任务。生产代码可以使用可取消的 context 或 `errgroup.Group` 实现“首错取消”，并明确剩余任务的处理语义。
+
+### 题目 3：实现 JSON HTTP Handler
+
+要求只接受 POST，请求体不能为空，正确返回 JSON 和 HTTP 状态码。
+
+```go
+type CreateUserRequest struct {
+	Name string `json:"name"`
+}
+
+func createUser(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	defer r.Body.Close()
+
+	var req CreateUserRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":   1,
+		"name": req.Name,
+	})
+}
+```
+
+**常见追问：** 实际项目还要区分 JSON 语法错误、字段校验错误和请求体过大，并检查是否存在第二个 JSON 值。
+
+## 九、面试前速查表
+
+| 主题 | 必记结论 |
+| --- | --- |
+| 参数传递 | Go 只有值传递；传指针时复制的是指针值 |
+| `make` / `new` | `make` 初始化切片、Map、channel；`new(T)` 返回 `*T` |
+| 切片 | `append` 必须接收返回值；多个切片可能共享底层数组 |
+| Map | 无序；普通 Map 不能并发读写；nil Map 可读不可写 |
+| `defer` | 后进先出；参数注册时求值；在函数返回前执行 |
+| 错误 | 普通失败返回 `error`；用 `%w`、`errors.Is/As` 处理错误链 |
+| 接口 nil | 动态类型和动态值都为空时，接口才等于 `nil` |
+| goroutine | 轻量但不是免费资源；必须管理退出和并发数量 |
+| channel | 发送方负责关闭；关闭用于广播“不再发送”而不是释放资源 |
+| 锁 | 保护共享状态和不变量；锁不可复制，临界区尽量短 |
+| context | 传递取消、超时和请求范围元数据；记得调用 `cancel` |
+| HTTP | 校验输入、设置状态码、限制 Body、配置服务端超时 |
+| 数据库 | `sql.DB` 是连接池句柄，应复用并设置池参数 |
+| 测试 | 表驱动测试；`go test -race ./...` 检查执行路径上的数据竞争 |
+
+最后，不要只背结论。面试官通常会继续追问“为什么”“什么时候会出问题”“你在项目中如何使用”，能够用短代码或真实场景解释，往往比背诵运行时细节更重要。
