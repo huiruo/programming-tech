@@ -1,0 +1,563 @@
+# Flutter Android 打包与上架实战
+
+> 目标：从“本地能运行”走到“可重复、可追踪、可回滚地发布 Android 应用”。
+>
+> 版本说明：Google Play 的 target API、隐私和审核要求会按年度调整。本文不把易过期的数字写死；正式提交前应检查 Play Console 提示和文末官方链接。
+
+## 1. 先分清 AAB、APK 和签名
+
+| 产物 | 适用场景 | 特点 |
+| --- | --- | --- |
+| AAB（Android App Bundle） | Google Play 等支持 App Bundle 的商店 | 不是直接安装包；商店按设备生成优化后的 APK |
+| APK | 本地测试、企业分发、部分国内商店 | 可直接安装；通用 APK 较大，可按 ABI 拆分 |
+| Mapping / Symbols | 崩溃还原 | 必须与具体版本产物一起归档 |
+
+Android 要求安装到设备上的 APK 必须签名。使用 Google Play App Signing 时有两类 Key：
+
+- **App signing key**：Google Play 用它给最终下发到用户设备的 APK 签名。
+- **Upload key**：团队用它给上传的 AAB 签名，Play 用其确认上传者身份。
+
+把两者分开后，即使 upload key 丢失或泄露，也可以向 Play 申请重置上传密钥，而不必更换用户设备认可的 app signing key。
+
+```text
+开发/CI --upload key 签名--> AAB --上传--> Google Play
+Google Play --app signing key 签名--> 设备专用 APK --下发--> 用户
+```
+
+对于其他商店或独立 APK 分发，谁负责最终签名取决于渠道规则。若需要多个商店之间保持可互相升级，必须提前设计签名策略，不能等首发后再随意换 Key。
+
+## 2. 上架前检查清单
+
+### 2.1 应用身份
+
+重点检查 `android/app/build.gradle.kts`（旧项目可能是 `build.gradle`）：
+
+```kotlin
+android {
+    namespace = "com.example.product"
+
+    defaultConfig {
+        applicationId = "com.example.product"
+        minSdk = flutter.minSdkVersion
+        targetSdk = flutter.targetSdkVersion
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+    }
+}
+```
+
+- `applicationId` 是商店和设备识别应用的唯一 id。首发后不要修改，否则会被视为新应用。
+- `namespace` 用于 Android 生成代码和资源命名空间，通常与 applicationId 相同，但概念不同。
+- `versionCode` 必须是整数，且每次上传同一应用都要严格递增。
+- `versionName` 是用户看到的版本名称，可以是 `1.3.0` 等语义化版本。
+
+Flutter 通常从 `pubspec.yaml` 读取版本：
+
+```yaml
+version: 1.3.0+42
+```
+
+其中 `1.3.0` 对应 Android `versionName`，`42` 对应 `versionCode`。也可在构建时覆盖：
+
+```bash
+flutter build appbundle \
+  --build-name=1.3.0 \
+  --build-number=42
+```
+
+### 2.2 品牌与基础信息
+
+- 应用名称、启动图标、自适应图标和启动屏。
+- 包名、版本号、最低系统版本和目标 SDK。
+- 正式接口域名、Deep Link/App Link、推送和第三方登录回调。
+- 应用内不包含测试账号、调试菜单、代理地址或明文密钥。
+- 商店文案、截图、功能图、隐私政策 URL、联系信息与测试账号。
+
+### 2.3 权限与隐私
+
+逐项审计 `AndroidManifest.xml` 以及插件合并进来的 Manifest：
+
+```bash
+cd android
+./gradlew app:processReleaseMainManifest
+```
+
+最终合并结果通常可在 `build/` 下的 intermediates 目录查看。要确认：
+
+- 只声明业务必需权限，运行时权限在真正使用前解释和申请。
+- 相机、定位、照片、通知、后台任务等符合目标 Android 版本的行为变化。
+- SDK 的数据收集与 Play Console 的 Data safety 声明一致。
+- 隐私政策描述实际行为，而不是复制模板。
+- 广告、分析、推送等第三方 SDK 版本满足渠道政策。
+
+## 3. 创建并保护上传密钥
+
+### 3.1 生成 keystore
+
+首次发布前生成上传密钥：
+
+```bash
+keytool -genkeypair -v \
+  -keystore upload-keystore.jks \
+  -keyalg RSA \
+  -keysize 2048 \
+  -validity 10000 \
+  -alias upload
+```
+
+执行时设置强密码，并填写证书信息。密钥有效期应覆盖应用预期生命周期，并满足 Android/商店的证书要求。
+
+检查证书指纹：
+
+```bash
+keytool -list -v \
+  -keystore upload-keystore.jks \
+  -alias upload
+```
+
+SHA-1/SHA-256 指纹常用于 Firebase、Google 登录、地图等服务。启用 Play App Signing 后，要区分：
+
+- 本地 debug 证书指纹；
+- upload certificate 指纹；
+- Play Console 中 app signing certificate 指纹。
+
+线上用户安装的是 Play 重新签名后的 APK，因此第三方平台的正式配置通常需要 app signing certificate，而不是只填 upload certificate。
+
+### 3.2 密钥安全底线
+
+- `.jks`、密码和 `key.properties` 不提交 Git。
+- Keystore 至少保存两份加密备份，并记录负责人和恢复流程。
+- CI 使用 Secret Manager、受保护变量或临时文件，构建结束后清理。
+- 不在构建日志打印密码或 keystore 的 Base64 内容。
+- 不要把服务端密钥放进 Flutter/Dart 代码；客户端中的内容都应视为可被提取。
+
+建议 `.gitignore` 包含：
+
+```gitignore
+android/key.properties
+*.jks
+*.keystore
+symbols/
+```
+
+`symbols/` 是否忽略取决于归档方案：它不应随意公开，但必须安全保存。
+
+## 4. 配置 release 签名
+
+### 4.1 创建 `android/key.properties`
+
+```properties
+storePassword=通过安全方式提供
+keyPassword=通过安全方式提供
+keyAlias=upload
+storeFile=/安全目录/upload-keystore.jks
+```
+
+本地可以使用绝对路径。团队和 CI 更推荐从环境变量或约定的安全临时目录生成该文件，避免把某台电脑的路径写死在仓库里。
+
+### 4.2 Kotlin DSL：`build.gradle.kts`
+
+现代 Flutter Android 模板通常使用 Kotlin DSL：
+
+```kotlin
+import java.util.Properties
+import java.io.FileInputStream
+
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
+android {
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as String
+            keyPassword = keystoreProperties["keyPassword"] as String
+            storeFile = file(keystoreProperties["storeFile"] as String)
+            storePassword = keystoreProperties["storePassword"] as String
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
+}
+```
+
+注意默认模板可能暂时让 release 使用 debug 签名以方便本地运行。正式发布前必须替换为 release 配置。
+
+### 4.3 Groovy DSL：旧项目
+
+如果文件名是 `build.gradle`，语法不同：
+
+```groovy
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('key.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+android {
+    signingConfigs {
+        release {
+            keyAlias keystoreProperties['keyAlias']
+            keyPassword keystoreProperties['keyPassword']
+            storeFile keystoreProperties['storeFile']
+                ? file(keystoreProperties['storeFile'])
+                : null
+            storePassword keystoreProperties['storePassword']
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
+    }
+}
+```
+
+不要把 Kotlin DSL 和 Groovy 片段混贴。升级旧工程时应优先对照同版本 `flutter create` 生成的新项目，而不是盲目复制多年以前的配置。
+
+## 5. Flavor 与多环境发布
+
+正式项目通常至少有开发、预发和生产环境。Flavor 可以隔离包名、应用名、图标和配置：
+
+```kotlin
+android {
+    flavorDimensions += "environment"
+
+    productFlavors {
+        create("staging") {
+            dimension = "environment"
+            applicationIdSuffix = ".staging"
+            versionNameSuffix = "-staging"
+        }
+        create("production") {
+            dimension = "environment"
+        }
+    }
+}
+```
+
+对应构建命令：
+
+```bash
+flutter build appbundle \
+  --flavor production \
+  --target lib/main_production.dart
+```
+
+环境参数可以通过 `--dart-define` 注入：
+
+```bash
+flutter build appbundle \
+  --flavor production \
+  --target lib/main_production.dart \
+  --dart-define=APP_ENV=production
+```
+
+但 `--dart-define` 不是秘密保险箱。API 地址、功能开关可以注入；私钥、服务端 token 不能放入客户端产物。
+
+## 6. 构建 AAB 和 APK
+
+### 6.1 构建前
+
+```bash
+flutter doctor -v
+flutter pub get
+flutter analyze
+flutter test
+```
+
+是否执行 `flutter clean` 要有目的：它适合排除陈旧构建缓存，不应成为每次 CI 都必须执行的仪式，因为会显著降低构建速度。
+
+### 6.2 Google Play：构建 AAB
+
+```bash
+flutter build appbundle --release
+```
+
+默认输出：
+
+```text
+build/app/outputs/bundle/release/app-release.aab
+```
+
+若有 flavor，路径会包含 variant 名称，以实际构建输出为准。
+
+### 6.3 本地或其他渠道：构建 APK
+
+通用 APK：
+
+```bash
+flutter build apk --release
+```
+
+按 ABI 拆分，减少单个 APK 体积：
+
+```bash
+flutter build apk --release --split-per-abi
+```
+
+产物通常位于：
+
+```text
+build/app/outputs/flutter-apk/
+```
+
+拆分后会生成 `armeabi-v7a`、`arm64-v8a`、`x86_64` 等对应产物。提交国内渠道前先确认渠道接受 AAB、单一 APK 还是多 APK，以及是否有加固、重签名要求。
+
+### 6.4 Dart 混淆与符号文件
+
+```bash
+flutter build appbundle --release \
+  --obfuscate \
+  --split-debug-info=build/symbols/android/1.3.0+42
+```
+
+- `--obfuscate` 主要重命名 Dart 符号，不会加密资源，也不能保护写进客户端的秘密。
+- `--split-debug-info` 产生的符号文件必须和 AAB 一起按版本归档。
+- 依赖类名字符串或 `runtimeType.toString()` 的逻辑可能受混淆影响，应提前测试。
+
+还原 Dart 混淆堆栈：
+
+```bash
+flutter symbolize \
+  -i crash.txt \
+  -d build/symbols/android/1.3.0+42/app.android-arm64.symbols
+```
+
+Android R8 mapping、原生 symbols 与 Dart symbols 不是同一份文件。使用原生 SDK/NDK 时，也要按崩溃平台的要求归档并上传对应符号。
+
+## 7. 验证 release 产物
+
+不要把“构建成功”当作“可以上架”。至少完成以下验证。
+
+### 7.1 核对签名
+
+APK：
+
+```bash
+apksigner verify --verbose --print-certs app-release.apk
+```
+
+AAB：
+
+```bash
+jarsigner -verify -verbose -certs app-release.aab
+```
+
+对比证书指纹，确认没有误用 debug key。
+
+### 7.2 安装与冒烟测试
+
+直接安装 APK：
+
+```bash
+adb install -r app-release.apk
+```
+
+AAB 不能直接通过 `adb install` 安装。可使用 Google Play 内部测试/内部应用共享，或使用 bundletool 根据目标设备生成 APK set 进行验证。
+
+release 冒烟测试至少包括：
+
+- 冷启动、登录、首页和核心交易路径；
+- 网络失败、弱网、无网和 token 过期；
+- 推送、Deep Link、分享、支付、地图等平台能力；
+- 相机、照片、定位、通知等运行时权限；
+- 后台切换、进程被杀后的恢复、系统返回键；
+- 不同 ABI、Android 版本、屏幕尺寸和厂商设备；
+- 升级安装是否保留用户数据，并验证数据库迁移。
+
+### 7.3 检查包内容和大小
+
+```bash
+flutter build appbundle --analyze-size
+```
+
+大小分析通常会要求指定目标架构或按命令提示执行。重点检查：重复字体、未压缩大图、无用资源、过大的原生库和意外打入的测试文件。
+
+## 8. Google Play Console 发布流程
+
+控制台页面名称可能调整，但发布逻辑基本一致：
+
+1. 创建应用并确认默认语言、应用/游戏类型和免费/付费属性。
+2. 完成商店资料：名称、简介、完整说明、图标、功能图和截图。
+3. 填写 App content：隐私政策、广告、目标受众、内容分级、Data safety 等。
+4. 配置 Play App Signing，并核对 upload/app signing 证书。
+5. 创建测试或生产 Release，上传已签名 AAB。
+6. 填写版本说明，处理预检查、政策和设备兼容问题。
+7. 先进入内部测试，再逐步进入封闭/开放测试和生产。
+8. 生产使用 staged rollout 分批放量，持续观察崩溃、ANR 和业务指标。
+
+### 8.1 推荐发布轨道
+
+| 轨道 | 用途 |
+| --- | --- |
+| Internal testing | 团队快速验证安装、签名、支付和推送 |
+| Closed testing | 指定用户或测试组织验收 |
+| Open testing | 更大范围公测 |
+| Production | 正式用户，可分阶段放量 |
+
+不同类型的开发者账号可能有额外测试或验证门槛，以当前 Play Console 给出的账号要求为准。
+
+### 8.2 target API 要求
+
+Google Play 每年更新 target API 要求，而且手机、Wear OS、TV、Automotive、XR 等设备类别可能不同。提交前：
+
+1. 查看 Play Console 的政策提示。
+2. 查看 Android 官方 target API requirement 页面。
+3. 升级 Flutter/Android Gradle Plugin 和依赖后做完整回归。
+4. 检查新 Android 版本的权限、前台服务、后台启动和存储行为变化。
+
+不要只把 `targetSdk` 数字改大就上架；target SDK 会启用新的平台行为约束。
+
+## 9. 国内 Android 渠道注意事项
+
+国内商店规则不完全一致，发布前建立渠道矩阵，逐项记录：
+
+- 接受 AAB 还是 APK、是否要求 64 位和特定 target SDK；
+- 软件著作权、ICP备案、隐私合规或行业资质；
+- 图标、截图、启动页和文案尺寸；
+- 渠道 SDK、推送、支付和登录配置；
+- 加固、重签名以及加固后的再次验证；
+- 审核账号、审核说明和功能操作路径；
+- SHA 指纹、回调域名和厂商后台配置。
+
+如果渠道加固或重签名，必须重新验证第三方登录、地图、支付、App Link 和推送，因为这些能力常依赖包名与证书指纹组合。
+
+多渠道统计可以使用 flavor 或渠道元数据，但应避免为每个渠道维护大量分叉代码。发布脚本应输出 manifest：渠道、版本、Git commit、构建时间、文件哈希和证书指纹，便于追溯。
+
+## 10. CI/CD 发布设计
+
+一个可靠的流水线通常包含：
+
+```text
+固定 Flutter/Java 版本
+  -> 获取依赖
+  -> analyze + test
+  -> 注入 keystore 与配置
+  -> 构建 AAB/APK
+  -> 验证签名与产物
+  -> 归档 symbols / mapping / manifest
+  -> 上传测试轨道
+  -> 人工审批
+  -> 分阶段生产发布
+```
+
+建议做到：
+
+- 锁定 Flutter、JDK、Gradle 环境，升级单独走变更流程。
+- 版本号由单一来源生成，防止并发流水线产生重复 versionCode。
+- 用最小权限服务账号上传；生产发布需要受保护环境和审批。
+- 对 AAB、symbols、mapping、依赖清单和 Git commit 做不可变归档。
+- 计算 SHA-256，保证测试过的文件就是最终上传文件。
+- 生产发布不在开发者个人电脑手工重新构建。
+
+## 11. 常见错误排查
+
+### 11.1 `Keystore file not found`
+
+- 检查 `storeFile` 相对于哪个 Gradle 文件解析。
+- CI 是否成功还原了 keystore，文件权限是否可读。
+- Windows 路径中的反斜杠是否正确转义。
+
+### 11.2 `Keystore was tampered with, or password was incorrect`
+
+可能是 storePassword 错误、文件损坏或读取了错误 keystore。先用 `keytool -list` 独立验证，不要在日志中回显密码。
+
+### 11.3 `No key with alias ... found`
+
+用 `keytool -list -keystore ...` 查看真实 alias，并核对 `key.properties`。
+
+### 11.4 Play 提示签名证书不匹配
+
+确认当前应用是否已启用 Play App Signing，以及上传产物使用的是登记过的 upload key。不要为了“修复”而创建同包名的新 Key；遗失 upload key 应走 Play Console 的 reset 流程。
+
+### 11.5 versionCode 已被使用
+
+递增 build number 后重新构建。只改 `versionName` 没用。检查 flavor 或 CI 是否覆盖了 `--build-number`。
+
+### 11.6 安装时报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`
+
+设备上已有同包名但不同签名的应用。开发测试可以卸载旧应用后安装；线上不能用这种方式解决升级，必须保持签名兼容。
+
+### 11.7 release 正常构建但功能异常
+
+重点检查：
+
+- release 环境变量、接口地址与网络安全配置；
+- R8/混淆是否裁掉反射使用的类；
+- 正式证书 SHA 是否已配置到第三方后台；
+- release Manifest 是否缺少组件或权限；
+- 仅在 debug 注册的插件或初始化逻辑；
+- 原生库是否包含目标 ABI。
+
+### 11.8 R8 missing classes
+
+先升级问题依赖并阅读其官方 keep 规则；根据 missing rules 文件补充最小规则。不要用全局 `-keep class ** { *; }` 粗暴关闭优化，它会掩盖依赖配置问题并显著增大包体积。
+
+## 12. 可直接执行的发布清单
+
+### 构建前
+
+- [ ] 分支、Git commit 和发布版本已确认。
+- [ ] `versionCode` 唯一递增，`versionName` 正确。
+- [ ] production flavor、接口、开关和第三方配置正确。
+- [ ] analyze、unit/widget/integration test 通过。
+- [ ] 权限、隐私声明和商店 Data safety 保持一致。
+- [ ] Keystore、alias 和证书指纹核对完成。
+
+### 构建后
+
+- [ ] AAB/APK 的签名、大小、哈希和 ABI 正确。
+- [ ] release 真机核心链路与升级安装通过。
+- [ ] Dart symbols、R8 mapping、native symbols 已归档。
+- [ ] 崩溃、ANR、日志和业务监控可用。
+- [ ] 商店截图、文案、隐私政策和审核账号有效。
+
+### 发布后
+
+- [ ] 先内部/封闭测试，再分阶段生产放量。
+- [ ] 观察 crash-free、ANR、启动、登录和核心转化指标。
+- [ ] 明确暂停放量、回滚或紧急修复的阈值和负责人。
+- [ ] 记录商店 Release id、版本、commit、产物哈希和发布时间。
+
+## 13. 面试题
+
+### AAB 和 APK 有什么区别？
+
+- **结论**：APK 是设备可直接安装的应用包；AAB 是发布包，商店根据设备配置生成和签名优化 APK。
+- **实践**：Google Play 优先使用 AAB；线下安装和部分渠道使用 APK。
+- **追问**：AAB 不能直接 `adb install`，应使用 Play 测试轨道或 bundletool。
+
+### 为什么 versionCode 必须递增？
+
+Android 和商店用它判断版本先后。`versionName` 只是展示文本，不能决定升级关系。同一应用上传过的 versionCode 不能重复使用。
+
+### App signing key 和 upload key 的区别？
+
+app signing key 签最终安装包并决定更新身份；upload key 证明上传者身份。Play App Signing 下前者由 Google 管理，后者由团队/CI 持有且可以申请重置。
+
+### 混淆能保护 API 密钥吗？
+
+不能。混淆只增加逆向难度，不是加密。需要保密的能力必须留在服务端，并通过认证、授权、限流和密钥轮换保护。
+
+### 为什么 debug 正常、release 失败？
+
+二者在编译模式、签名、环境参数、R8 优化、网络安全策略和第三方证书配置上可能不同。应直接测试 release 产物，并按构建变体逐项核对，而不是只看 Dart 业务代码。
+
+## 官方资料
+
+- [Flutter：Build and release an Android app](https://docs.flutter.dev/deployment/android)
+- [Flutter：Obfuscate Dart code](https://docs.flutter.dev/deployment/obfuscate)
+- [Android：Sign your app](https://developer.android.com/studio/publish/app-signing)
+- [Android：Prepare your app for release](https://developer.android.com/studio/publish/preparing)
+- [Google Play target API requirements](https://developer.android.com/google/play/requirements/target-sdk)
+- [Play Console：Prepare and roll out a release](https://support.google.com/googleplay/android-developer/answer/9859348)
+
+> 发布的核心不是记住一条 `flutter build` 命令，而是保证身份、签名、配置、产物、审核资料和监控全部属于同一个可追溯版本。

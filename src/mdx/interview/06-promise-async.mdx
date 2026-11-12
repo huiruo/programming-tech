@@ -1,0 +1,411 @@
+# Promise、async/await 与浏览器事件循环面试题
+
+事件循环不应只背“哪些是宏任务、哪些是微任务”。面试更关注：代码为什么没有及时渲染、交互为什么卡顿、异步任务为什么乱序，以及应该使用哪一种调度方式解决。
+
+## 1. 面试题：请结合浏览器工作过程讲一下事件循环
+
+可以先用下面这段话回答：
+
+> JavaScript 主线程同一时刻只能执行一段代码。浏览器把初始脚本、用户事件、定时器回调等作为任务调度。每执行完一个任务、调用栈清空后，浏览器会执行一次微任务检查点，把当前微任务队列持续清空；之后浏览器才可能进行样式计算、布局和绘制，再选择下一个任务执行。网络请求、计时和渲染等能力由浏览器其他模块处理，但对应的 JavaScript 回调最终仍要回到主线程执行。
+
+核心流程是：
+
+```text
+取出一个 task
+  → 执行到调用栈为空
+  → 清空 microtask 队列
+  → 浏览器可能更新渲染
+  → 进入下一轮
+```
+
+需要强调三个边界：
+
+- 规范使用的是 **task**；“宏任务”是常见工程术语。
+- “可能渲染”不等于每轮一定渲染，浏览器会结合刷新率和页面状态决定。
+- 不是“所有微任务永远比所有宏任务优先”，而是**当前任务结束后清空微任务，再选择后续任务**。
+
+| 调度来源 | 类型或时机 | 实际开发中的作用 |
+| --- | --- | --- |
+| 初始脚本、点击事件、`setTimeout`、`MessageChannel` | task | 开启一段新的主线程工作 |
+| `Promise.then/catch/finally`、`await` 后续、`queueMicrotask` | microtask | 在当前任务结束后、可能渲染前继续工作 |
+| `MutationObserver` | 微任务检查点中通知 | 批量观察 DOM 变更 |
+| `requestAnimationFrame` | 下一次绘制前的渲染更新阶段 | 执行与下一帧视觉更新相关的工作 |
+| `requestIdleCallback` | 浏览器认为有空闲预算时 | 非关键、可延迟工作；不保证及时 |
+| Web Worker | 独立线程/事件循环 | 承担 CPU 密集计算，不能直接操作 DOM |
+
+## 2. 面试题：为什么设置 loading 后做计算，页面没有显示 loading？
+
+```js
+button.addEventListener('click', () => {
+  loading.hidden = false;
+  calculateForThreeSeconds();
+  loading.hidden = true;
+});
+```
+
+点击回调本身是一个任务。DOM 属性虽然同步修改了，但浏览器不能在 JavaScript 执行到一半时插入绘制。回调结束时 `loading` 又被隐藏，因此用户可能完全看不到 loading；同时长任务还会阻塞点击、滚动和输入响应。
+
+把计算放进微任务也不能解决：
+
+```js
+loading.hidden = false;
+
+Promise.resolve().then(() => {
+  calculateForThreeSeconds();
+  loading.hidden = true;
+});
+```
+
+微任务仍会在可能渲染之前被清空。根据业务选择正确方案：
+
+- CPU 密集计算：优先移到 Web Worker。
+- 可以拆分的计算：分块处理，并在各块之间让出主线程。
+- 必须先展示一帧 loading：可在下一帧开始后再启动工作，但长计算本身仍应拆分或移出主线程。
+
+```js
+loading.hidden = false;
+
+requestAnimationFrame(() => {
+  // 再等待一帧，确保 loading 已有绘制机会
+  requestAnimationFrame(() => {
+    startChunkedWork();
+  });
+});
+```
+
+双 `requestAnimationFrame` 是时序技巧，不是处理重计算的根本方案。真正目标是避免长期占用主线程。
+
+## 3. 面试题：为什么 `setTimeout(fn, 0)` 不会立即执行？
+
+`0` 表示达到允许的最小延迟后，浏览器可以把回调作为定时器任务安排执行，而不是“0 毫秒后强制执行”。它至少要等待：
+
+1. 当前同步任务结束。
+2. 当前微任务队列清空。
+3. 事件循环选择到该定时器任务。
+
+如果主线程正在执行长任务，定时器会继续延迟；嵌套定时器、后台标签页和节能策略还可能触发限速。
+
+```js
+const start = performance.now();
+
+setTimeout(() => {
+  console.log(performance.now() - start); // 通常明显大于 0
+}, 0);
+
+while (performance.now() - start < 1000) {
+  // 阻塞主线程
+}
+```
+
+因此：动画使用 `requestAnimationFrame`；高精度耗时使用 `performance.now()`；定时执行需要根据实际时间校正，不能假设 `setInterval` 精准。
+
+## 4. 面试题：大量 Promise 为什么也会造成页面卡顿？
+
+Promise 回调不是后台线程。`.then` 回调最终仍在主线程执行，而且微任务检查点会持续执行，直到微任务队列为空。如果微任务不断追加新的微任务，浏览器就迟迟无法进入下一任务或渲染，这叫微任务饥饿。
+
+```js
+function starve() {
+  queueMicrotask(starve);
+}
+
+starve();
+// 页面无法获得正常的渲染和事件处理机会
+```
+
+下面这种“分片”同样没有真正让出渲染机会：
+
+```js
+async function wrongChunk(items) {
+  for (const item of items) {
+    process(item);
+    await Promise.resolve(); // 只进入下一个微任务
+  }
+}
+```
+
+需要让浏览器处理交互和渲染时，应跨到后续任务，或使用面向调度的 API；重计算则放入 Worker。
+
+```js
+const yieldToMain = () => new Promise(resolve => setTimeout(resolve, 0));
+
+async function processInChunks(items, chunkSize = 100) {
+  for (let index = 0; index < items.length; index += chunkSize) {
+    const chunk = items.slice(index, index + chunkSize);
+    chunk.forEach(process);
+    await yieldToMain();
+  }
+}
+```
+
+`setTimeout` 分片简单但存在调度开销；生产代码应按帧预算、优先级和浏览器支持情况选择 Worker、`scheduler.yield()`、`MessageChannel` 等方案，并为不支持的新 API 准备降级策略。
+
+## 5. 面试题：下面代码为什么先打印 `D`，再打印 `F`？
+
+```js
+console.log('A');
+
+setTimeout(() => console.log('B'), 0);
+
+async function run() {
+  console.log('C');
+  await null;
+  console.log('D');
+  queueMicrotask(() => console.log('E'));
+}
+
+run();
+Promise.resolve().then(() => console.log('F'));
+console.log('G');
+// A C G D F E B
+```
+
+分析步骤：
+
+1. 初始脚本是当前任务，先执行同步代码，输出 `A C G`。
+2. 执行到 `await` 时，`run` 暂停，它的后续代码进入微任务队列。
+3. 随后注册的 Promise 回调排在该 continuation 后面。
+4. 当前任务结束后执行微任务：输出 `D`，并把 `E` 追加到队尾。
+5. 原有的 `F` 先于新追加的 `E`，所以输出 `F E`。
+6. 微任务清空后，事件循环才可能执行定时器任务 `B`。
+
+面试中不要只报结果；要说明**每个回调在什么时候入哪个队列**。
+
+## 6. 面试题：`await` 会不会阻塞主线程？
+
+`await` 不会像同步循环一样阻塞整个主线程，它只暂停当前 async 函数；调用栈可以退出，主线程可以执行其他工作。被等待的 Promise settled 后，`await` 后续代码作为微任务恢复。
+
+但 `await` 前后的同步计算仍运行在主线程：
+
+```js
+async function example() {
+  heavySynchronousCalculation(); // 阻塞主线程
+  await fetch('/api/data');
+  heavyRenderCalculation(); // 恢复后仍阻塞主线程
+}
+```
+
+另外，`await` 一个已经 fulfilled 的 Promise 或普通值，后续代码也不会同步接着执行，而是通过微任务恢复。
+
+```js
+async function test() {
+  console.log(1);
+  await 42;
+  console.log(2);
+}
+
+test();
+console.log(3);
+// 1 3 2
+```
+
+## 7. 面试题：为什么循环里的 `await` 可能导致接口很慢？
+
+事件循环没有出错；问题是代码人为建立了串行依赖：上一次请求完成后才创建下一次请求。
+
+```js
+// 串行：每次等待上一个请求结束
+for (const id of ids) {
+  await fetchDetail(id);
+}
+
+// 并发：请求先一起启动，再统一等待
+const details = await Promise.all(ids.map(fetchDetail));
+```
+
+但也不能对几万个任务直接 `Promise.all`：这会同时创建大量请求或计算任务，可能耗尽连接、触发限流并增加内存。真实项目通常需要并发池，将同时进行的任务限制为固定数量。
+
+- 后一个任务依赖前一个结果：串行 `await`。
+- 任务相互独立且数量可控：`Promise.all`。
+- 任务很多或服务端有限流：限制并发。
+- 允许部分失败：`Promise.allSettled` 或在任务边界处理错误。
+
+## 8. 面试题：`fetch` 到底是宏任务还是微任务？
+
+这个问题本身不够准确。应把过程拆开：
+
+1. 调用 `fetch` 的 JavaScript 是同步执行的。
+2. HTTP 请求由浏览器网络模块异步处理，不是主线程队列中的一段 JavaScript 宏任务。
+3. 响应可用后，浏览器使 fetch 返回的 Promise settled。
+4. 对应的 `.then` 或 `await` 后续代码通过 Promise reaction 作为微任务执行。
+
+```js
+console.log('start');
+
+fetch('/api/user')
+  .then(response => response.json())
+  .then(user => console.log(user));
+
+console.log('end');
+// 先输出 start、end；用户数据何时输出取决于网络完成时间
+```
+
+不能根据“微任务优先”推断 fetch 一定比某个 `setTimeout` 先完成。微任务优先只适用于它们已经进入相应调度阶段之后；网络响应和定时器何时就绪并不确定。
+
+## 9. 面试题：搜索框为什么会被旧请求结果覆盖？
+
+用户先搜索 `react`，再搜索 `react hooks`。请求发起顺序不代表响应完成顺序；如果第一个请求较慢，它的 Promise 回调可能更晚执行并覆盖新结果。
+
+```js
+let requestId = 0;
+
+async function search(keyword) {
+  const currentId = ++requestId;
+  const response = await fetch(`/api/search?q=${encodeURIComponent(keyword)}`);
+  const result = await response.json();
+
+  if (currentId !== requestId) return;
+  renderResult(result);
+}
+```
+
+更好的方案通常是在发起新请求时取消旧请求，同时保留“只接收最新结果”的防线：
+
+```js
+let controller;
+
+async function searchLatest(keyword) {
+  controller?.abort();
+  controller = new AbortController();
+
+  try {
+    const response = await fetch(
+      `/api/search?q=${encodeURIComponent(keyword)}`,
+      { signal: controller.signal },
+    );
+    renderResult(await response.json());
+  } catch (error) {
+    if (error.name !== 'AbortError') throw error;
+  }
+}
+```
+
+这道题考的是异步完成顺序、竞态条件和资源取消，不是让候选人背队列名称。
+
+## 10. 面试题：更新 DOM 后为什么立即读取到了新值，却还没在屏幕上看到？
+
+DOM 修改是同步发生的，因此 JavaScript 随后可以读取修改后的属性；但屏幕绘制要等主线程退出、微任务清空，并且浏览器获得渲染机会。
+
+```js
+box.textContent = 'updated';
+console.log(box.textContent); // 'updated'
+
+Promise.resolve().then(() => {
+  // 能读取新 DOM，但通常还没有完成下一次绘制
+  console.log(box.textContent);
+});
+```
+
+需要在下一帧绘制前修改视觉状态，使用 `requestAnimationFrame`；需要观察布局变化，可根据场景在 rAF 中读取，但应避免在读写之间反复触发布局。需要确认一帧已经有机会呈现时，通常要等待后续帧，而不是仅等待一个 Promise。
+
+## 11. 面试题：React 和 Vue 的更新是宏任务还是微任务？
+
+不要直接把框架 API 贴上宏任务或微任务标签。应分成三层回答：
+
+1. 浏览器事件、Promise、定时器等宿主调度来源。
+2. React/Vue 自己的更新队列、优先级和批处理规则。
+3. DOM commit 与浏览器绘制的相对时机。
+
+### Vue 3
+
+响应式 setter 和依赖触发是同步 JavaScript；组件更新 job 会进入 Vue scheduler 队列并去重，通常由 resolved Promise 驱动微任务统一 flush。`nextTick` 等待当前更新 flush 对应的 Promise，所以适合在状态更新后访问更新完成的 DOM。
+
+```js
+count.value++;
+console.log(element.textContent); // 可能仍是旧 DOM
+
+await nextTick();
+console.log(element.textContent); // Vue 已完成本轮 DOM patch
+```
+
+`nextTick` 表示 Vue 已完成相应 DOM 更新，不严格等同于浏览器已经把像素绘制到屏幕。
+
+### React
+
+`setState` 是把更新加入 React 队列并请求调度，不应简单回答为“宏任务”或“微任务”。`useLayoutEffect` 在 DOM mutation 后、浏览器绘制前同步执行，会阻塞绘制；`useEffect` 是 passive effect，通常允许浏览器先绘制，但具体时机还受更新来源和 React 调度影响。
+
+React 的 `MessageChannel`、scheduler 或其他实现细节可能随版本和运行环境变化。面试应回答公开语义，不要把某个版本的内部实现当成永久保证。
+
+## 12. 面试题：动画为什么应该用 `requestAnimationFrame`？
+
+`setInterval(fn, 16)` 与屏幕刷新节奏并不严格同步，回调还可能因主线程繁忙或后台限速而延迟。`requestAnimationFrame` 会在浏览器准备下一次绘制前调用回调，更适合计算下一帧视觉状态。
+
+```js
+let previousTime;
+
+function animate(currentTime) {
+  if (previousTime !== undefined) {
+    const delta = currentTime - previousTime;
+    updatePosition(delta); // 根据真实时间差更新，避免依赖固定帧率
+  }
+
+  previousTime = currentTime;
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+```
+
+rAF 不是微任务，也不应简单归为普通宏任务。它属于浏览器渲染更新过程；后台页面通常会暂停或降低执行频率。
+
+## 13. 面试题：如何排查主线程卡顿和事件循环阻塞？
+
+实际排查步骤比背定义更重要：
+
+1. 使用 Chrome DevTools Performance 录制卡顿过程。
+2. 在 Main 线程查看 Long Task 和过长的事件处理器、脚本执行、样式计算或布局。
+3. 展开调用栈，定位具体函数，而不是只看到一个定时器入口就停止。
+4. 查看是否存在大量连续微任务、同步 JSON 处理、复杂循环或频繁强制布局。
+5. 根据原因采取拆分任务、减少工作量、缓存结果、Worker、虚拟列表或避免布局抖动等方案。
+
+“把代码放进 Promise”不会让它自动并行；“加一个 setTimeout”也只会推迟工作，不会减少总计算量。
+
+## 14. Promise 的状态、链式调用与组合 API 如何选择？
+
+Promise 只能从 `pending` 变为 `fulfilled` 或 `rejected`，settled 后不再改变。`then` 总会返回一个新 Promise：回调返回普通值时，新 Promise fulfilled；返回 Promise/thenable 时会采用其最终状态；抛错时新 Promise rejected。
+
+| API | 结束条件 | 适用场景 |
+| --- | --- | --- |
+| `Promise.all` | 全部 fulfilled 才成功；任一 rejected 就失败 | 所有结果都必需 |
+| `Promise.allSettled` | 等待所有任务 settled，返回每项结果 | 批量任务需要完整报告 |
+| `Promise.race` | 最先 settled 的结果决定 | 超时竞争、取最先结束者 |
+| `Promise.any` | 任一 fulfilled 就成功；全部失败时抛 `AggregateError` | 多个可替代数据源 |
+
+`Promise.all` 的“快速失败”不会自动取消其他底层请求；`Promise.race` 实现超时也不会自动终止输掉竞争的 fetch。需要释放资源时应结合 `AbortController`。
+
+## 15. `async/await` 如何正确处理错误？
+
+async 函数始终返回 Promise；`return value` 会成为 fulfilled 结果，`throw error` 会成为 rejected 结果。只在能够恢复、补充上下文或展示错误的边界捕获异常。
+
+```js
+async function loadProfile(userId) {
+  try {
+    const response = await fetch(`/api/users/${userId}`);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    reportError(error, { userId });
+    throw error; // 无法恢复时继续向上传递
+  }
+}
+```
+
+避免 `catch(() => {})` 或捕获后返回模糊的 `undefined`，否则调用方可能把失败误当成功。并行任务需要根据业务决定整体失败、部分成功还是重试，不能机械套用同一种 Promise 组合 API。
+
+## 面试回答方法
+
+遇到事件循环题，建议按这个顺序分析：
+
+1. 当前正在执行的是哪个 task？
+2. 哪些代码立即同步执行？
+3. 每个异步操作何时完成，回调何时入队？
+4. 当前任务结束后会产生哪些微任务，执行过程中是否继续追加？
+5. 浏览器何时才有渲染和响应下一次输入的机会？
+6. 如果出现卡顿、乱序或竞态，应该减少工作、让出主线程、取消任务还是限制并发？
+
+只回答“Promise 是微任务，setTimeout 是宏任务”通常只能说明记住了分类；能用上述过程解释用户可见问题，才说明真正理解事件循环。
+
+## 详细阅读
+
+[浏览器事件循环与渲染](./07-浏览器基本原理#5-浏览器事件循环event-loop) ｜ [Event Loop 专题与输出题](../js/j1EventLoop) ｜ [Promise 基础](../promise/01-promise基础) ｜ [async/await](../promise/04-async-await) ｜ [前端性能优化](./02-h5-性能优化)

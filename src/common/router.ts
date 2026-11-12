@@ -280,6 +280,24 @@ export const sidebar: ISidebar[] = [
     ],
   },
   {
+    label: "Golang",
+    href: "/golang",
+    type: "category",
+    items: [
+      { href: "/golang/development", label: "Golang 开发" },
+    ],
+  },
+  {
+    label: "Flutter",
+    href: "/flutter",
+    type: "category",
+    items: [
+      { href: "/flutter/basics", label: "Flutter 初级" },
+      { href: "/flutter/development", label: "Flutter 开发" },
+      { href: "/flutter/publishing", label: "上包" },
+    ],
+  },
+  {
     label: "Design patterns",
     href: "/designPatterns",
     type: "category",
@@ -312,12 +330,14 @@ export const sidebar: ISidebar[] = [
       { href: "/interview/image-performance", label: "性能优化-图片处理", isPrivate: true },
       { href: "/interview/webpack", label: "Webpack", isPrivate: true },
       { href: "/interview/nextjs", label: "Next.js", isPrivate: true },
-      { href: "/interview/javascript", label: "JavaScript 常用", isPrivate: true },
+      { href: "/interview/promise-async", label: "Promise / Async", isPrivate: true },
+      { href: "/interview/javascript", label: "JavaScript", isPrivate: true },
       { href: "/interview/browser-basics", label: "浏览器基本原理", isPrivate: true },
       { href: "/interview/websocket", label: "WebSocket", isPrivate: true },
       { href: "/interview/typescript", label: "TypeScript", isPrivate: true },
       { href: "/interview/http", label: "HTTP", isPrivate: true },
       { href: "/interview/i18n-theme", label: "多语言与主题", isPrivate: true },
+      { href: "/interview/ai-coding", label: "AI Coding", isPrivate: true },
     ],
   },
 ];

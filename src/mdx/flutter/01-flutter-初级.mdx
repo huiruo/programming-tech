@@ -1,0 +1,914 @@
+# Flutter 初级开发与面试入门
+
+> 适合人群：刚接触 Flutter、已经学过一点编程，或正在准备初级 Flutter 岗位的同学。
+>
+> 学习目标：能独立完成一个包含列表、详情、表单、网络请求和本地状态的小应用，并能回答常见基础面试题。
+
+## 1. Flutter 是什么
+
+Flutter 是一套使用 Dart 语言开发跨平台应用的 UI 工具包。一套主要业务代码可以运行在 Android、iOS、Web 和桌面平台。
+
+Flutter 的几个特点：
+
+- 使用 Dart 语言。
+- 采用声明式 UI：根据当前状态描述页面应该长什么样。
+- 页面由 Widget 组合而成。
+- 开发阶段支持 Hot Reload，可以快速查看 UI 修改结果。
+- 大部分 UI 由 Flutter 自己绘制，因此不同平台上的视觉表现较一致。
+
+一个最小 Flutter 应用：
+
+```dart
+import 'package:flutter/material.dart';
+
+void main() {
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Flutter Demo',
+      home: const HomePage(),
+    );
+  }
+}
+
+class HomePage extends StatelessWidget {
+  const HomePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      appBar: AppBar(title: Text('首页')),
+      body: Center(child: Text('Hello Flutter')),
+    );
+  }
+}
+```
+
+执行顺序可以简单理解为：
+
+1. 程序从 `main()` 开始。
+2. `runApp()` 把根 Widget 放到屏幕上。
+3. Flutter 调用各个 Widget 的 `build()` 方法构建页面。
+4. 状态变化后，相关 Widget 再次 build，页面随之更新。
+
+### 面试题：Flutter 是原生开发吗？
+
+Flutter 不是传统的 Android/iOS 原生 UI 开发，但最终会构建成对应平台的应用。Flutter 通过 Engine 绘制大部分界面，同时可以通过插件调用相机、定位、推送等原生能力。
+
+### 面试题：Hot Reload 和 Hot Restart 有什么区别？
+
+- Hot Reload：注入修改后的 Dart 代码，通常保留当前页面状态，适合调 UI。
+- Hot Restart：重新启动 Dart 程序，页面状态会丢失。
+- 修改原生代码、部分初始化代码或资源配置时，可能需要完整重启应用。
+
+## 2. 开发环境与常用命令
+
+安装 Flutter SDK 后，先执行：
+
+```bash
+flutter doctor -v
+```
+
+它会检查 Flutter、Dart、Android SDK、Xcode、连接设备等环境。
+
+常用命令：
+
+```bash
+# 创建项目
+flutter create hello_flutter
+
+# 获取依赖
+flutter pub get
+
+# 查看设备
+flutter devices
+
+# 运行项目
+flutter run
+
+# 静态检查
+flutter analyze
+
+# 运行测试
+flutter test
+
+# 查看过期依赖
+flutter pub outdated
+```
+
+项目中的常见目录：
+
+| 路径 | 用途 |
+| --- | --- |
+| `lib/` | 主要 Dart 业务代码 |
+| `lib/main.dart` | 默认入口文件 |
+| `test/` | 单元测试和 Widget 测试 |
+| `android/` | Android 原生工程与配置 |
+| `ios/` | iOS 原生工程与配置 |
+| `assets/` | 项目自己约定的图片、字体等资源目录 |
+| `pubspec.yaml` | 项目信息、依赖、资源和版本配置 |
+
+## 3. Dart 必备语法
+
+### 3.1 变量和类型
+
+```dart
+String name = '小明';
+int age = 20;
+double price = 12.5;
+bool isLogin = true;
+
+// 编译器自动推断为 String
+var city = '上海';
+
+// 运行期间不能重新赋值
+final createdAt = DateTime.now();
+
+// 编译期常量
+const maxCount = 10;
+```
+
+`final` 和 `const` 的区别：
+
+- `final` 只能赋值一次，值可以在运行时计算。
+- `const` 必须是编译期常量。
+- `const` Widget 在参数相同的情况下可以复用，但不需要为了 const 牺牲代码可读性。
+
+### 3.2 空安全
+
+```dart
+String title = '首页'; // 不能为 null
+String? subtitle;      // 可以为 null
+
+print(subtitle?.length);       // subtitle 为 null 时返回 null
+print(subtitle ?? '暂无副标题'); // 提供默认值
+```
+
+常见操作符：
+
+| 写法 | 含义 |
+| --- | --- |
+| `String?` | 变量允许为 null |
+| `value?.name` | value 不为 null 时访问 name |
+| `value ?? defaultValue` | value 为 null 时使用默认值 |
+| `value!` | 强制断言不为 null，判断错误会抛异常 |
+| `late` | 稍后初始化，使用前必须完成赋值 |
+
+初学时少用 `!` 和 `late` 逃避类型检查，优先通过判断和默认值处理 null。
+
+### 3.3 集合
+
+```dart
+final numbers = <int>[1, 2, 3];
+final tags = <String>{'Flutter', 'Dart'};
+final user = <String, Object>{
+  'name': '小明',
+  'age': 20,
+};
+
+final evenNumbers = numbers
+    .where((number) => number.isEven)
+    .map((number) => number * 10)
+    .toList();
+```
+
+- `List`：有顺序，可以重复。
+- `Set`：元素不重复。
+- `Map`：键值对。
+
+### 3.4 函数
+
+```dart
+int add(int a, int b) {
+  return a + b;
+}
+
+int multiply(int a, int b) => a * b;
+
+String greet({required String name, String prefix = '你好'}) {
+  return '$prefix，$name';
+}
+
+greet(name: '小明');
+```
+
+Flutter API 大量使用命名参数。`required` 表示调用者必须传入该参数。
+
+### 3.5 类、构造函数和继承
+
+```dart
+class User {
+  final String id;
+  final String name;
+
+  const User({required this.id, required this.name});
+
+  User copyWith({String? id, String? name}) {
+    return User(
+      id: id ?? this.id,
+      name: name ?? this.name,
+    );
+  }
+}
+```
+
+不可变数据对象通常把字段声明为 `final`，修改时创建一个新对象，而不是随意改变旧对象。
+
+### 面试题：`var`、`final`、`const` 有什么区别？
+
+- `var` 让编译器推断类型，变量之后仍可重新赋值为相同类型的值。
+- `final` 只能赋值一次，值可以在运行时产生。
+- `const` 是编译期常量，值在编译时就能确定。
+
+## 4. Widget 基础
+
+Flutter 页面几乎全部由 Widget 组合而成。
+
+### 4.1 StatelessWidget
+
+适合只依赖外部参数、内部没有可变状态的组件：
+
+```dart
+class UserCard extends StatelessWidget {
+  final String name;
+  final VoidCallback onTap;
+
+  const UserCard({
+    super.key,
+    required this.name,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: Text(name),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: onTap,
+    );
+  }
+}
+```
+
+### 4.2 StatefulWidget
+
+适合页面内部数据会变化的场景：
+
+```dart
+class CounterPage extends StatefulWidget {
+  const CounterPage({super.key});
+
+  @override
+  State<CounterPage> createState() => _CounterPageState();
+}
+
+class _CounterPageState extends State<CounterPage> {
+  int count = 0;
+
+  void increment() {
+    setState(() {
+      count += 1;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('计数器')),
+      body: Center(child: Text('当前值：$count')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: increment,
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
+```
+
+`setState()` 表示这部分状态发生变化，需要重新执行相关 `build()`。不要在 `setState` 回调中执行网络请求等异步操作，只放同步状态修改。
+
+### 面试题：StatelessWidget 和 StatefulWidget 的区别？
+
+- StatelessWidget 自身没有可变化的 State，UI 由构造参数和外部依赖决定。
+- StatefulWidget 对应一个独立的 State 对象，可以在生命周期内保存可变状态。
+- 两者都会重新 build；并不是 StatelessWidget 创建后永远不更新。
+
+### 面试题：Widget 是页面上的真实控件吗？
+
+Widget 更像不可变的配置说明。Flutter 还会使用 Element 保存 Widget 在树中的位置和生命周期，并使用 RenderObject 完成布局与绘制。初级阶段先记住：Widget 可以频繁创建，业务代码不要依赖某个 Widget 对象长期存在。
+
+## 5. 常用页面结构与 Widget
+
+```dart
+Scaffold(
+  appBar: AppBar(title: const Text('商品列表')),
+  body: const ProductList(),
+  floatingActionButton: FloatingActionButton(
+    onPressed: () {},
+    child: const Icon(Icons.add),
+  ),
+  bottomNavigationBar: const NavigationBar(
+    destinations: [
+      NavigationDestination(icon: Icon(Icons.home), label: '首页'),
+      NavigationDestination(icon: Icon(Icons.person), label: '我的'),
+    ],
+  ),
+)
+```
+
+常见 Widget：
+
+| Widget | 用途 |
+| --- | --- |
+| `MaterialApp` | Material 应用根配置、主题和路由 |
+| `Scaffold` | 页面骨架 |
+| `AppBar` | 顶部导航栏 |
+| `Text`、`Icon`、`Image` | 文本、图标、图片 |
+| `Container` | 尺寸、边距、背景和装饰 |
+| `Padding`、`SizedBox` | 内边距和固定间距 |
+| `Row`、`Column` | 水平和垂直布局 |
+| `Stack`、`Positioned` | 层叠和定位布局 |
+| `ListView`、`GridView` | 滚动列表和网格 |
+| `Expanded`、`Flexible` | 分配 Row/Column 剩余空间 |
+| `SafeArea` | 避开刘海、状态栏等系统区域 |
+
+## 6. Flutter 布局基础
+
+Flutter 布局最重要的一句话：
+
+> 父组件把约束传给子组件，子组件在约束内选择尺寸，父组件决定子组件的位置。
+
+### 6.1 Row 和 Column
+
+```dart
+Row(
+  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  crossAxisAlignment: CrossAxisAlignment.center,
+  children: const [
+    Text('商品'),
+    Text('¥99'),
+  ],
+)
+```
+
+- Row 的主轴是水平方向，交叉轴是垂直方向。
+- Column 的主轴是垂直方向，交叉轴是水平方向。
+- `mainAxisAlignment` 控制主轴排列。
+- `crossAxisAlignment` 控制交叉轴排列。
+
+### 6.2 Expanded
+
+```dart
+Row(
+  children: [
+    const Icon(Icons.search),
+    const SizedBox(width: 8),
+    Expanded(
+      child: TextField(
+        decoration: const InputDecoration(hintText: '搜索'),
+      ),
+    ),
+  ],
+)
+```
+
+`Expanded` 只能放在 Row、Column、Flex 等 Flex 布局的后代位置，用来占据剩余空间。
+
+### 6.3 列表
+
+数据较多时使用懒构建：
+
+```dart
+ListView.separated(
+  itemCount: users.length,
+  separatorBuilder: (_, __) => const Divider(height: 1),
+  itemBuilder: (context, index) {
+    final user = users[index];
+    return ListTile(title: Text(user.name));
+  },
+)
+```
+
+不要把大量列表项先全部放进 Column，再套 `SingleChildScrollView`。`ListView.builder` 或 `ListView.separated` 只创建当前需要显示的部分，更适合长列表。
+
+### 常见布局报错
+
+**黄黑条或 `RenderFlex overflowed`**
+
+内容超过 Row/Column 可用空间。根据场景使用 `Expanded`、`Flexible`、换行、缩小内容或滚动组件，不要只隐藏警告。
+
+**Vertical viewport was given unbounded height**
+
+常见原因是 ListView 放进 Column 后没有高度约束。通常用 `Expanded(child: ListView(...))`。`shrinkWrap: true` 可以解决某些小列表嵌套，但有额外布局成本，不应无脑添加。
+
+### 面试题：Container 和 SizedBox 有什么区别？
+
+- SizedBox 主要表达固定尺寸或间距，语义简单。
+- Container 可以组合尺寸、padding、margin、背景、边框和变换等能力。
+- 只需要空隙或尺寸时优先 SizedBox，代码意图更清楚。
+
+## 7. 图片、资源和字体
+
+在 `pubspec.yaml` 声明资源：
+
+```yaml
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+```
+
+使用本地图片：
+
+```dart
+Image.asset(
+  'assets/images/banner.png',
+  width: double.infinity,
+  fit: BoxFit.cover,
+)
+```
+
+使用网络图片：
+
+```dart
+Image.network(
+  imageUrl,
+  fit: BoxFit.cover,
+  loadingBuilder: (context, child, progress) {
+    if (progress == null) return child;
+    return const Center(child: CircularProgressIndicator());
+  },
+  errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+)
+```
+
+注意：
+
+- YAML 缩进必须正确。
+- 图片要设置合适的尺寸和 `fit`。
+- 列表中的网络图片要考虑占位、失败状态、缓存和内存占用。
+- 不要直接加载远大于显示区域的原图。
+
+## 8. 生命周期和资源释放
+
+StatefulWidget 常见生命周期：
+
+```text
+createState
+  -> initState
+  -> didChangeDependencies
+  -> build（可能多次）
+  -> didUpdateWidget（父组件传入新配置）
+  -> deactivate
+  -> dispose
+```
+
+示例：
+
+```dart
+class _SearchPageState extends State<SearchPage> {
+  late final TextEditingController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+}
+```
+
+- `initState()`：执行一次性初始化，不要在这里调用依赖尚未准备好的 inherited 数据。
+- `build()`：可能执行很多次，应该快速且没有副作用。
+- `dispose()`：释放 controller、FocusNode、Stream 订阅、Timer 等资源。
+
+### 面试题：为什么网络请求不建议直接写在 build 中？
+
+build 可能频繁执行，直接请求会造成重复调用。请求通常放在 `initState`、状态管理层或由用户操作触发，并把结果保存为状态。
+
+## 9. 事件、表单和输入
+
+### 9.1 点击事件
+
+```dart
+ElevatedButton(
+  onPressed: isSubmitting ? null : submit,
+  child: Text(isSubmitting ? '提交中...' : '提交'),
+)
+```
+
+`onPressed: null` 表示按钮禁用。图片或普通区域可使用 `InkWell`、`GestureDetector` 等处理手势。
+
+### 9.2 表单校验
+
+```dart
+class LoginForm extends StatefulWidget {
+  const LoginForm({super.key});
+
+  @override
+  State<LoginForm> createState() => _LoginFormState();
+}
+
+class _LoginFormState extends State<LoginForm> {
+  final formKey = GlobalKey<FormState>();
+
+  void submit() {
+    if (formKey.currentState?.validate() != true) return;
+    // 调用登录接口
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Form(
+      key: formKey,
+      child: Column(
+        children: [
+          TextFormField(
+            decoration: const InputDecoration(labelText: '手机号'),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return '请输入手机号';
+              }
+              return null;
+            },
+          ),
+          ElevatedButton(onPressed: submit, child: const Text('登录')),
+        ],
+      ),
+    );
+  }
+}
+```
+
+提交时要防止重复点击，并显示加载状态；服务端仍需再次校验，客户端校验不能代替安全检查。
+
+## 10. 页面跳转和传值
+
+### 10.1 跳转到详情页
+
+```dart
+final changed = await Navigator.of(context).push<bool>(
+  MaterialPageRoute(
+    builder: (_) => ProductDetailPage(productId: product.id),
+  ),
+);
+
+if (changed == true) {
+  reloadProducts();
+}
+```
+
+详情页返回结果：
+
+```dart
+Navigator.of(context).pop(true);
+```
+
+### 10.2 异步后使用 Context
+
+```dart
+Future<void> submit() async {
+  await repository.save();
+  if (!mounted) return;
+  Navigator.of(context).pop(true);
+}
+```
+
+等待期间用户可能已经离开页面，因此异步间隙后要检查 `mounted`。
+
+### 面试题：`push` 和 `pop` 是什么？
+
+- `push` 把新 Route 加到导航栈顶，显示新页面。
+- `pop` 移除栈顶 Route，返回上一页，并且可以携带结果。
+- `push` 返回 Future，该 Future 在新页面 pop 时完成。
+
+## 11. 异步、Future 和网络请求
+
+### 11.1 Future 与 async/await
+
+```dart
+Future<String> loadName() async {
+  await Future.delayed(const Duration(seconds: 1));
+  return 'Flutter';
+}
+```
+
+- Future 表示将来会完成的一个结果或错误。
+- `async` 函数返回 Future。
+- `await` 等待 Future 完成，同时让当前函数暂停，不会阻塞整个应用事件循环。
+- `async/await` 不等于创建新线程。
+
+异常处理：
+
+```dart
+try {
+  final user = await repository.fetchUser();
+  setState(() {
+    data = user;
+    errorMessage = null;
+  });
+} catch (error) {
+  setState(() {
+    errorMessage = '加载失败，请重试';
+  });
+}
+```
+
+### 11.2 页面状态要完整
+
+一个网络页面通常至少有四种状态：
+
+```dart
+enum PageStatus { loading, success, empty, failure }
+```
+
+UI 不要只处理成功状态，还要提供加载、空数据、失败重试和下拉刷新。
+
+```dart
+Widget buildBody() {
+  switch (status) {
+    case PageStatus.loading:
+      return const Center(child: CircularProgressIndicator());
+    case PageStatus.empty:
+      return const Center(child: Text('暂无数据'));
+    case PageStatus.failure:
+      return Center(
+        child: ElevatedButton(onPressed: loadData, child: const Text('重试')),
+      );
+    case PageStatus.success:
+      return ProductList(products: products);
+  }
+}
+```
+
+### 11.3 JSON 转模型
+
+```dart
+class Product {
+  final String id;
+  final String name;
+  final double price;
+
+  const Product({
+    required this.id,
+    required this.name,
+    required this.price,
+  });
+
+  factory Product.fromJson(Map<String, dynamic> json) {
+    return Product(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      price: (json['price'] as num).toDouble(),
+    );
+  }
+}
+```
+
+真实项目可使用代码生成减少重复工作，但仍需要理解类型转换、缺失字段和接口异常。
+
+### 面试题：Future、async、await 的关系？
+
+Future 表示异步结果；`async` 让函数返回 Future，并允许使用 `await`；`await` 暂停当前 async 函数，Future 完成后从当前位置继续执行。
+
+## 12. 简单状态管理
+
+初学阶段按范围选择，不必一开始就引入复杂框架。
+
+### 12.1 `setState`
+
+适合只在当前组件或页面使用的简单状态，如选中项、计数、输入和加载状态。
+
+### 12.2 `ValueNotifier`
+
+```dart
+final counter = ValueNotifier<int>(0);
+
+ValueListenableBuilder<int>(
+  valueListenable: counter,
+  builder: (context, value, child) {
+    return Text('$value');
+  },
+)
+```
+
+持有者销毁时要调用 `counter.dispose()`。
+
+### 12.3 Provider、Riverpod、BLoC
+
+- Provider：常用于依赖注入和监听共享状态。
+- Riverpod：不依赖 BuildContext 读取 provider，组合和测试能力较强。
+- BLoC/Cubit：把事件或方法转成状态流，适合状态变化规则明确的项目。
+
+初级面试重点不是背所有库的 API，而是说明：局部状态留在局部；多个页面共享或业务逻辑复杂时再提取；UI 不直接承担所有网络和数据逻辑。
+
+## 13. 本地存储基础
+
+根据数据特点选择工具：
+
+| 数据 | 适合方式 |
+| --- | --- |
+| 主题、首次启动标记等小配置 | 偏好设置 |
+| 登录 token、敏感凭证 | Android Keystore/iOS Keychain 封装的安全存储 |
+| 大量结构化、可查询数据 | SQLite 等数据库 |
+| 临时接口数据 | 有过期和容量策略的缓存 |
+
+不要把密码、服务端私钥直接写入本地。Token 也要考虑过期、刷新和退出登录后的清理。
+
+## 14. 主题、适配与国际化
+
+### 14.1 主题
+
+```dart
+MaterialApp(
+  theme: ThemeData(
+    colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+    useMaterial3: true,
+  ),
+  darkTheme: ThemeData.dark(useMaterial3: true),
+  home: const HomePage(),
+)
+```
+
+业务组件优先读取 `Theme.of(context)`，避免在每个页面重复硬编码颜色和字号。
+
+### 14.2 屏幕适配
+
+- 使用 Row、Column、Expanded、Flexible 和 LayoutBuilder 响应可用空间。
+- 用 MediaQuery 获取屏幕、文字缩放和系统边距，但不要到处按设计稿宽度等比缩放所有尺寸。
+- 使用 SafeArea 处理系统遮挡。
+- 测试大字体、横屏、小屏、平板和键盘弹出场景。
+
+### 14.3 国际化
+
+不要把所有用户文案直接散落在 Widget 中。使用 Flutter 的本地化体系管理翻译，同时处理日期、数字、货币、复数和从右到左布局。
+
+## 15. 基础性能意识
+
+初级开发最需要避免的性能问题：
+
+- 在 `build()` 中请求网络、解析大 JSON或执行复杂循环。
+- 长列表不用 builder，一次创建全部 item。
+- 在页面顶层 `setState` 导致很大范围重复构建。
+- 加载远大于显示尺寸的图片。
+- 忘记释放 controller、订阅和 Timer。
+- 在 debug 模式凭肉眼判断 release 性能。
+- 滥用透明、模糊、阴影和复杂裁剪。
+
+优化步骤：先在真机 profile 模式复现，再使用 Flutter DevTools 查看帧、CPU 和内存，找到真正耗时点后修改并复测。
+
+### 面试题：`const` 能优化什么？
+
+const 可以创建编译期常量 Widget，在配置相同时复用对象，也能表达“这个配置不会改变”。但性能问题通常还与更新范围、布局、绘制、图片和同步计算有关，不能只靠添加 const。
+
+## 16. 错误处理和调试
+
+常用调试方式：
+
+- `debugPrint()` 查看简单日志，正式项目应使用可分级、可脱敏的日志方案。
+- IDE 断点查看变量和调用栈。
+- Flutter Inspector 查看 Widget 树和布局边界。
+- DevTools 查看性能、CPU、网络和内存。
+- 阅读异常的第一段、自己的代码栈和底部约束信息，不要只复制最后一行搜索。
+
+不要打印 token、密码、身份证号等敏感信息。网络异常应转换成用户能理解的提示，同时保留可定位的错误类型和上下文。
+
+## 17. 测试基础
+
+### 17.1 单元测试
+
+```dart
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  test('购物车总价计算正确', () {
+    expect(calculateTotal([10, 20, 5]), 35);
+  });
+}
+```
+
+### 17.2 Widget 测试
+
+```dart
+testWidgets('点击按钮后计数增加', (tester) async {
+  await tester.pumpWidget(const MaterialApp(home: CounterPage()));
+
+  expect(find.text('当前值：0'), findsOneWidget);
+  await tester.tap(find.byIcon(Icons.add));
+  await tester.pump();
+  expect(find.text('当前值：1'), findsOneWidget);
+});
+```
+
+- 单元测试验证纯 Dart 逻辑。
+- Widget 测试验证组件渲染和交互。
+- 集成测试在真实或模拟设备上验证完整流程和插件。
+
+## 18. 初级项目推荐结构
+
+项目很小时保持简单：
+
+```text
+lib/
+  main.dart
+  models/
+  pages/
+  widgets/
+  services/
+  repositories/
+  utils/
+```
+
+当功能增多时，可以按业务模块组织：
+
+```text
+lib/
+  app/
+  core/
+  features/
+    login/
+      data/
+      presentation/
+    products/
+      data/
+      presentation/
+```
+
+目录结构不是架构本身。更重要的是：页面负责展示和交互，Repository 负责数据获取，模型负责数据表达，公共能力有明确边界。
+
+## 19. 初级面试高频题速查
+
+1. **Flutter 使用什么语言？** Dart。
+2. **Widget 是什么？** 描述 UI 的不可变配置，是 Flutter 组合页面的基本单位。
+3. **StatelessWidget 和 StatefulWidget？** 前者没有自身可变 State，后者通过 State 保存生命周期内的可变状态。
+4. **`setState` 做什么？** 修改状态并通知 Framework 重新构建相关 UI。
+5. **`final` 和 `const`？** final 运行时赋值一次；const 必须是编译期常量。
+6. **空安全有什么用？** 在类型层面区分可空和不可空，提前发现空引用风险。
+7. **Row 和 Column？** Row 水平排列，Column 垂直排列。
+8. **Expanded 有什么用？** 在 Flex 布局中占据剩余空间。
+9. **长列表用什么？** `ListView.builder` 或 `ListView.separated` 懒构建。
+10. **Future 是新线程吗？** 不是，它表示将来完成的异步结果。
+11. **网络请求放在 build 中吗？** 不建议，因为 build 可能执行多次。
+12. **为什么要 dispose？** 释放 controller、订阅、Timer 等资源，避免泄漏和无效回调。
+13. **如何页面传值？** 构造参数传入；`Navigator.pop(result)` 返回结果。
+14. **Key 有什么用？** 帮助 Flutter 在同一父节点下识别 Widget 身份，列表换序时尤其重要。
+15. **本地图片如何使用？** 在 pubspec 声明 assets，再使用 `Image.asset`。
+16. **Hot Reload 是否保留状态？** 通常保留，但不是所有代码修改都能热重载生效。
+17. **如何处理请求失败？** 捕获异常，展示失败状态与重试入口，同时记录可定位信息。
+18. **如何优化 Flutter？** 先在 profile 真机测量，再针对 build、layout、paint、图片或内存问题优化。
+
+## 20. 推荐练习项目
+
+做一个“待办事项”或“商品列表”应用，至少包含：
+
+- 登录表单和输入校验；
+- 列表、下拉刷新和分页加载；
+- 详情页面与返回结果；
+- 新增、编辑、删除；
+- loading、empty、error、success 四种状态；
+- 网络请求和 JSON 模型；
+- 本地缓存；
+- 浅色/深色主题；
+- 单元测试和 Widget 测试；
+- Android release APK 构建。
+
+完成后尝试解释：状态放在哪里、页面如何更新、请求为什么不会重复、资源何时释放、异常如何展示。能回答这些问题，比只照着教程写完页面更重要。
+
+## 学习路线
+
+```text
+Dart 基础
+  -> Widget 与布局
+  -> 状态与生命周期
+  -> 路由和表单
+  -> 网络与 JSON
+  -> 本地存储
+  -> 状态管理
+  -> 测试和调试
+  -> 性能基础
+  -> Android/iOS 打包发布
+```
+
+掌握本篇后，可以继续阅读《Flutter 原理与中高级面试手册》，深入 Widget/Element/RenderObject、渲染流水线、Isolate、性能诊断和工程架构。
+
+## 官方资料
+
+- [Flutter documentation](https://docs.flutter.dev/)
+- [Dart language tour](https://dart.dev/language)
+- [Flutter layout](https://docs.flutter.dev/ui/layout)
+- [Flutter cookbook](https://docs.flutter.dev/cookbook)
+- [Flutter testing](https://docs.flutter.dev/testing/overview)
+
+> 初级阶段最重要的不是记住全部 Widget，而是理解状态如何驱动 UI、约束如何决定布局，以及异步任务完成后如何安全更新页面。

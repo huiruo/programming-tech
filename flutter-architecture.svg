@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="820" viewBox="0 0 1040 820" role="img" aria-labelledby="title desc">
+  <title id="title">Flutter 架构分层图</title>
+  <desc id="desc">Dart 应用依次通过 Framework、dart:ui、Engine、Embedder 到达宿主操作系统。</desc>
+  <defs>
+    <linearGradient id="app" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#1e88e5"/><stop offset="1" stop-color="#1565c0"/></linearGradient>
+    <linearGradient id="framework" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#42a5f5"/><stop offset="1" stop-color="#1e88e5"/></linearGradient>
+    <linearGradient id="ui" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#26c6da"/><stop offset="1" stop-color="#0097a7"/></linearGradient>
+    <linearGradient id="engine" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#7e57c2"/><stop offset="1" stop-color="#5e35b1"/></linearGradient>
+    <linearGradient id="embedder" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#ff9800"/><stop offset="1" stop-color="#ef6c00"/></linearGradient>
+    <linearGradient id="os" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#546e7a"/><stop offset="1" stop-color="#37474f"/></linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="5" stdDeviation="5" flood-opacity=".18"/></filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10z" fill="#78909c"/></marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: white; text-anchor: middle; }
+      .title { font-size: 25px; font-weight: 700; }
+      .detail { font-size: 17px; font-weight: 400; opacity: .95; }
+      .line { stroke: #78909c; stroke-width: 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1040" height="820" fill="#f7fafc"/>
+  <text x="520" y="54" fill="#263238" class="title">Flutter 架构分层</text>
+
+  <g filter="url(#shadow)"><rect x="170" y="85" width="700" height="82" rx="16" fill="url(#app)"/></g>
+  <text x="520" y="122" class="title">Dart 应用</text><text x="520" y="149" class="detail">页面、状态、业务</text>
+  <path class="line" d="M520 168V202"/>
+
+  <g filter="url(#shadow)"><rect x="170" y="218" width="700" height="82" rx="16" fill="url(#framework)"/></g>
+  <text x="520" y="255" class="title">Framework</text><text x="520" y="282" class="detail">Widgets / Rendering / Animation / Gestures</text>
+  <path class="line" d="M520 301V335"/>
+
+  <g filter="url(#shadow)"><rect x="170" y="351" width="700" height="82" rx="16" fill="url(#ui)"/></g>
+  <text x="520" y="388" class="title">dart:ui</text><text x="520" y="415" class="detail">Framework 与 Engine 的边界</text>
+  <path class="line" d="M520 434V468"/>
+
+  <g filter="url(#shadow)"><rect x="170" y="484" width="700" height="82" rx="16" fill="url(#engine)"/></g>
+  <text x="520" y="521" class="title">Engine</text><text x="520" y="548" class="detail">Dart Runtime / Text / Compositor / Rasterizer</text>
+  <path class="line" d="M520 567V601"/>
+
+  <g filter="url(#shadow)"><rect x="170" y="617" width="700" height="82" rx="16" fill="url(#embedder)"/></g>
+  <text x="520" y="654" class="title">Embedder</text><text x="520" y="681" class="detail">窗口、输入、生命周期、平台消息</text>
+  <path class="line" d="M520 700V722"/>
+
+  <g filter="url(#shadow)"><rect x="170" y="738" width="700" height="70" rx="16" fill="url(#os)"/></g>
+  <text x="520" y="770" class="title">宿主环境</text><text x="520" y="794" class="detail">Android / iOS / Desktop / Web</text>
+</svg>

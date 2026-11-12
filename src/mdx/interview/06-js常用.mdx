@@ -381,9 +381,161 @@ DOM 监听器中，普通函数的 `this` 通常是注册监听器的元素；�
 
 React 函数组件没有组件实例，不依赖 `this`；事件处理函数使用箭头函数主要是为了词法作用域和闭包，而不是“绑定组件 `this`”。React class 组件才存在方法传递后丢失实例 `this` 的问题，可使用构造器 `bind` 或箭头函数类字段。
 
+### 4.6 JavaScript 中 `class` 和 `function` 有什么区别？
+
+面试时可以先回答：**`class` 没有引入另一套继承模型，它的实例方法仍然建立在原型链上；但它不只是把构造函数换了一个写法，还增加了更严格的调用、初始化、继承和私有字段语义。**
+
+下面两种写法建立的核心原型关系相同：
+
+```js
+function UserByFunction(name) {
+  this.name = name;
+}
+
+UserByFunction.prototype.sayHi = function () {
+  return `Hi, ${this.name}`;
+};
+
+class UserByClass {
+  constructor(name) {
+    this.name = name;
+  }
+
+  sayHi() {
+    return `Hi, ${this.name}`;
+  }
+}
+
+const user = new UserByClass('Ada');
+
+Object.getPrototypeOf(user) === UserByClass.prototype; // true
+user.sayHi === UserByClass.prototype.sayHi; // true
+typeof UserByClass; // 'function'
+```
+
+二者的高频区别如下：
+
+| 对比项 | 普通函数/构造函数 | `class` |
+| --- | --- | --- |
+| 调用方式 | 普通函数通常可以直接调用，也可以在具有构造能力时配合 `new` | 只能使用 `new` 调用；直接调用会抛出 `TypeError` |
+| 提升 | 函数声明在代码执行前已经完成初始化，可以在声明前调用 | class 声明存在暂时性死区，声明执行前不能访问 |
+| 严格模式 | 是否严格取决于所在代码和指令 | class 类体中的代码自动运行在严格模式 |
+| 实例方法 | 手动赋给 `Fn.prototype` 的属性默认可枚举 | class 方法位于 `Class.prototype`，默认不可枚举 |
+| 继承 | 需要手动连接原型、借用父构造函数 | 使用 `extends`、`super` 建立实例方法和静态成员继承关系 |
+| 私有成员 | 通常通过闭包、`WeakMap` 等方式模拟 | 原生支持 `#privateField`，在语法层面限制外部访问 |
+| 静态成员 | 直接赋给构造函数 | 可使用 `static` 声明 |
+
+```js
+sayHello(); // 可以：函数声明已初始化
+function sayHello() {}
+
+// new Person(); // ReferenceError：Person 仍在 TDZ
+class Person {}
+
+// Person(); // TypeError：class 不能脱离 new 调用
+new Person();
+```
+
+派生 class 还有一条重要规则：在 `constructor` 中必须先执行 `super()` 才能读取 `this`。`super()` 会调用父类构造器并初始化当前实例的 `this`。
+
+```js
+class Employee extends Person {
+  constructor(name) {
+    // this.name = name; // ReferenceError：super() 前不能使用 this
+    super();
+    this.name = name;
+  }
+}
+```
+
+#### class 方法和箭头函数类字段怎么选？
+
+```js
+class Counter {
+  count = 0;
+
+  increase() {
+    this.count++;
+  }
+
+  handleClick = () => {
+    this.count++;
+  };
+}
+
+const first = new Counter();
+const second = new Counter();
+
+first.increase === second.increase; // true：共享原型方法
+first.handleClick === second.handleClick; // false：每个实例创建一个函数
+```
+
+- 普通 class 方法放在原型上，所有实例共享，适合大多数方法；但把 `instance.method` 单独作为回调传递时，调用点改变会丢失 `this`。
+- 箭头函数类字段是实例自身属性，会词法捕获当前实例的 `this`，适合直接传递的事件回调；代价是每个实例都有独立函数，占用更多内存，也不在原型上。
+
+```js
+const counter = new Counter();
+
+const normalHandler = counter.increase;
+// normalHandler(); // TypeError：严格模式下 this 是 undefined
+
+const arrowHandler = counter.handleClick;
+arrowHandler(); // 正常，箭头函数保留创建时的实例 this
+```
+
+#### React class 组件和函数组件有什么区别？
+
+这里讨论的是 React 组件模型，不要与“JavaScript 的 class 和 function 语法区别”混为一谈：
+
+- class 组件具有长期存在的组件实例，通过 `this.props`、`this.state`、`this.setState` 和生命周期方法组织逻辑；事件方法可能需要绑定实例 `this`。
+- 函数组件每次渲染都会重新执行组件函数，通过 Hooks 保存状态和连接外部系统，没有组件实例和组件 `this`。
+- 函数组件中每次渲染创建的事件函数会闭包捕获该次渲染的 props/state 快照，因此可能出现 stale closure；class 方法通常通过 `this.state` 读取实例当前状态。
+- 函数组件更容易按业务关注点用自定义 Hook 复用状态逻辑；class 组件通常通过生命周期方法、HOC 或 render props 复用。
+
+```jsx
+function CounterFunction() {
+  const [count, setCount] = useState(0);
+
+  function handleClick() {
+    setCount(current => current + 1);
+  }
+
+  return <button onClick={handleClick}>{count}</button>;
+}
+
+class CounterClass extends React.Component {
+  state = { count: 0 };
+
+  handleClick = () => {
+    this.setState(state => ({ count: state.count + 1 }));
+  };
+
+  render() {
+    return (
+      <button onClick={this.handleClick}>{this.state.count}</button>
+    );
+  }
+}
+```
+
+两者最终都可以产生 React element 并参与 Fiber 的协调过程；“函数组件更轻”不能简单理解为它没有 Fiber 或不会保存状态。现代 React 新代码通常使用函数组件和 Hooks，但读懂 class 生命周期、`this` 绑定和 `setState` 仍是维护旧项目及面试的常见要求。
+
 ## 5. 原型链、`new` 与 `class` 的本质是什么？
 
-对象通过内部原型链接到另一个对象；读取属性时会先查找自身，再沿原型链向上查找，直到 `null`。构造函数的 `prototype` 是其实例的原型。`class` 是基于原型继承的语法糖，并非另一套对象模型。
+### 5.1 面试题：请讲一下 JavaScript 原型和原型链
+
+面试时可以先完整回答：
+
+> JavaScript 的继承主要通过原型链实现。每个普通对象内部都有一个 `[[Prototype]]` 链接，它指向另一个对象或 `null`。读取对象属性时，引擎先检查对象自身；如果没有找到，就到它的 `[[Prototype]]` 指向的对象上查找，再继续沿该对象的原型向上查找，直到找到属性或遇到 `null`。这一串对象之间的链接就是原型链。
+>
+> 普通构造函数有一个 `prototype` 属性。使用 `new Person()` 创建实例时，实例的 `[[Prototype]]` 会被关联到 `Person.prototype`，所以多个实例可以共享原型上的方法。`class` 的实例方法同样存放在 `Class.prototype` 上，本质上仍使用这套原型机制。
+
+这里有两个容易混淆的“原型”：
+
+- `Person.prototype` 是构造函数 `Person` 自身的一个普通属性，指向“将来实例共用的原型对象”。
+- `ada` 的 `[[Prototype]]` 是对象内部的原型链接，标准读取方式是 `Object.getPrototypeOf(ada)`。
+
+它们通过 `new` 建立关系：`Object.getPrototypeOf(ada) === Person.prototype`。
 
 ```js
 function Person(name) {
@@ -395,12 +547,96 @@ Person.prototype.sayHi = function () {
 
 const ada = new Person('Ada');
 Object.getPrototypeOf(ada) === Person.prototype; // true
+Object.getPrototypeOf(Person.prototype) === Object.prototype; // true
+Object.getPrototypeOf(Object.prototype) === null; // true
 ada.sayHi(); // 'Hi, Ada'
 ```
 
-不要用 `__proto__` 读写原型；读取使用 `Object.getPrototypeOf`，创建指定原型的对象使用 `Object.create`。
+当执行 `ada.sayHi()` 时，查找过程是：
 
-### 5.1 面试题：`new` 一个对象时发生了什么？
+1. 在 `ada` 自身查找 `sayHi`，没有找到。
+2. 到 `Person.prototype` 查找，找到 `sayHi` 函数。
+3. 以调用者 `ada` 作为 `this` 执行，所以函数中的 `this.name` 读取到 `ada` 自身的 `name`。
+
+如果一直找不到，查找链路就是：
+
+```text
+ada
+  └─ [[Prototype]] → Person.prototype
+                         └─ [[Prototype]] → Object.prototype
+                                                └─ [[Prototype]] → null
+```
+
+遇到 `null` 仍未找到时，属性读取结果为 `undefined`。因此，**原型继承是查找时的委托，不是创建实例时把原型属性复制一份到实例上**。
+
+### 5.2 自身属性和原型属性发生重名时会怎样？
+
+自身属性的优先级更高，会“遮蔽”原型上的同名属性，但不会删除或修改原型属性。删除自身属性后，又能继续访问原型上的值。
+
+```js
+Person.prototype.role = 'developer';
+
+const grace = new Person('Grace');
+grace.role; // 'developer'：来自原型
+
+grace.role = 'lead';
+grace.role; // 'lead'：实例自身属性遮蔽原型属性
+Person.prototype.role; // 'developer'
+
+Object.hasOwn(grace, 'role'); // true
+'role' in grace; // true：in 会检查整个原型链
+
+delete grace.role;
+grace.role; // 'developer'：重新读取到原型属性
+```
+
+因为实例持有的是对原型对象的链接，所以在创建实例后向原型添加方法，已有实例通常也能立即访问；如果整体替换 `Person.prototype`，旧实例仍链接旧原型，新实例才会链接新原型。
+
+```js
+const oldInstance = new Person('Old');
+const oldPrototype = Person.prototype;
+
+Person.prototype = {
+  sayBye() { return 'bye'; },
+};
+
+const newInstance = new Person('New');
+
+Object.getPrototypeOf(oldInstance) === oldPrototype; // true
+Object.getPrototypeOf(newInstance) === Person.prototype; // true
+oldInstance.sayBye; // undefined
+newInstance.sayHi; // undefined
+```
+
+### 5.3 `__proto__`、`prototype` 与 `constructor` 是什么关系？
+
+- `[[Prototype]]` 是规范中的内部槽，不是普通属性。
+- `Object.getPrototypeOf(obj)` / `Object.setPrototypeOf(obj, proto)` 是标准的读取和设置 API；创建时可使用 `Object.create(proto)`。
+- `__proto__` 是历史遗留访问器，不等于内部槽本身，业务代码不应依赖它修改原型。
+- `prototype` 主要出现在可构造函数上，供 `new` 创建实例时使用；普通实例通常没有 `prototype` 属性。
+- `Person.prototype.constructor` 默认指回 `Person`，但它只是一个可写、可被删除的普通属性，不能作为可靠的类型判断依据。
+
+```js
+ada.prototype; // undefined
+Person.prototype.constructor === Person; // true（默认情况下）
+Object.getPrototypeOf(ada) === Person.prototype; // true
+```
+
+原型关系不是永远等同于“由哪个构造函数创建”。例如 `Object.create(proto)` 可以不调用构造函数，直接创建以 `proto` 为原型的对象；`Object.create(null)` 甚至可以创建没有原型链、也没有 `toString` 等方法的对象。
+
+```js
+const proto = { shared: 1 };
+const child = Object.create(proto);
+
+Object.getPrototypeOf(child) === proto; // true
+child.shared; // 1
+
+const dictionary = Object.create(null);
+Object.getPrototypeOf(dictionary) === null; // true
+dictionary.toString; // undefined
+```
+
+### 5.4 面试题：`new` 一个对象时发生了什么？
 
 面试时可以按下面四步回答：
 
@@ -456,12 +692,9 @@ function myNew(Constructor, ...args) {
 
 这只是用于解释普通构造函数的面试版实现，不完全等价于语言内部的 `new`：例如它不能正确模拟 `class` 构造器，也无法仅靠 JavaScript 代码可靠判断函数是否具有构造能力。
 
-### 5.2 `prototype`、`[[Prototype]]`、`constructor` 如何区分？
+### 5.5 `instanceof` 是如何判断的？
 
-- `Person.prototype` 是构造函数对象上的普通属性，默认指向一个可供实例共享方法的对象。
-- 实例的 `[[Prototype]]` 是内部槽；`Object.getPrototypeOf(ada)` 才是标准读取方式。
-- `Person.prototype.constructor` 默认回指 `Person`，但它只是可写属性，不是可靠的类型系统。
-- `ada instanceof Person` 会检查 `Person.prototype` 是否出现在 `ada` 的原型链上；它会受跨 iframe、修改 prototype 和 `Symbol.hasInstance` 影响。
+默认情况下，`ada instanceof Person` 的核心判断不是比较 `constructor`，而是检查 `Person.prototype` 是否出现在 `ada` 的原型链上。
 
 ```text
 Person ── prototype ──▶ Person.prototype ── [[Prototype]] ──▶ Object.prototype ──▶ null
@@ -470,7 +703,9 @@ Person ── prototype ──▶ Person.prototype ── [[Prototype]] ──�
                           ada
 ```
 
-### 5.3 `class extends` 如何建立两条原型链？
+它会受 `Symbol.hasInstance` 自定义逻辑影响；不同 iframe 拥有不同的内建构造函数和原型对象，所以跨 iframe 的数组可能无法通过当前窗口的 `instanceof Array`。判断数组应优先使用 `Array.isArray`。
+
+### 5.6 `class extends` 如何建立两条原型链？
 
 ```js
 class Animal {
@@ -562,93 +797,6 @@ function throttle(fn, interval) {
 - `WeakSet`：弱引用对象集合，适合记录对象是否已处理。
 
 弱引用不等于“立即回收”，垃圾回收时机不可预测；因此不能把 `WeakMap`/`WeakSet` 用于需要枚举、计数或持久化的业务数据。
-
-## 10. Promise 的状态、链式调用与组合 API 如何理解？
-
-Promise 状态只能从 `pending` 变为 `fulfilled` 或 `rejected`，且一旦 settled 不再改变。`then` 总会返回一个新 Promise：回调返回普通值时会 resolve，返回 Promise/thenable 时会等待它，抛错或返回 rejected Promise 时会传递到后续 `catch`。
-
-| API | 成功条件 | 失败/结果 | 适用场景 |
-| --- | --- | --- | --- |
-| `Promise.all` | 全部成功 | 任一失败立即 reject | 所有结果都必需 |
-| `Promise.allSettled` | 全部结束 | 返回每项状态与结果 | 批量任务需收集完整结果 |
-| `Promise.race` | 最先 settled 的结果 | 最先成功或失败决定结果 | 超时竞争、取最快结果 |
-| `Promise.any` | 任一成功 | 全部失败才 reject（`AggregateError`） | 多个可替代来源 |
-
-```js
-fetchUser()
-  .then((user) => fetchOrders(user.id))
-  .then(renderOrders)
-  .catch(showError)
-  .finally(hideLoading);
-```
-
-错误处理应放在能恢复或展示错误的边界；不要吞掉异常，例如 `catch(() => {})`，否则会让失败静默。
-
-## 11. `async` / `await` 有哪些常见要点？如何控制并发？
-
-`async` 函数始终返回 Promise；返回普通值会包装成 fulfilled Promise，抛出异常会变成 rejected Promise。`await` 会暂停当前 `async` 函数的后续执行并在 Promise settled 后以微任务继续，异常可用 `try/catch` 处理。
-
-无依赖的异步请求应先同时创建，再一起等待，避免无意串行：
-
-```js
-async function loadPage() {
-  const userPromise = fetchUser();
-  const noticesPromise = fetchNotices();
-  const [user, notices] = await Promise.all([userPromise, noticesPromise]);
-  return { user, notices };
-}
-```
-
-需要限制并发量时，用任务队列维护“进行中数量”和“待执行任务”；不要对很长的数组直接 `Promise.all`，否则可能同时发起过多请求并压垮服务端或浏览器连接池。
-
-## 12. 浏览器事件循环的核心规律是什么？
-
-核心口诀是：**执行一个任务 → 清空全部微任务 → 浏览器有机会渲染 → 执行下一任务**。`Promise.then`、`await` 后续代码、`queueMicrotask` 和 `MutationObserver` 属于微任务；定时器、用户事件、网络事件回调属于任务来源。长同步任务或不断追加的微任务都会阻塞渲染和交互。
-
-```js
-console.log('sync');
-setTimeout(() => console.log('timer'), 0);
-Promise.resolve().then(() => console.log('microtask'));
-// sync → microtask → timer
-```
-
-完整流程、渲染时机与更多输出题见：[浏览器事件循环](./07-浏览器基本原理#5-浏览器事件循环event-loop)。
-
-### 12.1 `async/await`、微任务和渲染的综合题
-
-```js
-console.log('A');
-
-setTimeout(() => console.log('B'), 0);
-
-async function run() {
-  console.log('C');
-  await null;
-  console.log('D');
-  queueMicrotask(() => console.log('E'));
-}
-
-run();
-Promise.resolve().then(() => console.log('F'));
-console.log('G');
-// A C G D F E B
-```
-
-分析时不要背“宏任务先于微任务”。初始脚本本身是一个任务：先执行同步代码 `A C G`；`await` 后续先入微任务队列，所以是 `D`；随后已有的 Promise 回调输出 `F`；`D` 执行时追加的 `E` 排在其后；微任务清空后才可能渲染并取定时器任务 `B`。
-
-### 12.2 浏览器调度 API 的位置
-
-| API / 回调 | 调度类别或时机 | 面试重点 |
-| --- | --- | --- |
-| `setTimeout` / `setInterval` | task | 延迟是最早可入队时间，不保证准时执行；嵌套计时器可能被限速 |
-| `MessageChannel` 的 `message` | task | 常用于无需计时语义的尽快调度；仍要等待当前任务和微任务结束 |
-| Promise reaction / `queueMicrotask` | microtask | 当前任务结束后清空；递归追加会饿死渲染和后续任务 |
-| `MutationObserver` | microtask checkpoint 中通知 | 回调不是同步执行；变更记录会批量交付 |
-| `requestAnimationFrame` | 下一次绘制前的渲染更新阶段 | 不是普通宏任务或微任务；后台页通常会降频/暂停 |
-| `requestIdleCallback` | 浏览器判断有空闲预算时 | 不保证及时；关键业务必须设置其他策略或 timeout |
-| `fetch` | 网络由宿主并行处理；Promise reaction 是微任务 | “fetch 是宏任务/微任务”这个问法不准确，应区分网络操作和 JS 回调 |
-
-规范中使用的是 task 和 task source；“宏任务”是工程交流中的俗称。浏览器还可以从不同任务源选择任务，因此不能把所有 task 想象成一个严格统一的 FIFO 队列。
 
 ## 13. CommonJS 和 ES Module 有什么区别？
 
@@ -896,7 +1044,7 @@ Proxy 可以拦截 `get`、`set`、`has`、`ownKeys` 等内部操作，但必须
 
 ## 详细阅读
 
-[Promise 与 async/await](../promise/04-async-await) ｜ [Promise 高频题](../promise/题目) ｜ [浏览器事件循环详解](../js/j1EventLoop) ｜ [React render/Fiber 流程](../react/react17-render阶段) ｜ [React effect 执行阶段](../react/useLayoutEffect-useEffect) ｜ [Vue 3 nextTick 调度](../vue/vfor-nextTick) ｜ [浏览器原理与渲染](./07-浏览器基本原理) ｜ [前端性能优化](./02-h5-性能优化)
+[原型与原型链专题](../jsBase/0-原型-原型链) ｜ [Promise 与 async/await](../promise/04-async-await) ｜ [Promise 高频题](../promise/题目) ｜ [浏览器事件循环详解](../js/j1EventLoop) ｜ [React render/Fiber 流程](../react/react17-render阶段) ｜ [React effect 执行阶段](../react/useLayoutEffect-useEffect) ｜ [Vue 3 nextTick 调度](../vue/vfor-nextTick) ｜ [浏览器原理与渲染](./07-浏览器基本原理) ｜ [前端性能优化](./02-h5-性能优化)
 
 ## 官方资料
 
