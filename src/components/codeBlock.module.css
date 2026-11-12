@@ -1,0 +1,96 @@
+.codeBlock {
+  margin: 1.25rem 0 1.5rem;
+  overflow: hidden;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #1e1e1e;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 10%);
+}
+
+.toolbar {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid #334155;
+  color: #cbd5e1;
+  background: #18181b;
+}
+
+.language {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+.copyButton {
+  min-width: 64px;
+  min-height: 28px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 9px;
+  color: #cbd5e1;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.copyButton:hover {
+  color: #ffffff;
+  background: #334155;
+}
+
+.copyButton:focus-visible {
+  border-color: #93c5fd;
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+}
+
+.pre {
+  width: 100%;
+  margin: 0;
+  overflow-x: auto;
+  padding: 1rem 1.1rem 1.15rem;
+  border: 0;
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-size: clamp(13px, 0.9rem, 15px);
+  line-height: 1.65;
+  tab-size: 2;
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+  font-variant-ligatures: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pre code {
+  display: block;
+  min-width: max-content;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+}
+
+.line {
+  display: block;
+  min-height: 1.65em;
+}
+
+@media (max-width: 767px) {
+  .codeBlock {
+    margin: 1rem 0 1.25rem;
+    border-radius: 8px;
+  }
+
+  .pre {
+    padding: 0.9rem 1rem 1rem;
+  }
+}

@@ -1,4 +1,5 @@
 import { setupDevPlatform } from '@cloudflare/next-on-pages/next-dev';
+import remarkGfm from 'remark-gfm';
 
 // Here we use the @cloudflare/next-on-pages next-dev module to allow us to use bindings during local development
 // (when running the application with `next dev`), for more information see:
@@ -25,7 +26,8 @@ const nextConfig = {
         {
           loader: '@mdx-js/loader',
           options: {
-            // Optionally add MDX loader configuration here
+            providerImportSource: '@/mdx-components',
+            remarkPlugins: [remarkGfm],
           },
         },
       ],

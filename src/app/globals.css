@@ -93,41 +93,141 @@ a {
     color-scheme: dark;
   }
 
-  html body pre {
+  html body .article pre {
     background-color: #242424;
   }
 }
 
-h2 {
-  margin: 16px 0px 4px 0px;
+.article {
+  font-size: 16px;
+  line-height: 1.8;
 }
 
-h3 {
-  margin: 10px 0px 4px 0px;
+.article :where(h1, h2, h3, h4, h5, h6) {
+  line-height: 1.35;
+  text-wrap: balance;
+  scroll-margin-top: 70px;
 }
 
-p {
-  margin: 0;
+.article h1 {
+  margin: 0 0 0.9em;
+  color: #6d28d9;
+}
+
+.article h2 {
+  margin: 1.8em 0 0.7em;
+  color: #0369a1;
+}
+
+.article h3 {
+  margin: 1.5em 0 0.6em;
+  color: #0f766e;
+}
+
+.article :where(h4, h5, h6) {
+  margin: 1.3em 0 0.55em;
+}
+
+.article p {
+  margin: 0 0 0.9em;
   padding: 0;
-  white-space: break-spaces;
-  word-wrap: break-word;
-  word-break: break-all;
-  overflow-wrap: break-word;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 
-pre {
+.article code {
+  font-family: var(--font-mono);
+}
+
+.article :not(pre) > code {
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  padding: 0.12em 0.35em;
+  color: #be123c;
+  background: #f8fafc;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+.article :where(ul, ol) {
+  margin: 0.75em 0 1.1em;
+  padding-left: 1.5em;
+}
+
+.article li + li {
+  margin-top: 0.35em;
+}
+
+.article li > p {
+  margin-bottom: 0.45em;
+}
+
+.article blockquote {
+  margin: 1.1em 0 1.3em;
+  border-left: 4px solid #94a3b8;
+  padding: 0.7em 1em;
+  color: #475569;
+  background: #f8fafc;
+}
+
+.article blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.article a:not(.navLink) {
+  color: #2563eb;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+.mdx-table-scroll {
   width: 100%;
+  margin: 1.15em 0 1.45em;
   overflow-x: auto;
-  background-color: #eeeff0;
+  border: 1px solid #d7dee8;
+  border-radius: 9px;
+  -webkit-overflow-scrolling: touch;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+.mdx-table-scroll:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
 }
 
-ul {
-  padding-left: 20px;
+.article table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 0.94em;
+  line-height: 1.6;
+}
+
+.article :where(th, td) {
+  border-right: 1px solid #d7dee8;
+  border-bottom: 1px solid #d7dee8;
+  padding: 0.7em 0.85em;
+  text-align: left;
+  vertical-align: top;
+}
+
+.article :where(th, td):last-child {
+  border-right: 0;
+}
+
+.article tr:last-child td {
+  border-bottom: 0;
+}
+
+.article th {
+  color: #1e293b;
+  background: #f1f5f9;
+  font-weight: 700;
+}
+
+.article tbody tr:nth-child(even) {
+  background: #f8fafc;
 }
 
 .navLink {
@@ -188,8 +288,10 @@ ul {
   }
 
   .article {
+    width: 100%;
     max-width: 100% !important;
-    min-width: 100% !important;
+    min-width: 0 !important;
+    padding: 66px 16px 48px;
   }
 
   .sidebar-content {
@@ -201,11 +303,7 @@ ul {
   display: flex;
 }
 
-ol {
-  padding-left:18px;
-}
-
-ol li::marker {
+.article ol li::marker {
   color: #ec4899;
 }
 
@@ -307,11 +405,12 @@ ol li::marker {
 }
 
 .article {
-  max-width: 1320px;
-  min-width: 60%;
+  width: 100%;
+  max-width: calc(80ch + 48px);
+  min-width: 0;
   margin: 0 auto;
   margin-bottom: 50px;
-  padding: 50px 10px 0px 10px;
+  padding: 76px 24px 64px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -319,6 +418,48 @@ ol li::marker {
   .nav-brand, .nav-menu-button, .nav-github-button { color: #e2e8f0; }
   .nav-menu-button:hover, .nav-github-button:hover { background: #1e293b; }
   .sidebar-content { border-color: #1e293b; background: #0f172a; }
+
+  .article h1 {
+    color: #c4b5fd;
+  }
+
+  .article h2 {
+    color: #7dd3fc;
+  }
+
+  .article h3 {
+    color: #5eead4;
+  }
+
+  .article :not(pre) > code {
+    border-color: #475569;
+    color: #fda4af;
+    background: #1e293b;
+  }
+
+  .article blockquote {
+    border-color: #64748b;
+    color: #cbd5e1;
+    background: #111827;
+  }
+
+  .article a:not(.navLink) {
+    color: #93c5fd;
+  }
+
+  .mdx-table-scroll,
+  .article :where(th, td) {
+    border-color: #334155;
+  }
+
+  .article th {
+    color: #e2e8f0;
+    background: #1e293b;
+  }
+
+  .article tbody tr:nth-child(even) {
+    background: #111827;
+  }
 }
 
 @media screen and (max-width: 768px) {
