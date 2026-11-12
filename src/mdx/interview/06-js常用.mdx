@@ -64,41 +64,234 @@ Object.is(+0, -0); // false
 
 ## 3. 什么是作用域、变量提升、暂时性死区和闭包？
 
-JavaScript 使用词法作用域：函数定义在何处决定它能访问哪些外层变量。`var` 的声明会提升并初始化为 `undefined`；`let`、`const` 也会提升，但从块开始到声明执行前处于暂时性死区（TDZ），访问会抛错。
+### 3.1 作用域和词法环境不是一回事吗？
 
-闭包是函数与其创建时所在词法环境的组合。它常用于封装状态、回调、柯里化和模块私有变量；若长期持有不再需要的大对象或 DOM 引用，也可能造成内存无法回收。
+**作用域（scope）**是源代码层面的可见性规则：某个标识符能在哪些位置被访问。JavaScript 使用词法作用域，查找路径由函数和代码块写在源码中的位置决定，与函数从哪里被调用无关。
+
+常见作用域包括：
+
+- 全局作用域：脚本顶层；ES Module 顶层声明不会直接成为 `window` 属性。
+- 模块作用域：每个 ES Module 独立，默认严格模式。
+- 函数作用域：参数、`var` 和函数体内声明所属的范围。
+- 块级作用域：`let`、`const`、`class` 位于 `{}`、`for`、`catch` 等块中形成的范围。
+
+**词法环境（Lexical Environment）**是规范用来描述运行时标识符解析的结构，包含当前环境记录和对外层环境的引用。查找变量时，先查当前环境记录，找不到再沿 Outer 链向外查找，这条链就是作用域链的运行时表现。
 
 ```js
-function createCounter() {
-  let count = 0;
-  return () => ++count;
+const scope = 'global';
+
+function outer() {
+  const scope = 'outer';
+  return function inner() {
+    return scope;
+  };
 }
 
-const next = createCounter();
-next(); // 1
-next(); // 2，内部函数仍能访问 count
+const fn = outer();
 
-console.log(value); // undefined
+function caller(callback) {
+  const scope = 'caller';
+  return callback();
+}
+
+caller(fn); // 'outer'，取决于 inner 定义位置，而非调用位置
+```
+
+### 3.2 变量提升到底发生了什么？
+
+“提升”是描述运行结果的通俗说法，不是引擎真的把源码移动到顶部。执行一段全局、模块、函数或块代码前，会先创建相应环境并实例化其中的声明，然后才逐句执行代码。
+
+| 声明 | 环境创建阶段 | 声明语句执行前访问 |
+| --- | --- | --- |
+| `var` | 创建函数级/全局绑定，并初始化为 `undefined` | 得到 `undefined` |
+| 函数声明 | 创建绑定并初始化为函数对象 | 可以提前调用 |
+| `let` / `const` | 创建块级绑定，但保持未初始化 | 抛出 `ReferenceError` |
+| `class` | 创建块级绑定，但保持未初始化 | 抛出 `ReferenceError` |
+| 函数表达式/箭头函数 | 只按承载它的变量声明规则处理；函数对象要等表达式求值 | 取决于 `var`/`let`/`const` |
+
+```js
+sayHi(); // 正常：函数声明已完成初始化
+function sayHi() {}
+
+console.log(value); // undefined：有绑定，但赋值尚未执行
 var value = 1;
 
-// console.log(name); // ReferenceError：处于 TDZ
+// run(); // TypeError: run is not a function
+var run = () => {};
+
+// console.log(name); // ReferenceError
 let name = 'Ada';
 ```
 
-## 4. `this` 的指向如何确定？箭头函数有什么不同？
+### 3.3 什么是暂时性死区？为什么外层同名变量也访问不到？
 
-普通函数的 `this` 由调用方式决定，而不是由定义位置决定：默认调用在严格模式下为 `undefined`；对象方法调用指向该对象；`call`、`apply`、`bind` 可显式指定；构造调用 `new` 会创建并绑定新对象。箭头函数没有自己的 `this`，它在定义时捕获外层 `this`，不能作为构造函数使用。
+TDZ 是从进入某个词法作用域开始，到该 `let`、`const` 或 `class` 声明完成初始化之前的区域。绑定已经属于当前作用域，只是尚未初始化，所以解析不会继续向外寻找同名变量，而是直接抛出 `ReferenceError`。
 
 ```js
-const user = {
-  name: 'Ada',
-  normal() { return this.name; },
-  arrow: () => this.name,
-};
+const value = 'outer';
 
-user.normal(); // 'Ada'
-user.arrow(); // 通常不是 'Ada'，箭头函数不绑定 user
+{
+  // console.log(value); // ReferenceError，不会回退读取外层 value
+  const value = 'inner';
+  console.log(value); // 'inner'
+}
+```
 
+`typeof` 也不能绕过 TDZ：`typeof undeclaredName` 返回 `'undefined'`，但对 TDZ 中已存在、未初始化的绑定执行 `typeof` 仍会抛错。
+
+### 3.4 闭包究竟在什么时候产生？
+
+#### 面试时先这样回答
+
+> **闭包通常是指：内层函数引用了外层函数作用域中的变量，并且内层函数被返回、传递或注册到外部，使它在外层函数执行结束后仍能访问这些变量。**
+>
+> 内层函数创建时会关联定义位置的词法环境；如果它逃逸并继续被引用，外层函数结束后，它使用的外层变量也不会被垃圾回收。这就是业务代码中能观察到的闭包。
+
+这个回答包含面试官最关心的三个条件：
+
+1. 存在函数嵌套或函数定义在另一个词法作用域中。
+2. 内层函数使用了外层作用域的变量，即存在自由变量。
+3. 内层函数被外部继续持有，因此可以在原执行上下文结束后再次调用。
+
+```js
+function makeCounter(initial) {
+  let count = initial;
+
+  return function increment() {
+    count += 1;
+    return count;
+  };
+}
+
+const counterA = makeCounter(0);
+const counterB = makeCounter(10);
+
+counterA(); // 1
+counterA(); // 2
+counterB(); // 11：关联的是另一次调用产生的独立环境
+```
+
+执行过程是：
+
+1. 调用 `makeCounter(0)`，创建本次调用的局部环境，其中有 `initial` 和 `count`。
+2. 执行到 `function increment` 时创建内部函数；它引用了外层的 `count`。
+3. `increment` 被返回并赋给 `counterA`，因此发生逃逸。
+4. `makeCounter` 已执行结束，但 `counterA` 仍可达，`count` 仍被闭包引用，不能被回收。
+5. 再调用一次 `makeCounter(10)` 会建立另一套局部环境，所以 `counterA` 与 `counterB` 的状态互不影响。
+
+#### 面试官继续追问“闭包到底在哪一刻建立”
+
+此时再补充规范层答案：函数对象创建时会记录其定义位置的词法环境，规范中对应函数对象的 `[[Environment]]` 内部槽。因此，**环境关联发生在函数创建时，不是函数以后被调用时**；返回函数、注册事件等操作只是让它逃逸，使闭包的生命周期和效果变得明显。
+
+- 函数声明的函数对象在进入作用域、进行声明实例化时建立。
+- 函数表达式和箭头函数在代码执行到该表达式时建立。
+- 外层函数每调用一次都会产生独立的局部环境；该次调用中创建的内部函数关联这套环境。
+- React 函数组件每 render 一次就是一次新的函数调用，其中创建的事件处理器、Effect 和异步回调会关联本次 render 的 props/state。
+
+从广义规范角度，函数创建时都会关联定义时的外层环境；但普通面试问“什么时候产生闭包”，通常期待的是上面的工程口径——**引用外层变量的内部函数发生逃逸，使外层变量在函数返回后仍然存活**。不要一上来只回答“所有函数都是闭包”，那虽然可以从广义定义解释，却没有命中面试问题。
+
+#### 哪些代码会让闭包逃逸？
+
+- 内部函数作为返回值交给外部变量。
+- 内部函数存入对象、数组、Map 或全局状态。
+- 作为事件监听器、定时器、Promise 回调或异步请求回调注册。
+- 传给第三方库，由库在未来调用。
+- React 将本次 render 创建的事件处理器或 Effect 保存起来，等待交互或 commit 阶段调用。
+
+```js
+function bindButton(button) {
+  const largeData = loadLargeData();
+
+  function handleClick() {
+    console.log(largeData.id);
+  }
+
+  button.addEventListener('click', handleClick);
+
+  // handleClick 被 EventTarget 持有，因此 bindButton 返回后仍然可达。
+  // 返回清理函数，让调用方解除引用。
+  return () => button.removeEventListener('click', handleClick);
+}
+```
+
+### 3.5 闭包保存的是值、变量还是整个执行上下文？
+
+闭包捕获的是**词法环境中的变量绑定**，不是创建瞬间的值副本，所以多个闭包可以读写同一个绑定：
+
+```js
+function createPair() {
+  let value = 0;
+  return {
+    get: () => value,
+    set: (nextValue) => { value = nextValue; },
+  };
+}
+
+const pair = createPair();
+pair.set(10);
+pair.get(); // 10
+```
+
+规范描述的是函数保存 `[[Environment]]` 引用，并不要求引擎把“整个调用栈”原样搬到堆里。现代引擎可以分析真正被内部函数引用的绑定，并对环境表示进行优化；面试时不要把实现绝对化为“闭包会把外层所有变量全部永久保存”。
+
+### 3.6 为什么 `var` 循环是 3 3 3，而 `let` 是 0 1 2？
+
+```js
+for (var i = 0; i < 3; i++) {
+  setTimeout(() => console.log(i));
+}
+// 3 3 3：三个闭包引用同一个函数级 i 绑定
+
+for (let j = 0; j < 3; j++) {
+  setTimeout(() => console.log(j));
+}
+// 0 1 2：for 的每次迭代都会为 j 创建新的词法绑定
+```
+
+定时器只决定回调稍后执行；真正造成结果差异的是闭包引用了一个共享绑定还是多个迭代绑定。ES5 中可用 IIFE 或额外函数参数为每轮调用创建独立环境。
+
+### 3.7 闭包什么时候释放？什么时候才算内存泄漏？
+
+外层函数返回并不等于其环境立即释放。只要闭包仍可从 GC Root（如全局对象、活跃调用栈、DOM/EventTarget、定时器或框架内部结构）到达，它需要的绑定就可能继续存活。当闭包及其环境都不可达时，垃圾回收器才可以回收；回收的具体时间不受业务代码保证。
+
+闭包也不天然等于内存泄漏。泄漏是“不再需要的对象仍被意外引用”：例如组件卸载后未移除监听器、未清除定时器，导致回调闭包继续保留大数组或 DOM。排查应使用 Heap Snapshot 查看 retaining path，而不是看到嵌套函数就判定泄漏。
+
+## 4. `this` 的指向如何确定？箭头函数有什么不同？
+
+面试时先给结论：**普通函数的 `this` 取决于函数如何被调用；箭头函数没有自己的 `this`，它从定义位置所在的外层词法环境中取得 `this`。** 不要回答成“`this` 指向函数本身”或“箭头函数的 `this` 永远指向 `window`”。
+
+### 4.1 普通函数的 `this` 有哪些绑定规则？
+
+判断调用点，而不是只看函数写在哪里：
+
+1. **构造调用**：`new Fn()` 中，`this` 指向新创建的实例。
+2. **显式绑定**：`fn.call(obj)`、`fn.apply(obj)` 或 `fn.bind(obj)` 将 `this` 指定为 `obj`。
+3. **隐式绑定**：`obj.fn()` 中，`this` 是调用点最后一个点号前的对象 `obj`。
+4. **默认绑定**：直接调用 `fn()`；严格模式下 `this` 是 `undefined`，非严格模式的普通脚本中通常是全局对象。
+
+常见优先级可以记为：`new` 绑定 > 显式绑定 > 隐式绑定 > 默认绑定。一个绑定函数被 `new` 调用时，预先绑定的 `this` 会被新实例覆盖，但预置参数仍然有效。
+
+```js
+function show() {
+  return this?.name;
+}
+
+const a = { name: 'A', show };
+const b = { name: 'B' };
+
+a.show(); // 'A'：隐式绑定
+show.call(b); // 'B'：显式绑定
+
+const detached = a.show;
+detached(); // 严格模式下 this 是 undefined，调用点已经不再是 a.show()
+
+const nested = { name: 'outer', child: { name: 'inner', show } };
+nested.child.show(); // 'inner'：只看调用点最后一层对象
+```
+
+`call` 与 `apply` 会立即执行函数，区别是参数分别按参数列表和数组形式传入；`bind` 不立即执行，而是返回绑定了 `this` 和可选预置参数的新函数。
+
+```js
 function greet(prefix, suffix) {
   return `${prefix} ${this.name}${suffix}`;
 }
@@ -109,13 +302,88 @@ const greetAda = greet.bind({ name: 'Ada' }, 'Hi');
 greetAda('!');
 ```
 
-`call` 与 `apply` 会立即调用，参数分别以列表和数组形式传入；`bind` 返回一个绑定了 `this` 和可选预置参数的新函数。
+### 4.2 箭头函数的 `this` 到底从哪里来？
+
+箭头函数不会在调用时创建自己的 `this` 绑定。执行箭头函数里的 `this` 时，会像查找普通变量一样，从定义箭头函数时的外层环境继续查找。因此 `call`、`apply`、`bind` 不能改变箭头函数的 `this`。
+
+```js
+function createArrow() {
+  return () => this.name;
+}
+
+const getName = createArrow.call({ name: 'Ada' });
+getName(); // 'Ada'
+getName.call({ name: 'Grace' }); // 仍然是 'Ada'
+```
+
+这里的箭头函数不是在 `getName()` 调用时决定 `this`，而是在 `createArrow` 执行并创建箭头函数时，捕获了该次调用中的外层 `this`。这也是箭头函数与闭包的结合：它不仅能词法捕获普通变量，也会词法取得 `this`。
+
+### 4.3 为什么对象方法通常不应直接写成箭头函数？
+
+对象字面量本身不会创建 `this` 作用域，所以箭头函数不会把左侧对象捕获为 `this`。
+
+```js
+const user = {
+  name: 'Ada',
+  normal() {
+    return this.name;
+  },
+  arrow: () => this?.name,
+};
+
+user.normal(); // 'Ada'
+user.arrow(); // 不是 'Ada'；箭头函数使用对象外层的 this
+```
+
+但在普通方法内部创建箭头回调很合适，因为它可以沿用方法调用时得到的 `this`：
+
+```js
+const team = {
+  name: 'Frontend',
+  members: ['Ada', 'Grace'],
+  print() {
+    return this.members.map(member => `${this.name}: ${member}`);
+  },
+};
+
+team.print(); // ['Frontend: Ada', 'Frontend: Grace']
+```
+
+如果 `map` 回调改为普通函数，普通函数会产生自己的动态 `this`，不会自动继承 `print` 的 `this`；可以使用箭头函数、显式传入 `thisArg`，或提前 `bind(this)`。
+
+### 4.4 箭头函数与普通函数还有哪些关键区别？
+
+- 箭头函数没有自己的 `arguments`，需要使用剩余参数 `(...args)`，或者读取外层普通函数的 `arguments`。
+- 箭头函数没有构造能力，不能使用 `new`，也没有用于实例共享方法的 `prototype`。
+- 箭头函数不能作为生成器，不能在函数体中使用 `yield`。
+- 箭头函数中的 `super`、`new.target` 也来自外层环境。
+- 对箭头函数调用 `call`、`apply`、`bind` 仍可传参或预置参数，但不能重绑它的 `this`。
+
+### 4.5 在 class、DOM 和 React 中如何选择？
+
+class 的原型方法是共享的，但作为回调传递时可能丢失 `this`；箭头函数类字段会捕获当前实例，代价是每个实例都会创建一个新函数。
+
+```js
+class Counter {
+  count = 0;
+
+  increase() {
+    this.count++;
+  }
+
+  handleClick = () => {
+    this.increase();
+  };
+}
+```
+
+DOM 监听器中，普通函数的 `this` 通常是注册监听器的元素；箭头函数没有这个绑定。实际代码更推荐使用 `event.currentTarget` 明确表示当前监听器所在元素，避免依赖 `this`。
+
+React 函数组件没有组件实例，不依赖 `this`；事件处理函数使用箭头函数主要是为了词法作用域和闭包，而不是“绑定组件 `this`”。React class 组件才存在方法传递后丢失实例 `this` 的问题，可使用构造器 `bind` 或箭头函数类字段。
 
 ## 5. 原型链、`new` 与 `class` 的本质是什么？
 
 对象通过内部原型链接到另一个对象；读取属性时会先查找自身，再沿原型链向上查找，直到 `null`。构造函数的 `prototype` 是其实例的原型。`class` 是基于原型继承的语法糖，并非另一套对象模型。
-
-`new Constructor(...args)` 大致会：创建一个新对象；将其原型设为 `Constructor.prototype`；以新对象为 `this` 执行构造函数；若构造函数显式返回对象，则返回该对象，否则返回新对象。
 
 ```js
 function Person(name) {
@@ -131,6 +399,94 @@ ada.sayHi(); // 'Hi, Ada'
 ```
 
 不要用 `__proto__` 读写原型；读取使用 `Object.getPrototypeOf`，创建指定原型的对象使用 `Object.create`。
+
+### 5.1 面试题：`new` 一个对象时发生了什么？
+
+面试时可以按下面四步回答：
+
+1. 创建一个新的普通对象。
+2. 将新对象的 `[[Prototype]]` 关联到构造函数的 `prototype` 对象，因此实例可以访问原型上的成员。
+3. 以新对象作为 `this` 调用构造函数，并传入参数，构造函数中的 `this.xxx` 会成为实例自身属性。
+4. 处理构造函数的返回值：如果显式返回对象或函数，`new` 返回该值；如果没有返回，或返回的是基本类型，则返回第一步创建的实例。
+
+```js
+function User(name) {
+  this.name = name;
+  return 123;
+}
+
+const user = new User('Ada');
+user.name; // 'Ada'：返回基本类型不会覆盖实例
+
+function Factory() {
+  this.value = 1;
+  return { value: 2 };
+}
+
+new Factory(); // { value: 2 }：返回对象会覆盖默认实例
+```
+
+还应知道两个容易被追问的边界：
+
+- 如果 `Constructor.prototype` 不是对象，创建实例时会回退到默认的 `Object.prototype`，而不是把基本类型设为原型。
+- 箭头函数、生成器函数等不是构造器，没有构造所需的内部能力，对它们使用 `new` 会抛出 `TypeError`；不能只通过“是否存在 `prototype` 属性”判断一个值能否被 `new`。
+
+手写简化版 `new` 可以展示关键步骤：
+
+```js
+function myNew(Constructor, ...args) {
+  if (typeof Constructor !== 'function') {
+    throw new TypeError('Constructor must be a function');
+  }
+
+  const prototype = (
+    Constructor.prototype !== null
+    && (typeof Constructor.prototype === 'object'
+      || typeof Constructor.prototype === 'function')
+  ) ? Constructor.prototype : Object.prototype;
+
+  const instance = Object.create(prototype);
+  const result = Constructor.apply(instance, args);
+  const returnsObject = result !== null
+    && (typeof result === 'object' || typeof result === 'function');
+
+  return returnsObject ? result : instance;
+}
+```
+
+这只是用于解释普通构造函数的面试版实现，不完全等价于语言内部的 `new`：例如它不能正确模拟 `class` 构造器，也无法仅靠 JavaScript 代码可靠判断函数是否具有构造能力。
+
+### 5.2 `prototype`、`[[Prototype]]`、`constructor` 如何区分？
+
+- `Person.prototype` 是构造函数对象上的普通属性，默认指向一个可供实例共享方法的对象。
+- 实例的 `[[Prototype]]` 是内部槽；`Object.getPrototypeOf(ada)` 才是标准读取方式。
+- `Person.prototype.constructor` 默认回指 `Person`，但它只是可写属性，不是可靠的类型系统。
+- `ada instanceof Person` 会检查 `Person.prototype` 是否出现在 `ada` 的原型链上；它会受跨 iframe、修改 prototype 和 `Symbol.hasInstance` 影响。
+
+```text
+Person ── prototype ──▶ Person.prototype ── [[Prototype]] ──▶ Object.prototype ──▶ null
+                           ▲
+                           │ [[Prototype]]
+                          ada
+```
+
+### 5.3 `class extends` 如何建立两条原型链？
+
+```js
+class Animal {
+  speak() { return 'sound'; }
+  static category = 'animal';
+}
+
+class Dog extends Animal {
+  speak() { return `${super.speak()} bark`; }
+}
+
+Object.getPrototypeOf(Dog.prototype) === Animal.prototype; // true：实例方法继承
+Object.getPrototypeOf(Dog) === Animal; // true：静态成员继承
+```
+
+实例方法应放在 prototype 上共享。如果在构造函数里为每个实例重新创建相同方法，会产生更多函数对象。运行时频繁 `Object.setPrototypeOf` 还可能破坏引擎对对象形状和属性访问的优化。
 
 ## 6. 浅拷贝与深拷贝有什么区别？
 
@@ -258,6 +614,42 @@ Promise.resolve().then(() => console.log('microtask'));
 
 完整流程、渲染时机与更多输出题见：[浏览器事件循环](./07-浏览器基本原理#5-浏览器事件循环event-loop)。
 
+### 12.1 `async/await`、微任务和渲染的综合题
+
+```js
+console.log('A');
+
+setTimeout(() => console.log('B'), 0);
+
+async function run() {
+  console.log('C');
+  await null;
+  console.log('D');
+  queueMicrotask(() => console.log('E'));
+}
+
+run();
+Promise.resolve().then(() => console.log('F'));
+console.log('G');
+// A C G D F E B
+```
+
+分析时不要背“宏任务先于微任务”。初始脚本本身是一个任务：先执行同步代码 `A C G`；`await` 后续先入微任务队列，所以是 `D`；随后已有的 Promise 回调输出 `F`；`D` 执行时追加的 `E` 排在其后；微任务清空后才可能渲染并取定时器任务 `B`。
+
+### 12.2 浏览器调度 API 的位置
+
+| API / 回调 | 调度类别或时机 | 面试重点 |
+| --- | --- | --- |
+| `setTimeout` / `setInterval` | task | 延迟是最早可入队时间，不保证准时执行；嵌套计时器可能被限速 |
+| `MessageChannel` 的 `message` | task | 常用于无需计时语义的尽快调度；仍要等待当前任务和微任务结束 |
+| Promise reaction / `queueMicrotask` | microtask | 当前任务结束后清空；递归追加会饿死渲染和后续任务 |
+| `MutationObserver` | microtask checkpoint 中通知 | 回调不是同步执行；变更记录会批量交付 |
+| `requestAnimationFrame` | 下一次绘制前的渲染更新阶段 | 不是普通宏任务或微任务；后台页通常会降频/暂停 |
+| `requestIdleCallback` | 浏览器判断有空闲预算时 | 不保证及时；关键业务必须设置其他策略或 timeout |
+| `fetch` | 网络由宿主并行处理；Promise reaction 是微任务 | “fetch 是宏任务/微任务”这个问法不准确，应区分网络操作和 JS 回调 |
+
+规范中使用的是 task 和 task source；“宏任务”是工程交流中的俗称。浏览器还可以从不同任务源选择任务，因此不能把所有 task 想象成一个严格统一的 FIFO 队列。
+
 ## 13. CommonJS 和 ES Module 有什么区别？
 
 CommonJS 使用 `require` 和 `module.exports`，模块通常在运行时加载，导出更接近值的拷贝（对象属性变化等情况需结合引用理解）。ES Module 使用静态的 `import` / `export`，可在构建阶段分析依赖以支持 tree-shaking，导入的是只读的实时绑定（live binding）。
@@ -297,6 +689,224 @@ JavaScript 有垃圾回收，但只要对象仍可从根对象访问，就不会
 
 排查时先稳定复现操作路径，再用 Chrome DevTools 的 Memory 面板比较 Heap Snapshot 或记录 Allocation Timeline：重复进入/离开页面后检查实例数量和保留路径。修复应回到资源的创建边界，在组件卸载或任务取消时对称清理监听、计时器、订阅和缓存，并为缓存设置容量与淘汰策略。
 
+## 16. React 函数组件的“代码函数”是如何产生并执行的？
+
+React 不会凭空生成业务组件函数。源码中的 JSX 先由编译器转换为 JSX runtime 调用（旧转换是 `React.createElement`），模块执行后得到开发者声明的组件函数。React 调度到该组件对应的 Fiber 时，才在 render 阶段调用组件函数。
+
+```jsx
+function Counter({ initial }) {
+  const [count, setCount] = useState(initial);
+  return <button onClick={() => setCount(count + 1)}>{count}</button>;
+}
+```
+
+可用下面的面试链路回答：
+
+```text
+JSX
+  → jsx(type, props) / React.createElement(type, props)
+  → React Element（描述 UI 的普通对象，不是 DOM）
+  → createRoot(...).render(element)
+  → 为元素创建/复用 Fiber
+  → beginWork 遇到 FunctionComponent
+  → renderWithHooks 设置当前 Fiber 和 Hook dispatcher
+  → Component(props) 执行，返回下一层 React Element
+  → reconcileChildren 比较新旧子元素并生成 work-in-progress Fiber 树
+  → completeWork 准备 DOM 变更
+  → commit 阶段同步应用 DOM、ref 和 layout effect
+  → 后续时机处理 passive effect
+```
+
+组件函数必须保持纯净，因为 render 阶段可能被暂停、重试或丢弃。DOM 写入、订阅、请求等副作用不能在组件函数主体执行；用户操作引起的副作用优先放事件处理器，与外部系统同步才使用 Effect。
+
+## 17. React Hook 为什么必须按固定顺序调用？内部如何保存状态？
+
+每个函数组件 Fiber 的 `memoizedState` 指向 Hook 单链表。首次渲染时，`mountWorkInProgressHook` 按调用顺序创建 Hook 节点；更新时，`updateWorkInProgressHook` 同时沿 current Fiber 和 work-in-progress Fiber 的 Hook 链表前进。React 是用**调用位置**匹配状态，不是用变量名匹配，所以 Hook 不能放在条件、循环或提前 return 之后。
+
+简化模型如下，字段名对应 React 源码中的核心概念：
+
+```js
+let currentlyRenderingFiber = null;
+let workInProgressHook = null;
+
+function mountWorkInProgressHook() {
+  const hook = {
+    memoizedState: null,
+    baseState: null,
+    baseQueue: null,
+    queue: null,
+    next: null,
+  };
+
+  if (workInProgressHook === null) {
+    currentlyRenderingFiber.memoizedState = hook;
+  } else {
+    workInProgressHook.next = hook;
+  }
+  workInProgressHook = hook;
+  return hook;
+}
+
+function mountState(initialState) {
+  const hook = mountWorkInProgressHook();
+  const fiber = currentlyRenderingFiber;
+  hook.memoizedState = typeof initialState === 'function'
+    ? initialState()
+    : initialState;
+  hook.queue = { pending: null };
+
+  const dispatch = (action) => {
+    enqueueUpdate(fiber, hook.queue, action);
+    scheduleUpdateOnFiber(fiber);
+  };
+  return [hook.memoizedState, dispatch];
+}
+```
+
+真实实现更复杂：dispatch 会绑定对应 Fiber 和 queue，更新带有 lane/优先级，并处理 base queue、跳过的低优先级更新和并发渲染。上面的代码只用于解释“链表 + 调用顺序 + 更新队列”，不要把它当成可替代 React 的完整实现。
+
+## 18. React Hook、事件处理器为什么会产生闭包和旧状态？
+
+每次 render 都是一次新的组件函数调用，会创建新的局部变量和新的事件处理器/Effect 函数。它们闭包捕获的是**本次 render 的 props 和 state 绑定**。React 的 state 存在 Fiber Hook 节点中；组件拿到的是某次渲染的快照，调用 setter 是入队更新，不会修改已经运行中的闭包。
+
+```jsx
+function Counter() {
+  const [count, setCount] = useState(0);
+
+  function handleClick() {
+    setTimeout(() => {
+      console.log(count); // 捕获点击发生时那次 render 的 count
+    }, 1000);
+
+    setCount(count + 1);
+    setCount(count + 1); // 两次都基于同一个快照，通常只增加 1
+  }
+
+  return <button onClick={handleClick}>{count}</button>;
+}
+```
+
+依赖旧状态计算新状态时使用函数式更新：
+
+```js
+setCount((value) => value + 1);
+setCount((value) => value + 1); // React 按队列依次计算，增加 2
+```
+
+常见 stale closure 场景包括 `setInterval`、异步请求、事件订阅和缺失依赖的 Effect。解决顺序应是：补全依赖；把状态更新改成函数式；把无需响应变化的可变值放入 `ref`；或重构数据流。不要用 `useCallback` 掩盖错误依赖——它缓存函数身份，但函数仍会捕获创建它那次 render 的值。
+
+## 19. React 的 `useEffect`、`useLayoutEffect` 是宏任务还是微任务？
+
+**不能把 Hook API 本身直接归类为宏任务或微任务。**它们是 React commit 流程中的 effect 类型；真正的执行时机由 React 调度器、更新来源、渲染模式和浏览器绘制机会共同决定。
+
+| React 行为 | 正确描述 | 不应回答成 |
+| --- | --- | --- |
+| 组件 render | React 调用组件函数，计算 React Element/Fiber；必须保持纯净 | “render 是微任务” |
+| `setState` | 将更新加入 Hook/Class update queue，并请求调度；同步代码中的 state 快照不会立刻改变 | “setState 是宏任务” |
+| `useLayoutEffect` | DOM mutation 后、浏览器绘制前在 commit 的 layout 阶段同步执行，会阻塞绘制 | “它是微任务” |
+| `useEffect` | passive effect；通常允许浏览器先绘制，再由 React 调度执行，但交互更新等场景可能在绘制前执行 | “固定是 setTimeout 宏任务”或“固定是 Promise 微任务” |
+| `useInsertionEffect` | 在 layout effect 之前，用于 CSS-in-JS 插入样式；不是通用业务副作用 API | “比微任务更早” |
+| 自动批处理 | React 将多个更新合并处理，是框架调度语义 | “因为所有更新都在同一个宏任务” |
+
+浏览器版 React Scheduler 在常见实现中可能借助 `MessageChannel` 请求后续工作，它产生 task；但这是实现细节，不是 `useEffect` 的公共语义保证。面试应先说 React 保证的相对时序，再补充具体版本源码实现。
+
+## 20. Vue 3 的响应式更新、`nextTick`、watch 是宏任务还是微任务？
+
+Vue 3 的 Proxy getter/setter 和依赖触发本身是同步 JavaScript；为避免连续修改状态导致重复渲染，组件更新 job 会去重并进入 scheduler 队列。默认情况下，Vue 使用已 resolved Promise 驱动一次微任务来 `flushJobs`。
+
+```js
+const resolvedPromise = Promise.resolve();
+let currentFlushPromise;
+
+function queueFlush() {
+  currentFlushPromise ??= resolvedPromise.then(flushJobs);
+}
+
+function nextTick(fn) {
+  const promise = currentFlushPromise || resolvedPromise;
+  return fn ? promise.then(fn) : promise;
+}
+```
+
+| Vue 3 行为 | 执行时机 |
+| --- | --- |
+| 修改 `ref.value` / reactive 属性 | setter、依赖触发同步发生；组件 DOM 更新被批处理 |
+| 组件 render effect | 作为 scheduler job，通常在本轮 Promise 微任务的 flush 中执行 |
+| `watch` / `watchEffect` 默认 `flush: 'pre'` | 已批处理；父组件更新后、当前组件 DOM 更新前执行 |
+| `flush: 'post'` / `watchPostEffect` | 当前组件 DOM 更新后，同一次 Vue flush 的 post 队列执行 |
+| `flush: 'sync'` / `watchSyncEffect` | 响应式依赖变化时同步触发，不参与批处理，应谨慎使用 |
+| `nextTick` | 等待当前 DOM 更新 flush 对应 Promise；回调接在该 Promise 后，属于微任务链 |
+| `onMounted` / `onUpdated` | 由 Vue scheduler/commit 流程在相应阶段调用，不应孤立称为“宏任务 API” |
+
+因此，“Vue 的方法哪些是宏任务”不是最准确的问法。`setTimeout` 等浏览器 API 仍是 task；Vue 核心更新调度主要利用 Promise 微任务完成批处理。回答时应说明**同步触发、进入哪个 Vue 队列、相对 DOM 更新的位置**。
+
+## 21. Promise Resolution Procedure 为什么比“状态改变”更复杂？
+
+`resolve(value)` 不一定立刻让 Promise fulfilled。如果 `value` 是另一个 Promise 或 thenable，当前 Promise 会采用它的最终状态；读取 `then` 属性本身也可能抛错。Promise 回调的返回值会进入相同的解析过程，因此链式调用能自动展开嵌套 Promise。
+
+```js
+const thenable = {
+  then(resolve) {
+    setTimeout(() => resolve(42), 100);
+  },
+};
+
+Promise.resolve(thenable).then(console.log); // 42
+```
+
+如果 handler 返回它自己所创建的 Promise，会因 chaining cycle reject。`finally` 的返回值通常不替换原结果，但如果 `finally` 抛错或返回 rejected Promise，则链会以新错误失败。
+
+## 22. 如何设计可取消、可超时、可防竞态的异步请求？
+
+Promise 本身没有通用取消能力；浏览器请求使用 `AbortController`。只用 `Promise.race` 做超时不会自动终止底层 fetch，必须同时 `abort()`。
+
+```js
+async function fetchWithTimeout(url, timeout = 5000) {
+  const controller = new AbortController();
+  const timerId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } finally {
+    clearTimeout(timerId);
+  }
+}
+```
+
+搜索联想等场景还要防止旧请求晚返回覆盖新结果：发新请求时取消旧请求，或使用递增 request id，只接收最新 id 的结果。组件卸载时同样应取消仍在进行的请求和订阅。
+
+## 23. 属性描述符、`Object.freeze` 和 Proxy 有哪些高级考点？
+
+对象属性不仅有 value，还可能有 `writable`、`enumerable`、`configurable`，或 getter/setter。`Object.freeze` 只冻结对象自身第一层：禁止新增/删除属性并使数据属性不可写，但嵌套对象仍可修改，私有槽或外部状态也不因此冻结。
+
+Proxy 可以拦截 `get`、`set`、`has`、`ownKeys` 等内部操作，但必须遵守不变量。例如不可配置属性不能从 `ownKeys` 结果中消失。`Reflect` 提供与内部操作对应的默认行为，适合在 trap 中转发；实现响应式时还要处理对象嵌套、依赖清理、数组和集合类型，不能只写一个简单 `get/set` 就称为完整响应式系统。
+
+## 24. 高级前端面试还常追问哪些 JavaScript 点？
+
+- 执行上下文：创建阶段与执行阶段、词法环境、变量环境、作用域链和 `this` 绑定。
+- 垃圾回收：可达性、标记清除、分代假设、弱引用，以及如何通过 retaining path 定位泄漏。
+- 模块：ESM live binding、循环依赖下的初始化顺序、top-level await 对依赖图执行的影响。
+- 对象模型：隐藏类/shape、内联缓存、为什么动态改变原型或对象字段形状可能导致去优化。回答时应强调这是引擎优化策略，不是 ECMAScript 语义保证。
+- 迭代协议：`Symbol.iterator`、iterator、generator，以及 `for...of` 为什么能消费数组、Map 和自定义可迭代对象。
+- 并发控制：任务池、重试退避、幂等、失败隔离，以及 `Promise.all` 失败后其他底层任务不会自动取消。
+- 安全边界：原型污染、XSS 上下文转义、`postMessage` 的 origin 校验，以及为什么 TypeScript 类型不能校验运行时网络数据。
+- Web Worker：适合 CPU 密集型计算；与主线程通过结构化克隆或 transferable 通信，不能直接操作 DOM。
+
 ## 详细阅读
 
-[Promise 与 async/await](../promise/04-async-await) ｜ [Promise 高频题](../promise/题目) ｜ [浏览器事件循环详解](../js/j1EventLoop) ｜ [浏览器原理与渲染](./07-浏览器基本原理) ｜ [前端性能优化](./02-h5-性能优化)
+[Promise 与 async/await](../promise/04-async-await) ｜ [Promise 高频题](../promise/题目) ｜ [浏览器事件循环详解](../js/j1EventLoop) ｜ [React render/Fiber 流程](../react/react17-render阶段) ｜ [React effect 执行阶段](../react/useLayoutEffect-useEffect) ｜ [Vue 3 nextTick 调度](../vue/vfor-nextTick) ｜ [浏览器原理与渲染](./07-浏览器基本原理) ｜ [前端性能优化](./02-h5-性能优化)
+
+## 官方资料
+
+- [MDN：继承与原型链](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Guide/Inheritance_and_the_prototype_chain)
+- [MDN：闭包](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Guide/Closures)
+- [ECMAScript 规范：函数对象与 `[[Environment]]`](https://tc39.es/ecma262/#sec-ecmascript-function-objects)
+- [MDN：微任务与事件循环](https://developer.mozilla.org/zh-CN/docs/Web/API/HTML_DOM_API/Microtask_guide/In_depth)
+- [React：State as a Snapshot](https://react.dev/learn/state-as-a-snapshot)
+- [React：Queueing a Series of State Updates](https://react.dev/learn/queueing-a-series-of-state-updates)
+- [React：useEffect](https://react.dev/reference/react/useEffect) 与 [useLayoutEffect](https://react.dev/reference/react/useLayoutEffect)
+- [React 源码：ReactFiberHooks.js](https://github.com/facebook/react/blob/main/packages/react-reconciler/src/ReactFiberHooks.js)
+- [Vue 3：nextTick](https://vuejs.org/api/general.html#nexttick)
+- [Vue 3：Watcher Flush Timing](https://vuejs.org/guide/essentials/watchers.html#callback-flush-timing)
