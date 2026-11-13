@@ -66,3 +66,347 @@ Golang服务端开发工程师
 7. 能与后端高效协作，理解RESTful API、WebSocket、SSE、鉴权、分页、异常码等常见接口设计
 8. 掌握基本运维知识，能够独立完成前端项目
 9. Docker镜像构建、Nginx配置及静态资源部署上线。
+
+## 移动端 H5 兼容性问题（bfun-game 项目复盘）
+### 2. iOS 与 Android WebView 桥接不统一
+
+Android WebView 常把桥接对象挂在 `window.jsBridge`，iOS WKWebView 通常使用 `window.webkit.messageHandlers`，而且不同 App 版本可能存在 `jsBridge`、`nativeBridge` 等不同命名。
+
+项目采用多级探测和降级：
+
+```ts
+if (window.jsBridge?.postMessage) {
+  // Android
+  window.jsBridge.postMessage(method, params)
+} else if (window.webkit?.messageHandlers?.jsBridge) {
+  // iOS 主桥接
+  window.webkit.messageHandlers.jsBridge.postMessage({ method, params })
+} else if (window.webkit?.messageHandlers?.nativeBridge) {
+  // iOS 旧版本备用桥接
+  window.webkit.messageHandlers.nativeBridge.postMessage({ method, params })
+}
+```
+
+同时给每次调用生成唯一回调名，并设置 5 秒超时；成功、失败或超时后清理全局回调，避免 Promise 永久 pending 和全局对象泄漏。桥接不存在时不继续假装处于 App 环境，而是清理错误的 App 状态并进入 Web 降级流程。
+
+### 3. PWA 安装能力在不同浏览器中不一致
+Chromium 浏览器可能触发 `beforeinstallprompt`，iOS Safari 不支持同样的自动安装流程，Facebook 等内置浏览器也可能拦截安装。因此不能只用 UA 判断“支持 PWA”，也不能把“支持 Service Worker”等同于“当前可安装”。
+
+项目将安装过程设计为状态机：初始化、可安装、安装中、已安装、不可安装，并组合判断：
+
+- 是否支持 Service Worker、Cache API、Fetch、Push Manager、Notification。
+- 是否处于 HTTPS 或 localhost 安全上下文。
+- 是否触发 `beforeinstallprompt`、`appinstalled`。
+- 是否已运行在 `display-mode: standalone`，以及 iOS 的 `navigator.standalone`。
+- 一定时间内未收到安装事件，则进入不可自动安装的降级分支。
+
+降级策略是：iOS 展示“添加到主屏幕”的手动指引；Android 尝试在默认浏览器重新打开；仍不支持时回到普通 Web 页面。用 URL 标记已经尝试过外部浏览器，避免反复跳转形成死循环。
+
+### 4. App 内置浏览器和支付跳转
+
+Facebook IAB 等内置浏览器可通过 `FB_IAB`、`FBAN`、`FBAV` 等 UA 特征辅助识别。Android 可尝试 `intent://` 调起 Chrome；iOS 通常不能由网页强制拉起 Safari，只能普通跳转或引导用户手动操作。
+
+支付跳转需要额外处理弹窗拦截：`window.open()` 是否成功不只取决于 iOS，任何浏览器或内置 WebView 都可能在**异步接口返回后**拦截新窗口。项目中“创建支付订单前先打开 `about:blank`，接口成功后再把支付地址写入该窗口”的思路，目的是让开窗发生在用户点击事件的同步调用栈内；它应按支付渠道和运行环境使用，不能简单写成“仅 iOS 需要新开窗口”。
+
+```ts
+// 必须在用户点击处理函数中同步执行，避免被弹窗拦截
+const payWindow = window.open("about:blank", "_blank")
+
+try {
+  const order = await createPayOrder()
+  if (!order.payUrl) throw new Error("missing pay url")
+
+  if (payWindow) {
+    payWindow.location.replace(order.payUrl)
+  } else {
+    // 降级：应明确告知用户将离开当前页
+    window.location.assign(order.payUrl)
+  }
+} catch (error) {
+  payWindow?.close()
+  // 展示创建订单失败状态
+}
+```
+
+支付方案的优先级应是：
+
+1. App 容器已提供支付或外链 Bridge 时，优先调用 Bridge，由原生决定外部浏览器、支付 App 或内嵌页的打开方式。
+2. Web 端在用户点击时同步预开窗口；订单接口返回后跳转到受信任的支付地址。若预开窗口被拦截，再经用户确认在当前页跳转，或展示“点击继续支付”按钮，而不是静默重试开窗。
+3. 内置浏览器不支持渠道时展示明确引导，如“在系统浏览器中打开”；不要承诺一定能拉起 Safari/Chrome。
+4. 用户返回页面、`visibilitychange` 或轮询仅用于触发订单查询；支付成功必须以服务端订单状态或支付平台的服务端回调为准，不能信任前端 URL 参数或“窗口已关闭”。
+
+同时应对支付 URL 做协议和域名白名单校验，避免后端异常数据或开放重定向把用户带到非受信任站点。UA 检测只应作为兼容分支；更稳妥的顺序是“能力与渠道配置优先，UA 补充特殊平台差异，失败后提供可用降级”。
+
+### 5. iOS 全屏 API 与 Android 行为不同
+
+游戏页在 Android 上可以借助 `screenfull` 请求元素全屏，但 iOS WebView/Safari 对普通元素全屏支持受限，尤其是 iframe 游戏场景。项目没有强行统一，而是按平台提供不同交互：
+
+- Android：在用户点击后请求全屏，并捕获失败，保证失败后页面仍可使用。
+- iOS：隐藏页面头部、释放透明蒙层，扩大 iframe 的可交互区域，同时保留悬浮返回按钮。
+- iframe 同时设置 `allow="fullscreen"` 和 `allowFullScreen`，兼容属性声明差异。
+
+这类问题的重点不是让各平台行为完全相同，而是保证核心任务都能完成。
+
+### 6. iOS 触摸、缩放和滚动穿透
+
+iOS Safari 的双指缩放、双击缩放和弹性滚动容易影响仿原生页面、抽屉和游戏操作。项目中的处理包括：
+
+- `touchstart` 中检测多点触摸并阻止默认缩放。
+- 记录两次 `touchend` 的时间，阻止 300ms 内的双击缩放。
+- 需要调用 `preventDefault` 的监听器显式设置 `{ passive: false }`。
+- 弹层打开时同时锁定 `html` 和 `body` 的 `overflow`，关闭时恢复原值。
+- 组件卸载时移除事件监听器和定时器，避免重复绑定与内存泄漏。
+
+全局禁用缩放会影响无障碍体验，因此应只用于确有交互要求的游戏或仿原生局部页面，并优先缩小作用域。
+
+### 7. CSS 浏览器差异
+
+项目对浏览器私有实现采用“标准属性 + 前缀/专有属性”的组合：
+
+- 隐藏滚动条：Firefox 使用 `scrollbar-width`，旧 Edge/IE 使用 `-ms-overflow-style`，Chrome/Safari 使用 `::-webkit-scrollbar`。
+- 表单自动填充：使用 `:-webkit-autofill` 和 `-webkit-text-fill-color` 修正 WebKit 下的颜色覆盖。
+- 数字输入框：使用 `::-webkit-inner-spin-button`、`::-webkit-outer-spin-button` 隐藏 WebKit 默认步进按钮。
+- 动画保留标准 `animation`，必要时补充 `-webkit-animation`。
+- iPhone 刘海屏和底部 Home Indicator 区域，应结合 `env(safe-area-inset-*)` 预留安全区，而不是写死某一款设备的高度。
+
+### 面试回答总结
+
+这个项目的移动端兼容性治理可以概括为：
+
+1. 先明确支持范围和复现环境，包括系统、浏览器、WebView、App 版本及入口来源。
+2. 优先做 feature detection，不仅依赖 UA；UA 只补充 iOS、Android 和特定内置浏览器差异。
+3. 将平台差异集中封装，不让业务组件到处散落兼容判断。
+4. 对 PWA、全屏、Native Bridge 等不稳定能力设计状态、超时、异常捕获和降级路径。
+5. 所有事件监听、全局回调、定时器和临时样式都要在组件卸载时恢复。
+6. 使用真机和真实入口回归，重点覆盖 iOS Safari、iOS WebView、Android Chrome、Android WebView、Facebook IAB，以及 PWA 安装前后状态。
+
+兼容性的目标不是让所有浏览器实现完全一致，而是在明确的支持矩阵内，让核心流程可完成、失败可感知、问题可定位、方案可降级。
+
+## 其他常见前端兼容性问题
+
+### 9. 移动端视口高度不稳定
+
+移动浏览器的地址栏、底部工具栏会动态展开和收起，传统 `100vh` 不一定等于当前可见区域高度，常见现象是全屏页面被遮挡、底部按钮不可见或页面滚动时跳动。
+
+可采用渐进增强：
+
+```css
+.page {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+```
+
+- `dvh` 表示动态视口高度，适合需要始终贴合可见区域的页面。
+- `svh` 表示较小视口高度，适合避免浏览器工具栏遮挡内容。
+- 保留 `vh` 作为旧浏览器回退。
+- 仍有问题时可监听 `window.visualViewport`，但要对高频 `resize` 做节流并及时移除监听。
+
+### 10. iOS 安全区适配
+
+全面屏设备的刘海、圆角和底部 Home Indicator 会遮挡固定定位内容。页面需要设置 `viewport-fit=cover`，并使用安全区环境变量：
+
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+```
+
+```css
+.bottom-bar {
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+```
+
+顶部、左侧和右侧同样可使用 `safe-area-inset-top/left/right`。不要根据 iPhone 型号写死高度，因为横竖屏、PWA 和 WebView 的安全区都可能不同。
+
+### 12. CSS 布局兼容
+
+Flex 和 Grid 已广泛支持，但实际项目仍常遇到细节差异：
+
+- Flex 子项默认 `min-width: auto`，长文本可能撑破容器；通常需要 `min-width: 0`。
+- 单行省略需要同时具备宽度约束、`overflow: hidden`、`white-space: nowrap`、`text-overflow: ellipsis`。
+- 多行省略常使用 `-webkit-line-clamp`，应准备高度限制或普通截断作为回退。
+- `position: sticky` 会受祖先节点 `overflow`、滚动容器和高度影响，失效时先检查包含块，而不是直接归因于浏览器 bug。
+- `gap` 在旧版 Safari 的 Flex 布局中曾不受支持，支持较老系统时可用 margin 回退。
+
+CSS 兼容优先交给 Autoprefixer 处理，并通过 Browserslist 明确目标环境；不要凭记忆手写所有前缀。
+
+### 15. 表单控件和输入行为
+
+原生 `input`、`select`、日期选择器和自动填充 UI 在 Safari、Chrome、WebView 中外观及行为差异明显。
+
+常见实践：
+
+- 使用正确的 `type`、`inputMode`、`enterKeyHint` 和 `autocomplete`，改善移动键盘和自动填充体验。
+- 金额、验证码等输入不要只依赖 `type="number"`；它可能允许科学计数法，且不同浏览器的符号和小数处理不同。
+- iOS 输入框字体小于 16px 时，聚焦可能自动放大页面。
+- 自定义样式时谨慎使用 `appearance: none`，确保焦点、禁用、错误和键盘操作状态仍然可见。
+- 不要用 placeholder 代替 label，否则会影响可访问性和自动填充识别。
+
+### 16. 图片与媒体格式
+
+WebP、AVIF、SVG、视频编码和音频编码的支持范围不同。即使浏览器支持 `<video>`，也未必支持某一种编码格式。
+
+```html
+<picture>
+  <source srcset="image.avif" type="image/avif" />
+  <source srcset="image.webp" type="image/webp" />
+  <img src="image.jpg" alt="" />
+</picture>
+```
+
+- 图片使用 `<picture>` 或框架图片组件提供格式回退。
+- 视频提供多个 `<source>`，并用 `canPlayType()` 做能力判断。
+- iOS 上自动播放通常要求静音并设置 `playsinline`，仍需尊重系统省电、流量和用户设置。
+- 不要假设移动端可以自动播放有声音的媒体；播放失败时保留明确的用户触发按钮。
+
+### 17. 下载、上传和文件预览
+
+`download` 属性、Blob URL、跨域文件下载和系统文件选择器在移动 Safari、WebView 中存在差异。
+
+- 跨域资源的 `download` 属性可能无效，应由服务端返回正确的 `Content-Disposition`。
+- 创建 `URL.createObjectURL()` 后，应在不再使用时调用 `URL.revokeObjectURL()`。
+- iOS 对文件类型、相机拍摄和大文件上传的限制需真机验证。
+- 上传前检查 MIME type 还不够，服务端仍须验证真实文件内容、大小和扩展名。
+- 大文件优先使用分片、断点续传和失败重试，避免弱网中整包重传。
+
+### 20. 日期、时区与本地化
+
+`new Date("2026-01-01")`、`new Date("2026-01-01 10:00:00")` 等非完整 ISO 字符串，在不同浏览器和时区中的解析可能不同。夏令时也会导致“加一天等于加 24 小时”并不总成立。
+
+建议：
+
+- 接口使用 ISO 8601，并明确携带 `Z` 或时区偏移。
+- 仅表示日期时不要无意中转换成 UTC 时间点。
+- 解析非标准日期前先规范格式，不依赖浏览器猜测。
+- 展示使用 `Intl.DateTimeFormat`，金额使用 `Intl.NumberFormat`，并明确 locale 和 currency。
+- 服务端与客户端渲染时使用一致的时区和语言设置，避免 hydration 文本不一致。
+
+
+### 通用兼容性排查清单
+
+1. 记录设备型号、系统版本、浏览器或 WebView 版本、入口、网络和账号状态。
+2. 用相同入口和数据稳定复现，区分必现、概率性和特定版本问题。
+3. 检查控制台、Network、远程调试日志，以及实际支持的 API 和 CSS。
+4. 判断属于语法、Web API、CSS、平台策略、网络、服务端配置还是业务竞态。
+5. 优先能力检测与渐进增强，必要时再使用 UA 特判。
+6. 为不支持的能力提供降级路径，并增加错误监控和关键环境信息。
+7. 在支持矩阵中的最低版本真机回归，不只依赖桌面浏览器设备模拟。
+
+## 响应式开发、CSS 布局与 HTML 基础
+
+这一部分关注页面如何随屏幕和内容变化稳定布局，以及如何用正确的 HTML 语义建立可维护、可访问的页面。它与前面的兼容性章节分工不同：这里讲布局策略和基础能力选型，兼容性章节讲具体浏览器、设备和 WebView 的差异与降级。
+
+### 1. 响应式开发
+
+响应式不是为每一种设备写一套页面，而是让同一套内容根据可用空间、输入方式和内容密度调整呈现。通常从移动端基础样式开始，再为更宽的屏幕逐步增强：这就是 mobile first。
+
+页面应先声明正确的视口：
+
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+```
+
+尺寸优先使用流式约束，而不是为每种机型写固定宽高：
+
+```css
+.container {
+  width: min(100% - 32px, 1200px);
+  margin-inline: auto;
+}
+
+.title {
+  font-size: clamp(1.5rem, 1rem + 2vw, 3rem);
+}
+
+@media (min-width: 768px) {
+  .card-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+```
+
+- 断点应由内容“开始拥挤或阅读体验变差”的位置决定，而不是死记某个手机型号；常见的 `768px`、`1024px` 只可作为起点。
+- `rem` 适合与根字体大小关联的全局间距和排版；`vw` 适合随视口连续变化的尺寸，但不宜单独控制正文，以免极宽或极窄屏文字失控；`clamp(min, preferred, max)` 能给流式字号和间距设置上下限。
+- 图片用 `max-width: 100%; height: auto` 防止溢出；需要按屏幕加载不同资源时使用 `srcset`、`sizes` 或 `<picture>`，并给图片明确 `width`、`height` 或 `aspect-ratio` 以减少布局抖动。
+- 媒体查询优先按能力增强，例如 `prefers-reduced-motion`、`hover`、`pointer`，不要仅用屏幕宽度推断用户一定在使用鼠标或触屏。
+
+面试可回答：我会先保证小屏核心内容和操作可用，再用内容驱动的断点扩展网格、导航和留白；尺寸以 `min/max/clamp` 等约束为主，媒体查询只处理布局发生结构变化的临界点。
+
+### 2. 常用 CSS 布局方式
+
+布局方式的选择取决于“是一维排列还是二维排版”“元素是否需要脱离文档流”，而不是哪个 API 更新。
+
+| 方式 | 适用场景 | 常见注意点 |
+| --- | --- | --- |
+| 普通文档流 | 文章、表单、从上到下的内容 | 块级元素默认纵向排列；优先保留它，避免不必要的定位。 |
+| `position` | 徽标、浮层、局部覆盖、吸顶元素 | `absolute` 相对最近的定位祖先；脱离文档流后要预留空间；`fixed` 相对视口。 |
+| Flex | 导航、按钮组、横向/纵向一维对齐 | `justify-content` 管主轴，`align-items` 管交叉轴；长文本溢出时常需给子项加 `min-width: 0`。 |
+| Grid | 卡片矩阵、仪表盘、行列同时受约束的二维布局 | 用 `minmax()` 和 `repeat()` 做自适应列；不必为了简单的一行元素使用 Grid。 |
+
+常见模式可以这样实现：
+
+```css
+/* 双栏：主内容可收缩，侧栏固定 */
+.two-column {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 24px;
+}
+
+/* 三栏：两侧固定，中间自适应 */
+.three-column {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 280px;
+  gap: 24px;
+}
+
+/* 水平、垂直居中 */
+.center {
+  display: grid;
+  place-items: center;
+}
+
+@media (max-width: 767px) {
+  .two-column,
+  .three-column {
+    grid-template-columns: 1fr;
+  }
+}
+```
+
+- 单行或少量元素的水平垂直居中，Flex 的 `justify-content: center; align-items: center` 最直观；容器中所有子项都要居中时，Grid 的 `place-items: center` 更简洁。
+- 双栏、三栏和卡片列表优先使用 Grid，避免早期浮动或大量绝对定位导致高度塌陷、顺序难调整。
+- 瀑布流需要区分需求：只是视觉分列可使用 CSS Columns；需要精确排序、虚拟列表、动态高度或拖拽时，使用 JS 计算布局或成熟组件。CSS Columns 的阅读顺序是先纵向再横向，可能不符合列表语义。
+- 不要滥用 `position: absolute` 做整体页面布局；它会脱离文档流，内容变长、字号放大或屏幕缩小时容易重叠。
+
+### 3. HTML 核心知识
+
+HTML 负责表达内容和交互的语义；CSS 负责样式，JavaScript 负责行为。先选对元素，再补样式和脚本，能减少大量可访问性与兼容性问题。
+
+- 页面主体优先使用 `header`、`nav`、`main`、`article`、`section`、`aside`、`footer` 等语义标签；标题按层级组织，通常一个页面只有一个表达主标题的 `h1`，不要为了字号跳级。
+- 使用 `<button>` 触发动作，使用 `<a href="...">` 进行导航。不要用可点击 `div` 替代它们，否则需自行补齐键盘操作、焦点、语义和禁用状态。
+- 表单中用 `label[for]` 关联输入框，并使用合适的 `type`、`name`、`autocomplete`、`required`、`minlength`、`pattern` 等原生能力；原生校验能改善体验，但服务端仍必须校验所有输入。
+
+```html
+<form>
+  <label for="email">邮箱</label>
+  <input id="email" name="email" type="email" autocomplete="email" required />
+  <button type="submit">提交</button>
+</form>
+```
+
+- 图片必须提供与用途匹配的 `alt`：承载信息的图片写等价文本，纯装饰图可写空 `alt=""`。首屏外图片可使用 `loading="lazy"`，但首屏关键图不应懒加载。
+- 自定义数据使用 `data-*`，通过 `element.dataset` 读取；不要把业务状态塞进无语义的 class 名或自创属性。
+- 脚本不依赖 DOM 时可放 `head` 并使用 `defer`：它会在 HTML 解析完成后、`DOMContentLoaded` 前按文档顺序执行。`async` 下载完成即执行，顺序不保证，适合相互独立的统计或广告脚本，不适合有依赖关系的业务脚本。
+
+### 4. 可访问性与实战检查
+
+可访问性不是额外功能，而是正确 HTML 和可操作交互的自然结果。开发和面试中可按以下基线检查：
+
+1. 标题层级反映内容结构，页面有清晰的 `main` 主区域和可识别的导航区域。
+2. 所有表单控件有可见或可被辅助技术读取的名称；错误提示与对应控件关联，且不只依靠颜色传达状态。
+3. 所有交互都可通过键盘完成：`Tab` 能聚焦，焦点样式可见，弹窗打开后焦点进入弹窗、关闭后回到触发点。
+4. 自定义组件优先复用原生元素；确实无法使用原生元素时，再补充正确的 ARIA 角色、属性和键盘行为，而不是只添加 `role`。
+5. 以真实内容、长文本、缩放到 200%、键盘导航和窄屏作为回归条件，验证布局没有裁切、重叠或无法操作的控件。
+
+面试可总结：响应式的核心是内容优先和渐进增强；布局上优先让文档流承担自然排版，一维用 Flex、二维用 Grid、局部覆盖再使用定位；HTML 则先保证语义和原生交互，CSS、JS 与 ARIA 只补充而不取代它们。

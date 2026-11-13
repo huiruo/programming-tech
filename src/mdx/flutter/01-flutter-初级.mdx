@@ -559,6 +559,7 @@ final changed = await Navigator.of(context).push<bool>(
   ),
 );
 
+if (!mounted) return;
 if (changed == true) {
   reloadProducts();
 }
@@ -582,6 +583,8 @@ Future<void> submit() async {
 
 等待期间用户可能已经离开页面，因此异步间隙后要检查 `mounted`。
 
+`mounted` 只能说明当前 State 还在树中。它不能解决“较早发出的请求较晚返回，并覆盖了较新的结果”这类时序问题；网络页面还需要识别当前请求，详见下一节。
+
 ### 面试题：`push` 和 `pop` 是什么？
 
 - `push` 把新 Route 加到导航栈顶，显示新页面。
@@ -604,23 +607,149 @@ Future<String> loadName() async {
 - `await` 等待 Future 完成，同时让当前函数暂停，不会阻塞整个应用事件循环。
 - `async/await` 不等于创建新线程。
 
-异常处理：
+### 11.2 异步任务完成后如何安全更新页面
+
+异步任务开始时页面还存在，不代表任务完成时页面仍然存在。用户可能已经返回上一页、切换了查询条件，或者发起了更新的请求。安全更新需要处理三个问题：
+
+1. **页面是否还存在**：调用 `setState`、读取 `context` 或导航前检查 `mounted`。
+2. **结果是否仍然有效**：防止旧请求覆盖新请求。
+3. **资源是否可以取消**：在 `dispose` 中取消订阅、Timer 和支持取消的请求。
+
+#### 最基本的 `mounted` 检查
 
 ```dart
-try {
-  final user = await repository.fetchUser();
+Future<void> loadUser() async {
   setState(() {
-    data = user;
+    isLoading = true;
     errorMessage = null;
   });
-} catch (error) {
-  setState(() {
-    errorMessage = '加载失败，请重试';
-  });
+
+  try {
+    final result = await repository.fetchUser();
+
+    // await 之后，页面可能已经被销毁。
+    if (!mounted) return;
+    setState(() {
+      user = result;
+    });
+  } catch (error) {
+    if (!mounted) return;
+    setState(() {
+      errorMessage = '加载失败，请重试';
+    });
+  } finally {
+    if (mounted) {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
 }
 ```
 
-### 11.2 页面状态要完整
+检查必须放在 `await` 之后、第一次使用 State 或 Context 之前。只在方法开头检查没有意义，因为页面可能在等待期间被移除。
+
+如果方法拿到的是参数 `BuildContext context`，可以使用：
+
+```dart
+await repository.save();
+if (!context.mounted) return;
+ScaffoldMessenger.of(context).showSnackBar(
+  const SnackBar(content: Text('保存成功')),
+);
+```
+
+#### 防止旧请求覆盖新结果
+
+例如用户先搜索“Flutter”，紧接着搜索“Dart”。第二个请求可能先返回，随后第一个请求才返回。如果直接更新页面，最终可能错误地显示 Flutter 的结果。
+
+可以为每次请求生成递增编号，只接受最新请求：
+
+```dart
+int _requestId = 0;
+
+Future<void> search(String keyword) async {
+  final currentRequestId = ++_requestId;
+
+  setState(() {
+    isLoading = true;
+    errorMessage = null;
+  });
+
+  try {
+    final result = await repository.search(keyword);
+
+    if (!mounted || currentRequestId != _requestId) return;
+    setState(() {
+      items = result;
+      isLoading = false;
+    });
+  } catch (error) {
+    if (!mounted || currentRequestId != _requestId) return;
+    setState(() {
+      isLoading = false;
+      errorMessage = '搜索失败，请重试';
+    });
+  }
+}
+```
+
+新请求会递增 `_requestId`，旧请求即使后来完成，也会因为编号不匹配而被忽略。对于输入搜索，还可以配合 debounce，减少不必要的请求。
+
+#### 在 `dispose` 中取消长期任务
+
+```dart
+import 'dart:async';
+
+StreamSubscription<Message>? _subscription;
+Timer? _timer;
+
+@override
+void initState() {
+  super.initState();
+  _subscription = messageStream.listen((message) {
+    if (!mounted) return;
+    setState(() => latestMessage = message);
+  });
+  _timer = Timer.periodic(
+    const Duration(seconds: 30),
+    (_) => refresh(),
+  );
+}
+
+@override
+void dispose() {
+  _subscription?.cancel();
+  _timer?.cancel();
+  super.dispose();
+}
+```
+
+优先取消不再需要的工作，而不是让它继续运行后只用 `mounted` 忽略结果。HTTP 客户端如果提供取消能力，也应在页面离开或请求被替代时取消。
+
+#### 不要这样写
+
+```dart
+Future<void> loadData() async {
+  final result = await repository.fetchData();
+  // 错误：await 之后没有确认页面是否仍然存在。
+  setState(() => data = result);
+}
+```
+
+还应避免：
+
+- 在 `setState(() async { ... })` 中执行异步代码；先 await，再同步 setState。
+- Future 完成后无条件弹窗、SnackBar 或导航。
+- 多次点击提交按钮并发发送相同请求；提交期间禁用按钮。
+- 捕获异常后什么都不做；页面应结束 loading 并显示可重试状态。
+- 在 `dispose` 中调用 `setState`。
+
+### 面试题：为什么会出现 `setState() called after dispose()`？
+
+异步请求、Timer 或订阅完成时，页面已经被移出 Widget 树，但回调仍调用了 `setState`。应在异步间隙后检查 `mounted`，并在 `dispose` 中取消不再需要的任务。若有多个并发请求，还要判断返回结果是否仍属于当前请求。
+
+### 11.3 页面状态要完整
 
 一个网络页面通常至少有四种状态：
 
@@ -647,7 +776,7 @@ Widget buildBody() {
 }
 ```
 
-### 11.3 JSON 转模型
+### 11.4 JSON 转模型
 
 ```dart
 class Product {

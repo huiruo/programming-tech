@@ -3,6 +3,128 @@ import CodeBlock from '../../components/codeBlock';
 import HighlightText from '../HighlightText';
 import CodePannel from '../CodePannel';
 
+## 0.React 19 与组件生命周期速览
+
+### 0-1.React 19 新功能总结
+
+React 19 的重点是让异步数据修改、表单提交、服务端渲染和资源加载更容易，同时减少 `forwardRef`、手动维护 pending 状态等样板代码。
+
+| 功能 | 作用 |
+| --- | --- |
+| Actions | 在异步 Transition 中执行数据修改，统一处理 pending、错误、乐观更新和表单提交。`<form action={fn}>`、`<button formAction={fn}>` 可以直接接收函数，提交成功后会自动重置非受控表单。 |
+| `useActionState` | 包装 Action，并返回 `[state, action, isPending]`，适合管理提交结果、错误信息和加载状态。 |
+| `useFormStatus` | 在表单的子组件中读取父级表单的提交状态，例如通过 `pending` 禁用提交按钮。该 Hook 从 `react-dom` 导入。 |
+| `useOptimistic` | 请求完成前先展示乐观结果；失败时 React 会恢复到原始值。 |
+| `use` API | 在渲染期间读取 Promise 或 Context；读取 Promise 时可与 `Suspense`、错误边界配合。与普通 Hook 不同，`use` 可以在条件语句中调用，但仍必须在组件或 Hook 内调用。 |
+| Server Components / Server Actions | React 19 稳定了 Server Components 相关能力，并以 `"use server"` 声明服务端函数；具体打包和路由能力仍依赖支持它们的框架。 |
+| `ref` 作为 prop | 函数组件可以直接接收 `ref`，新代码通常不再需要 `forwardRef`；ref 回调还可以返回清理函数。 |
+| Context 简写 | 可以直接写 `<ThemeContext value="dark">`，不再必须写 `<ThemeContext.Provider>`。 |
+| 文档元数据与资源 | 组件中可直接渲染 `<title>`、`<meta>`、`<link>`；React 会把它们提升到 `<head>`。样式表、异步脚本以及 `preload`、`preinit` 等资源 API 也得到原生支持。 |
+| SSR、Hydration 与错误处理 | 改进 Suspense 的预热、静态预渲染 API、hydration 差异提示和第三方标签兼容性；根节点新增 `onCaughtError`、`onUncaughtError` 等错误回调。 |
+| 其他改进 | 支持自定义元素（Web Components），`useDeferredValue` 新增 `initialValue`，并减少重复的错误日志。 |
+
+### 0-2.React 组件生命周期总结
+
+无论函数组件还是类组件，都可以从组件角度概括为三个阶段：
+
+1. **挂载（Mount）**：组件第一次加入页面。
+2. **更新（Update）**：props、state 或 Context 改变后重新渲染并提交必要的 DOM 更新。
+3. **卸载（Unmount）**：组件从页面中移除，并清理订阅、定时器、连接等外部资源。
+
+React 的一次更新还可以从执行过程理解为：**触发更新 → Render 阶段 → Commit 阶段 → Effect**。Render 阶段负责计算 UI，必须保持纯函数特性，可能被暂停、重试或放弃；Commit 阶段才把变更应用到 DOM。`useLayoutEffect` 在 DOM 提交后、浏览器绘制前执行，`useEffect` 通常在浏览器绘制后执行。
+
+#### 函数组件
+
+函数组件本身没有类组件式的生命周期方法。组件函数在每次渲染时执行，副作用应按“与外部系统同步”的方式组织：
+
+| 场景 | Hook 行为 |
+| --- | --- |
+| 挂载后同步 | `useEffect(setup, [])` 执行 setup。 |
+| 依赖变化后重新同步 | `useEffect(setup, [deps])` 先执行上一次 cleanup，再执行新的 setup。 |
+| 每次提交后同步 | `useEffect(setup)` 在每次提交后重新执行。 |
+| 卸载时清理 | Effect 返回的 cleanup 会在卸载时执行。 |
+| 绘制前读取或修改布局 | 使用 `useLayoutEffect`，但应避免滥用，以免阻塞绘制。 |
+
+> Effect 有自己的“开始同步 → 停止同步”生命周期，并不与 `componentDidMount`、`componentDidUpdate`、`componentWillUnmount` 严格一一对应。开发环境的 `StrictMode` 还可能额外执行一次 setup → cleanup → setup，用于检查清理逻辑是否完整。
+
+下面用函数组件模拟挂载、更新和卸载：
+
+```jsx
+import { useEffect, useRef, useState } from 'react';
+
+function Child({ count }) {
+  const isFirstRender = useRef(true);
+
+  // 1. 挂载：空依赖数组表示该 Effect 只为本次挂载建立一次同步。
+  useEffect(() => {
+    console.log('组件已挂载');
+
+    // 3. 卸载：组件移除时执行 cleanup。
+    return () => {
+      console.log('组件即将卸载');
+    };
+  }, []);
+
+  // 2. 更新：依赖变化后执行；用 ref 跳过首次挂载。
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    console.log('count 更新为：', count);
+  }, [count]);
+
+  return <p>count: {count}</p>;
+}
+
+export default function LifecycleDemo() {
+  const [count, setCount] = useState(0);
+  const [showChild, setShowChild] = useState(true);
+
+  return (
+    <div>
+      <button onClick={() => setCount((value) => value + 1)}>
+        更新 props
+      </button>
+      <button onClick={() => setShowChild((visible) => !visible)}>
+        {showChild ? '卸载组件' : '挂载组件'}
+      </button>
+
+      {showChild && <Child count={count} />}
+    </div>
+  );
+}
+```
+
+- `showChild` 从 `false` 变为 `true`：`Child` 被挂载。
+- 单击“更新 props”：`count` 改变，`Child` 重新渲染，并执行依赖于 `count` 的 Effect。
+- `showChild` 从 `true` 变为 `false`：`Child` 被卸载，并执行空依赖 Effect 返回的 cleanup。
+
+如果更新逻辑也需要清理旧资源，应把 setup 和 cleanup 写在同一个 Effect 中：
+
+```jsx
+useEffect(() => {
+  const connection = createConnection(roomId);
+  connection.connect();
+
+  return () => connection.disconnect();
+}, [roomId]);
+```
+
+首次提交后会连接；`roomId` 改变时先断开旧连接，再建立新连接；组件卸载时也会断开当前连接。这比把 Hook 强行拆成三个类生命周期方法更符合函数组件的思维方式。
+
+#### 类组件
+
+| 阶段 | 主要调用顺序 | 用途 |
+| --- | --- | --- |
+| 挂载 | `constructor` → `static getDerivedStateFromProps` → `render` → `componentDidMount` | 初始化、计算 UI，并在提交后建立订阅或请求数据。 |
+| 更新 | `static getDerivedStateFromProps` → `shouldComponentUpdate` → `render` → `getSnapshotBeforeUpdate` → `componentDidUpdate` | 控制是否渲染、读取 DOM 更新前快照、在提交后同步外部系统。 |
+| 卸载 | `componentWillUnmount` | 清除订阅、定时器、网络连接等资源。 |
+| 错误处理 | `static getDerivedStateFromError` → `componentDidCatch` | 渲染降级 UI，并记录错误信息。 |
+
+`componentWillMount`、`componentWillReceiveProps`、`componentWillUpdate` 属于不安全的旧生命周期，现已改名为带 `UNSAFE_` 前缀的方法，新代码不应再使用。
+
 ## A.生命周期
 
 ## A-1.useEffect 模拟生命周期
