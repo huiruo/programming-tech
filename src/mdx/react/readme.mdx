@@ -23,37 +23,135 @@ A1(jsx的Fn组件)-->A2(ast tree)--转化-->A3(生成code函数)--beginWork开�
 
 <HighlightText>请看后文-`编译阶段-jsx-ast`</HighlightText>
 
+### 客户端渲染完整流程（不使用 SSR）
+
+在浏览器端，React 的一次更新可概括为 **render（协调）** 和 **commit（提交）** 两个阶段。JSX 会先被 Babel、SWC 等编译器转换为 `jsx` / `jsxs` 或 `React.createElement` 调用；组件函数执行这些调用后，返回 **React Element**。React Element 是对 UI 的轻量描述，常被称为 VDOM，它不是 Fiber，也不是真实 DOM。
+
+```text
+JSX
+  -> 编译为创建 React Element 的 JavaScript 调用
+  -> 执行组件函数，得到 React Element（VDOM）
+  -> render 阶段：reconcile，将 Element 与 current Fiber 树协调为 workInProgress Fiber 树
+  -> commit 阶段：将带有 flags 的变更提交到真实 DOM
+```
+
+<Mermaid>
+```mermaid
+flowchart TD
+  A[JSX] --> B[编译为 jsx/jsxs 或 React.createElement 调用]
+  B --> C[执行组件 render function]
+  C --> D[React Element / VDOM]
+  D --> E[render: workLoopSync 或 workLoopConcurrent]
+  E --> F[beginWork: 向下协调子节点]
+  F --> G[completeWork: 向上完成 Fiber 并标记变更]
+  G --> H[workInProgress Fiber 树]
+  H --> I[commit: 提交变更]
+  I --> J[真实 DOM、ref、生命周期与 Effect]
+```
+</Mermaid>
+
+#### render 阶段：将 Element 协调为 Fiber 树
+
+`workLoopSync`（同步）或 `workLoopConcurrent`（并发）以深度优先的方式处理工作单元。每个 Fiber 通常先经历 `beginWork`，再经历 `completeWork`：
+
+- `beginWork` 从上到下比较新旧子节点，执行函数组件或类组件的 render，并为子节点创建或复用 Fiber。常见 Fiber 类型包括 `HostRoot`（根节点）、`FunctionComponent`（函数组件）、`ClassComponent`（类组件）、`HostComponent`（原生标签）和 `HostText`（文本）。
+- `completeWork` 从下到上完成 Fiber：首次挂载时为 `HostComponent`、`HostText` 准备 DOM 实例并组装子节点；更新时计算属性或文本的更新内容，并把插入、更新、删除等变更记录为 Fiber `flags`。此时仍在内存中准备工作，尚未把变更写入页面。
+
+render 阶段的产物是新的 `workInProgress` Fiber 树及其变更标记；在并发渲染中，这一阶段可以被更高优先级的更新打断并重做。
+
+#### commit 阶段：把变更写入页面
+
+当 render 完成后，commit 阶段同步且不可中断地遍历带有变更标记的 Fiber，将结果应用到宿主环境（浏览器中即 DOM）。它主要包括：
+
+1. `beforeMutation`：DOM 变更前的准备工作，例如读取 `getSnapshotBeforeUpdate`。
+2. `mutation`：执行真实 DOM 的插入、删除、文本和属性更新，并处理 ref 的解绑。
+3. `layout`：绑定 ref，调用类组件生命周期（如 `componentDidMount`、`componentDidUpdate`）和 `useLayoutEffect`；随后 React 调度被动 Effect，执行 `useEffect` 的清理与回调。
+
+因此，React 的核心路径是：**组件函数返回 React Element，render 阶段把它协调为带变更标记的 Fiber 树，commit 阶段才把这些变更提交到真实 DOM 并触发 ref、生命周期和 Effect。**
+
 ## vue 和 react 异同
 
-### 其他
+以下比较以 **React 19** 和 **Vue 3** 为基线。两者都能构建相同类型的 Web 应用，主要区别不在“能不能实现”，而在状态如何被感知、更新工作如何被组织，以及框架把多少约束交给编译器或开发者。
 
-1. 配合 ts 比较友好,函数式编程是用函数的组合来进行编程,组件化开发
-   1. 比如区分容器组件和展示组件
-   2. react 提倡把业务拆分更小的组件，使用`shouldComponentUpdate(){return true}`重新渲染组件或则`React.memo():{return true}`不会渲染,进行深层比较去控制组件的渲染
-2. react 渲染/更新方式
-3. 丰富的技术生态圈,灵活的语法，很多大型 web 应用都是`react(notion,figma,twitter)`
+### 共同点
 
-### 异同
+1. **声明式、数据驱动 UI**：开发者描述“当前状态对应什么 UI”，状态变化后由框架计算并提交必要的 DOM 更新，而不是手动维护每一个 DOM 操作。
+2. **组件化与单向数据流**：都通过 props 将数据从父组件传向子组件，通过事件或回调把用户意图向上传递。组件都可以拆分为展示组件、业务组件以及可复用逻辑。
+3. **虚拟 DOM**：React Element 和 Vue VNode 都是 UI 的轻量 JavaScript 描述。两次渲染结果经过 reconciliation / patch 后，框架只把必要变化提交到真实 DOM。
+4. **状态、派生值与副作用**：两者都区分组件状态、由状态计算出的值和需要与外部系统同步的副作用，只是 API 和依赖追踪方式不同。
+5. **工程能力**：都支持 TypeScript、路由、状态管理、SSR、流式渲染、Hydration、测试和跨端生态，通常需要配合对应框架或工具链完成完整应用架构。
 
-1.  虚拟 dom,以数据为驱动的开发模式;vue 和 react 同样采用的是虚拟 dom,渲染时找出差异修改;vue:vnode,react:fiber tree。
+### 核心差异
 
-    > 单向数据流，单向数据流就是 model 的更新会触发 view 的更新，view 的更新不会触发 model 的更新，它们的作用是单向的
+| 维度 | React 19 | Vue 3 |
+| --- | --- | --- |
+| 定位与设计 | 更接近 UI 运行库，强调 JavaScript 组合能力；路由、状态管理和项目结构有较大选择空间。 | 渐进式框架，官方提供模板、响应式系统以及 Router、Pinia 等相对统一的配套方案。 |
+| UI 描述 | 主要使用 JSX，把标签、表达式和控制流放在 JavaScript 中组合。 | 默认使用更接近 HTML 的 SFC Template，也支持 JSX 和手写 render function。 |
+| 编译优化 | JSX 可被 Babel、SWC 等工具分析和转换；启用 React Compiler 后，还可以自动缓存组件输出、值和函数，减少手写 `memo`、`useMemo`、`useCallback`。 | 模板语法约束更强，编译器可提前生成静态提升、Patch Flag、Block Tree 和动态节点列表，让运行时跳过已知的静态部分。 |
+| 响应式模型 | 不代理普通变量的读写。调用 state setter 后，React 把更新加入队列，再执行相关组件函数，根据新旧渲染结果协调更新。 | `reactive` 通过 Proxy、`ref` 通过 getter/setter 拦截读写；组件渲染时执行 `track` 收集依赖，数据修改时通过 `trigger` 通知订阅它的响应式 Effect。 |
+| 状态更新习惯 | state 应按不可变数据处理，通过 `setState` 或 `useState` setter 提交新值；setter 表示“请求一次更新”，读取到的仍是当前渲染快照。 | 响应式对象通常直接修改，`ref` 通过 `.value` 修改；Proxy / getter/setter 会捕获操作并触发依赖更新。 |
+| 默认更新粒度 | 某组件 state 更新后，React 默认重新执行该组件，并递归处理它返回的子组件；最终只提交有差异的 DOM。 | 组件只订阅渲染过程中实际读取的响应式数据；依赖变化时，通常只把订阅该依赖的组件更新任务加入队列。 |
+| 避免无效渲染 | 可使用合理的组件边界、稳定 props、`React.memo`，或启用 React Compiler。 | 依赖追踪先缩小需要更新的组件范围，模板编译信息再帮助运行时只遍历动态节点。 |
+| 调度与批处理 | Fiber 将渲染工作拆成工作单元，并用优先级和 Lane 组织更新；并发渲染可以暂停、恢复或放弃尚未提交的 Render，但 Commit 仍是同步完成的。 | 状态修改后通常不会立即更新 DOM，而是把去重后的组件任务放入调度队列，在 next tick 统一刷新；可用 `nextTick` 等待 DOM 提交完成。 |
+| 列表协调 | 依据元素类型、位置和 `key` 复用节点；Fiber 子节点协调会标记插入、移动和删除，再在 Commit 阶段操作 DOM。 | 同样依据类型和 `key` 复用节点；Vue 3 的 keyed children patch 会处理公共首尾区间，并在未知序列中借助 key 映射和最长递增子序列减少移动。 |
+| 复用逻辑 | 以函数组合为中心，主要通过自定义 Hook、普通函数、组件和 Context 复用。 | 主要通过 Composition API composable、组件、指令以及 provide / inject 复用。 |
+| 副作用 | `useEffect` 显式声明依赖数组；Effect 以 setup / cleanup 的方式与外部系统同步。 | `watchEffect` 自动收集同步执行期间读取的响应式依赖；`watch` 显式指定数据源，并可控制执行时机。 |
 
-2.  vue 模版引擎：Vue 使用 template 模版进行编译的，所以在编译的时候可以很好对静态节点进行分析然后进行打补丁标记，然后在 Diff 的时候，Vue2 是判断如果是静态节点则跳过过循环对比，而 Vue3 则是把整个静态节点进行提升处理，Diff 的时候是不过进入循环的，所以 Vue3 比 Vue2 的 Diff 性能更高效。
+### 渲染和更新原理
 
-    > react 模版引擎：React 使用 JSX 进行编译的，是无法进行静态节点分析的
+#### React：显式触发更新，按组件树协调
 
-        * React使用的是babel
-        * vue @vue/compiler-core
+```text
+事件或异步结果
+  → 调用 state setter
+  → 更新进入队列并被调度
+  → Render：执行相关组件，构建新的 React Element / Fiber 工作树
+  → Reconciliation：依据 type、key、位置标记变化
+  → Commit：一次性提交 DOM、ref 和布局 Effect
+  → 浏览器绘制后执行普通 Effect
+```
 
-3.  渲染/更新方式:
-    在 Vue 中，一个组件在渲染期间依赖于自动追踪，因此 vue 框架知道提前哪一个组件需要渲染当组件状态发生改变时。每个组件可以被认为具有自动为你实现 react shouldComponentUpdate。
+React 的 Render 阶段是纯计算。在并发渲染中，这一阶段可以被高优先级任务打断、恢复或丢弃；只有完成的结果才会进入 Commit，因此不能把“可中断渲染”理解成 DOM 被更新了一半。
 
-    > react 改变 state,react 不允许直接更改状态，需要 setState(),并且批量地对 state 进行更新以提高性能的,减少渲染次数,react 采用函数式更新。
+React 默认会处理更新组件的后代。`React.memo(Component)` 默认使用 `Object.is` 对每个 prop 做浅比较；props 未变化时可以跳过该组件。自定义比较函数返回 `true` 表示新旧 props 相等、跳过渲染，返回 `false` 表示需要重新渲染。类组件的 `shouldComponentUpdate` 语义与之相反：返回 `true` 表示继续更新，返回 `false` 表示跳过。
 
-4.  Vue2 和 Vue3 的比对和更新是同步进行的，这个跟 React15 是相同的，就是在比对的过程中，如果发现了那些节点需要移动或者更新或删除，是立即执行的，也就是 React 中常讲的不可中断的更新，如果比对量过大的话，就会造成卡顿，所以 React16 起就更改为了比对和更新是异步进行的，所以 React16 以后的 Diff 是可以中断，Diff 和任务调度都是在内存中进行的，所以即便中断了，用户也不会知道。
+#### Vue：自动追踪依赖，按响应式 Effect 触发更新
 
-5.  Vue2 和 Vue3 都使用了双端对比算法，而 React 的 Fiber 由于是单向链表的结构，所以在 React 不设置由右向左的链表之前，都无法实现双端对比。
+```text
+渲染函数读取 reactive / ref
+  → track：记录“响应式属性 → 组件渲染 Effect”的依赖
+  → 修改响应式状态
+  → trigger：找到订阅该属性的 Effect
+  → 更新任务去重后进入调度队列
+  → 重新执行目标组件的 render function，生成新 VNode
+  → Patch：结合 key、Patch Flag 和 Block Tree 比较动态部分
+  → 提交必要的 DOM 更新
+```
+
+Vue 的依赖追踪类似于自动确定“哪些组件依赖了这份数据”，但它不等同于为每个组件自动执行 `shouldComponentUpdate`：前者在属性读取层面建立订阅关系，后者是在 React 已经准备更新组件时决定是否跳过该组件。
+
+#### 容易混淆的概念
+
+| 概念层级 | React | Vue |
+| --- | --- | --- |
+| UI 的虚拟描述 | React Element | VNode |
+| 当前组件树的运行时内部结构 | Fiber Tree；节点还保存 state、更新队列、优先级以及父子兄弟关系 | 组件实例树及其 SubTree / VNode Tree |
+| 什么变化会触发组件工作 | setter 显式提交更新，React 从相关 Fiber 开始调度 | Proxy / ref 的 track、trigger 建立并触发响应式依赖图 |
+
+因此，“Vue VNode 对应 React Fiber”并不准确：**Vue VNode 更接近 React Element**；Fiber 除了关联 UI 描述，还承担可调度工作单元和组件运行时状态等职责。响应式依赖图则解决“谁依赖了这份状态”的问题，也不是虚拟 DOM 树。
+
+### Diff 与性能应如何理解
+
+- 两者都依赖稳定且唯一的 `key` 判断列表项身份。使用数组下标或随机值作为 `key`，都可能导致错误复用、状态丢失或额外 DOM 操作。
+- Vue 的优势之一是模板编译器能给运行时更明确的更新提示；React 的优势之一是 Fiber 调度模型能够区分优先级，并支持并发 Render。React Compiler 启用后也会在构建阶段自动加入细粒度缓存。
+- “Vue 一定更快”或“React Fiber 一定更快”都不是可靠结论。实际性能取决于组件边界、状态位置、列表 key、更新频率、编译配置和业务场景，应通过 Profiler 和真实指标判断。
+- Vue 2、React 15 的实现可用于理解历史演进，但不能直接代表 Vue 3 和 React 19。Vue 3 会批量调度 DOM 更新；React 的可中断部分是并发 Render，而不是 Commit。
+
+### 选型参考
+
+- **偏向 React**：团队希望用 JavaScript / TypeScript 统一表达 UI 与逻辑，需要更自由地组合路由、状态和渲染方案，或依赖庞大的 React、React Native 及框架生态。
+- **偏向 Vue**：团队希望模板、样式、逻辑边界清晰，重视渐进式接入、官方配套和较低的上手成本，并希望默认获得响应式依赖追踪和模板编译优化。
+- **不要仅按知名产品选型**：React 和 Vue 都有大型生产案例。Notion、Figma、X 等产品可以说明 React 生态成熟，但不能证明某个具体项目天然更适合 React；应结合团队经验、已有代码、SSR 方案、性能目标和长期维护成本选择。
 
 # 二.两大阶段:render 和 commit
 

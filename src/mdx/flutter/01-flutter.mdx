@@ -611,6 +611,228 @@ flowchart LR
 
 例如“如何优化 Flutter 性能”不能只回答 `const`、`RepaintBoundary` 和 Isolate。更好的回答是：先在目标设备的 profile 模式复现，通过 Timeline 判断 UI 线程还是 Raster 阶段超预算，再使用对应工具定位，修改后用相同输入比较帧时间分位数、内存和业务体验。
 
+## 16. 语音房：Flutter 对接 Agora RTC 与后端设计
+
+语音房的实时音频应由客户端直接接入 RTC 服务，不经过业务后端，也不应把 PCM、AAC 或 Opus 音频帧塞进业务 WebSocket。以 Agora RTC 为例，职责边界如下：
+
+<Mermaid>
+```mermaid
+sequenceDiagram
+  participant App as Flutter App
+  participant API as 业务后端
+  participant Comet as 业务 WebSocket
+  participant Agora as Agora RTC
+
+  App->>API: 创建/加入业务房间
+  API-->>App: roomId、rtcChannel、成员和麦位状态
+  App->>API: 请求 RTC 凭证
+  API-->>App: 短期 Agora Token、uid、过期时间
+  App->>Agora: joinChannel(token, rtcChannel, uid)
+  App<->>Agora: 实时音频上行与下行
+  App<->>Comet: 麦位、禁言、成员、礼物和聊天事件
+  API-->>Comet: 房间状态变更广播
+```
+</Mermaid>
+
+### 16.1 分层与安全边界
+
+| 组件 | 负责什么 | 不负责什么 |
+| --- | --- | --- |
+| Flutter + Agora SDK | 麦克风权限、入退频道、音频发布/订阅、音量和网络回调、Token 续期 | 房主权限、麦位裁决、用户身份可信性 |
+| 业务后端 | 登录鉴权、房间/麦位状态、禁言/踢人、生成短期 Token、审计和风控 | 转发实时音频媒体 |
+| 业务 WebSocket（如 Comet） | 广播房间成员、麦位、聊天、礼物和管理事件 | 替代 RTC 传输音频 |
+| Agora RTC | NAT 穿透、实时音频传输、音频订阅与质量控制 | 本站业务数据库和管理规则 |
+
+`App Certificate` 只能保留在服务端环境变量或密钥服务中，绝不能下发到 Flutter、写进 Git 或放入接口响应。客户端也不能自选可信的频道名、Agora UID、角色或 Token 有效期；后端必须从当前登录用户和房间状态推导这些值。
+
+### 16.2 后端接口与状态模型
+
+建议业务房间使用稳定的 `roomId`，而 RTC 频道名由服务端生成，例如 `voice_<roomId>`。RTC 频道不是权限来源，后端数据库中的房间和麦位记录才是。
+
+| 接口 | 用途 | 核心校验 |
+| --- | --- | --- |
+| `POST /voice/rooms` | 创建房间 | 登录、创建频率、房间配置 |
+| `POST /voice/rooms/{roomId}/join` | 加入业务房间 | 房间存在、封禁、容量、地区/风控规则 |
+| `POST /voice/rooms/{roomId}/rtc-credential` | 获取或刷新 Agora Token | 已加入房间、未被禁言/踢出、请求角色与当前麦位一致 |
+| `POST /voice/rooms/{roomId}/seats/{seatId}/claim` | 申请/占用麦位 | 事务或分布式锁，防止并发抢同一麦位 |
+| `POST /voice/rooms/{roomId}/seats/{seatId}/mute` | 房主或管理员禁言 | 管理权限、审计日志、广播状态 |
+| `POST /voice/rooms/{roomId}/kick` | 踢出用户 | 管理权限、撤销会话并广播 |
+
+推荐至少维护以下数据：
+
+```text
+voice_room(id, owner_uid, rtc_channel, status, max_seats, created_at, ...)
+voice_room_member(room_id, uid, role, joined_at, kicked_at, ...)
+voice_room_seat(room_id, seat_no, uid, muted, version, updated_at)
+```
+
+麦位变更必须由后端原子提交后再通过 WebSocket 广播。客户端收到事件后只渲染服务端状态；不要以 Agora 的 `onUserJoined` 回调直接认定某人拥有麦位，因为它只表示对方已进入 RTC 频道。
+
+### 16.3 Go：签发 Agora RTC Token
+
+以 Go 服务为例，接入 Agora 的 Token Builder SDK，并把 `AGORA_APP_ID` 和 `AGORA_APP_CERTIFICATE` 配在运行环境。下面示例使用常见的社区 Go Token Builder 包；接入时应锁定与所选 Agora SDK 文档匹配的版本，并以该版本 API 为准。
+
+```go
+package voice
+
+import (
+    "net/http"
+    "time"
+
+    "github.com/AgoraIO-Community/go-tokenbuilder/rtctokenbuilder"
+)
+
+type CredentialResponse struct {
+    AppID       string `json:"appId"`
+    ChannelName string `json:"channelName"`
+    UID         uint32 `json:"uid"`
+    Token       string `json:"token"`
+    ExpiresAt   int64  `json:"expiresAt"`
+}
+
+func (s *Service) IssueRTCCredential(w http.ResponseWriter, r *http.Request) {
+    user := s.requireLogin(r)
+    roomID := r.PathValue("roomId")
+
+    // 由服务端判断是否在房间、是否被踢出，以及当前是否有发言权限。
+    member, err := s.rooms.RequireActiveMember(r.Context(), roomID, user.ID)
+    if err != nil {
+        writeError(w, http.StatusForbidden, "cannot join this voice room")
+        return
+    }
+
+    room, err := s.rooms.Get(r.Context(), roomID)
+    if err != nil {
+        writeError(w, http.StatusNotFound, "voice room not found")
+        return
+    }
+
+    uid := rtcUID(user.ID) // 稳定映射，不能接受客户端传入的 uid。
+    expiresAt := time.Now().Add(30 * time.Minute).Unix()
+    role := rtctokenbuilder.RoleSubscriber
+    if member.HasMicrophoneSeat && !member.Muted {
+        role = rtctokenbuilder.RolePublisher
+    }
+    token, err := rtctokenbuilder.BuildTokenWithUid(
+        s.agoraAppID, s.agoraAppCertificate, room.RTCChannel, uid, role, uint32(expiresAt),
+    )
+    if err != nil {
+        writeError(w, http.StatusInternalServerError, "failed to issue rtc credential")
+        return
+    }
+
+    writeJSON(w, http.StatusOK, CredentialResponse{
+        AppID: s.agoraAppID, ChannelName: room.RTCChannel, UID: uid,
+        Token: token, ExpiresAt: expiresAt,
+    })
+}
+```
+
+实际项目还应做到：
+
+- Token 采用短有效期，例如 15 到 60 分钟；客户端在 `onTokenPrivilegeWillExpire` 时向后端换取新 Token，再调用 `renewToken`。
+- Token 接口限流并记录 `uid`、`roomId`、角色、签发时间和请求结果；日志不记录完整 Token 或 App Certificate。
+- 将角色和麦位分开理解：Token 控制 RTC 发流能力，业务后端仍需要禁止无麦位者获取 publisher Token。对已经入频道的违规用户，可通过服务端管理接口踢出或令客户端离开频道。
+- 生产环境使用数据库事务、Redis 锁或乐观锁版本字段处理抢麦；仅靠单机内存 map 在多实例部署时会失效。
+
+### 16.4 Flutter：获取凭证、加入与退出频道
+
+Flutter 可使用 `agora_rtc_engine`。以下示例将网络请求与 RTC 引擎封装在服务中；UI 层只订阅状态，避免在 `build()` 中创建引擎、注册事件或重复加入频道。
+
+```dart
+import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:permission_handler/permission_handler.dart';
+
+class RtcCredential {
+  const RtcCredential({
+    required this.appId,
+    required this.channelName,
+    required this.uid,
+    required this.token,
+  });
+
+  final String appId;
+  final String channelName;
+  final int uid;
+  final String token;
+}
+
+class VoiceRtcService {
+  VoiceRtcService(this.api);
+
+  final VoiceRoomApi api;
+  late final RtcEngine _engine;
+  bool _initialized = false;
+
+  Future<void> join(String roomId) async {
+    final credential = await api.fetchRtcCredential(roomId);
+    final permission = await Permission.microphone.request();
+    if (!permission.isGranted) {
+      throw StateError('microphone permission is required');
+    }
+
+    if (!_initialized) {
+      _engine = createAgoraRtcEngine();
+      await _engine.initialize(RtcEngineContext(appId: credential.appId));
+      _engine.registerEventHandler(RtcEngineEventHandler(
+        onTokenPrivilegeWillExpire: (connection, token) {
+          _renewToken(roomId);
+        },
+        onConnectionStateChanged: (connection, state, reason) {
+          // 更新可观察状态，供 UI 展示重连/失败状态。
+        },
+      ));
+      await _engine.enableAudio();
+      _initialized = true;
+    }
+
+    await _engine.joinChannel(
+      token: credential.token,
+      channelId: credential.channelName,
+      uid: credential.uid,
+      options: const ChannelMediaOptions(
+        channelProfile: ChannelProfileType.channelProfileCommunication,
+        clientRoleType: ClientRoleType.clientRoleBroadcaster,
+        publishMicrophoneTrack: true,
+        autoSubscribeAudio: true,
+      ),
+    );
+  }
+
+  Future<void> _renewToken(String roomId) async {
+    final credential = await api.fetchRtcCredential(roomId);
+    await _engine.renewToken(credential.token);
+  }
+
+  Future<void> leave() async {
+    if (!_initialized) return;
+    await _engine.leaveChannel();
+  }
+
+  Future<void> dispose() async {
+    if (!_initialized) return;
+    await _engine.release();
+    _initialized = false;
+  }
+}
+```
+
+示例为了突出主路径，假定进房后用户默认拥有麦位。真实语音房通常让听众以 `clientRoleAudience` 加入，并只在后端确认“上麦”后切换为主播角色、发布麦克风轨道；被禁言或下麦时停止发布轨道或切回听众。切换前后都应以 WebSocket 下发的服务端状态为准。
+
+页面的 `State.dispose()`、路由返回、账号切换和网络不可恢复错误都要调用 `leave()`；长期不用的页面再调用 `dispose()` 释放引擎。iOS 需要配置麦克风使用说明，Android 需要声明并在运行时申请 `RECORD_AUDIO`；还要在真机验证蓝牙耳机、扬声器/听筒切换、后台/前台恢复、弱网重连和系统来电打断。
+
+### 16.5 事件一致性与验收
+
+建议把事件分为两条通道：Agora 回调用于网络和音频体验，业务 WebSocket 用于权威业务状态。举例：用户抢麦成功后，后端提交麦位记录并广播 `seat.updated`，该用户请求到 publisher Token 后开始发声；其他客户端收到 `seat.updated` 即展示该麦位用户，不需要等待 RTC 音频回调。
+
+上线前至少覆盖：
+
+1. 同一麦位并发抢占，最终只能有一个成功者。
+2. 听众不能签发 publisher Token；被禁言或踢出后不能重新通过旧业务状态获得发言能力。
+3. Token 即将过期和已过期时的续期、重连与失败提示。
+4. 多端登录、重复进房、断网恢复、应用前后台切换和强制退出。
+5. 真机音频路由、蓝牙、权限拒绝、弱网、回声和不同平台互通。
+
 ## 参考资料
 
 - [Flutter architectural overview](https://docs.flutter.dev/resources/architectural-overview)
@@ -618,5 +840,7 @@ flowchart LR
 - [Impeller rendering engine](https://docs.flutter.dev/perf/impeller)
 - [Concurrency in Dart](https://dart.dev/language/concurrency)
 - [Flutter testing overview](https://docs.flutter.dev/testing/overview)
+- [Agora Flutter SDK documentation](https://docs.agora.io/en/interactive-live-streaming/get-started/get-started-sdk?platform=flutter)
+- [Agora token authentication](https://docs.agora.io/en/video-calling/develop/authentication-workflow)
 
 > 最后提醒：面试中的高质量答案不是背诵类名，而是能画出数据流、说明生命周期、给出边界条件，并用测量结果证明工程判断。

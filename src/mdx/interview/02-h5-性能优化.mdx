@@ -63,12 +63,198 @@ H5 性能优化的目标不是单纯追求某个分数，而是让用户更快�
 - 动画优先使用 `requestAnimationFrame`，尽量改变 `transform`、`opacity`，减少频繁读写布局属性引起的回流与重绘。
 - 页面不可见时暂停轮询、动画和不必要的定时器，可通过 `visibilitychange` 恢复。
 
-## 5. DOM 和长列表
+## 5. DOM 和长列表：虚拟列表怎么实现
 
-- 减少不必要的 DOM 层级和隐藏但仍常驻的节点；批量更新 DOM，避免交替读取布局和写入样式。
-- 图片懒加载只延后资源请求，所有列表项仍会挂载到 DOM；数据量很大时不能只靠懒加载图片。
-- 长列表、聊天记录、评论流和表格应使用虚拟列表：只渲染可视区域及少量缓冲项，并复用 DOM 节点。常见选择包括 `react-virtual`、`react-window` 和 `react-virtualized`。
-- 瀑布流或高度不固定的内容需评估虚拟化实现成本；数据量不大时，`IntersectionObserver` 加图片占位通常更简单。
+减少不必要的 DOM 层级和隐藏但仍常驻的节点；批量读取布局后再写入样式，避免交替读写触发强制布局。列表很长时，还需要控制实际挂载的节点数量。
+
+### 什么时候选虚拟列表
+
+- 只有图片多、DOM 数量有限：优先分组懒渲染 + 图片懒加载，实现成本更低。但分组追加后若不卸载旧项，DOM 仍会不断增加。
+- 卡片达到数百/数千，测到滚动掉帧、布局长任务或 DOM 内存明显增长：考虑虚拟列表。数量只是参考，最终取决于单项复杂度和目标设备性能。
+- 固定高度列表/网格可选择 TanStack Virtual（原 React Virtual）或 react-window；不等高列表、聊天记录和瀑布流还要评估测量与滚动位置维护成本。
+
+图片 `loading="lazy"` 主要延后图片请求，不会减少列表项 DOM。无限滚动解决“何时取下一页”，虚拟列表解决“已经有很多数据时挂载哪些项”，两者可以一起用。
+
+### 核心原理：撑开总高度，只挂载窗口内的项
+
+以固定行高列表为例，外层是固定高度、`overflow: auto` 的滚动容器；内层占位元素保留完整列表高度，让滚动条仍反映全部数据。滚动时根据 `scrollTop` 计算可见索引，只挂载可见项和上下缓冲项，再把这些项定位到它们在完整列表中的位置。
+
+假设有 10,000 项，每项高 60px，视口高 600px，上下各缓冲 5 项：占位高度仍是 600,000px，但中间位置通常只挂载约 20 项。滚动离开的项卸载，新进入窗口的项挂载；DOM 数量随视口大小变化，不随总条数线性增长。具体库可能复用节点，但“固定复用同一批 DOM”不是虚拟列表的必要条件。
+
+### 视口外内容跳过渲染：content-visibility
+
+如果内容已经在 DOM 中，但暂时不在窗口可视范围内，可以使用 CSS 的 **`content-visibility: auto`**。浏览器会在内容远离视口、且不需要呈现时跳过其内部的布局和绘制，接近视口时再恢复。它属于浏览器渲染优化，不是 JavaScript API，也不是卸载 DOM。
+
+适合长文章、多模块落地页、复杂卡片分组等场景：希望保留完整 DOM，又想降低首屏和滚动期间处理屏外内容的成本。通常加在具有一定体量的独立模块上，而不是每个小节点上。
+
+```css
+.content-section {
+  content-visibility: auto;
+  /* 尚未实际渲染时先按 800px 预留高度；渲染后记住实际高度 */
+  contain-intrinsic-size: auto 800px;
+}
+```
+
+```jsx
+function Sections({ sections }) {
+  return sections.map((section) => (
+    <section className="content-section" key={section.id}>
+      <h2>{section.title}</h2>
+      <div>{section.content}</div>
+    </section>
+  ));
+}
+```
+
+`contain-intrinsic-size` 给跳过渲染的内容提供占位尺寸；示例中的 `800px` 是估算值，应接近实际模块高度，否则首次进入视口时可能出现滚动条变化或布局跳动。`auto` 允许浏览器在渲染后记住实际尺寸，后续跳过渲染时使用。不要把首屏关键内容作为主要跳过对象，也要避免频繁读取屏外子元素的布局尺寸，这可能迫使浏览器提前计算布局。
+
+它不会卸载组件、释放 DOM 或停止 effect、定时器，也不能代替图片懒加载来控制资源请求。数万项全部挂载仍有 DOM 和 React 初始化成本，因此不能替代虚拟列表。上线前应检查目标浏览器兼容性，并用 Performance 验证布局、绘制耗时是否下降；不支持时应能正常展示完整内容。
+
+如果说的是“判断元素有没有进入窗口”的 JavaScript API，则是 **`IntersectionObserver`**：它异步通知元素与视口（或指定滚动容器）的相交状态，适合图片懒加载、模块延迟挂载、曝光统计和触底分页。
+
+```js
+const observer = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    const image = entry.target;
+    image.src = image.dataset.src;
+    observer.unobserve(image);
+  }
+}, {
+  root: null, // 默认以浏览器视口为参照
+  rootMargin: '300px 0px', // 提前 300px 加载，减少进入视口后的等待
+});
+
+// 对应 <img data-src="/photo.webp" width="300" height="200" alt="..." />
+document.querySelectorAll('img[data-src]').forEach((image) => {
+  observer.observe(image);
+});
+
+// 页面/组件卸载时调用 observer.disconnect()。
+```
+
+普通图片懒加载优先用原生 `loading="lazy"`；需要自定义预加载距离或业务行为时再使用观察器。首屏 LCP 图片应直接设置 `src` 并及时加载，不要放进这段延迟加载逻辑。
+
+| 方案 | 主要优化什么 | 屏外 DOM 是否仍存在 |
+| --- | --- | --- |
+| `content-visibility: auto` | 由浏览器跳过屏外子树的布局、绘制等渲染工作 | 是 |
+| `IntersectionObserver` | 提供相交通知，由业务决定延迟请求、挂载或分页 | 取决于回调；仅观察不会减少 DOM |
+| 虚拟列表 | 只挂载视口附近的项，控制 DOM 数量 | 窗口外的列表项通常卸载，保留占位高度 |
+
+### 手写固定高度虚拟列表
+
+下面是固定行高的 React 完整示例（`items` 的每项包含稳定的 `id` 和 `title`）。实现分成三层：外层负责滚动，中间占位层撑出总高度，内层窗口只渲染当前需要的项。
+
+```jsx
+import { useState } from 'react';
+
+const ROW_HEIGHT = 60;
+const VIEW_HEIGHT = 600;
+const OVERSCAN = 5;
+
+export default function VirtualList({ items }) {
+  const [scrollTop, setScrollTop] = useState(0);
+  const totalHeight = items.length * ROW_HEIGHT;
+  // 数据减少时，先将计算位置限制在有效范围内。
+  const offset = Math.min(scrollTop, Math.max(0, totalHeight - VIEW_HEIGHT));
+  const start = Math.max(0, Math.floor(offset / ROW_HEIGHT) - OVERSCAN);
+  // end 是不包含在窗口内的右边界，与 slice 的语义一致。
+  const end = Math.min(
+    items.length,
+    Math.ceil((offset + VIEW_HEIGHT) / ROW_HEIGHT) + OVERSCAN,
+  );
+
+  return (
+    <div
+      style={{ height: VIEW_HEIGHT, overflow: 'auto' }}
+      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+    >
+      {/* 占位层：不渲染全部项，但保留完整滚动高度 */}
+      <div style={{ height: totalHeight, position: 'relative' }}>
+        {/* 窗口层：整体移到 start 对应的位置 */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            transform: `translateY(${start * ROW_HEIGHT}px)`,
+          }}
+        >
+          {items.slice(start, end).map((item) => (
+            <div
+              key={item.id}
+              style={{
+                height: ROW_HEIGHT,
+                boxSizing: 'border-box',
+                borderBottom: '1px solid #eee',
+                overflow: 'hidden',
+              }}
+            >
+              {item.title}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+调用示例（Next.js App Router 中，使用 Hook 的组件文件需要声明 `'use client'`）：
+
+```jsx
+const items = Array.from({ length: 10000 }, (_, index) => ({
+  id: `item-${index}`,
+  title: `第 ${index + 1} 条数据`,
+}));
+
+// 在页面组件中渲染：
+<VirtualList items={items} />
+```
+
+### 滚动一次，代码具体做了什么
+
+仍按每项 60px、视口 600px、上下各缓冲 5 项计算。当用户滚动到 `scrollTop = 1200px`：
+
+```text
+第一条可见项索引 = floor(1200 / 60) = 20
+start = 20 - 5 = 15
+end = ceil((1200 + 600) / 60) + 5 = 35
+
+实际挂载索引：15～34，共 20 项（end 不包含自身）
+窗口整体偏移：15 × 60 = 900px
+视口显示索引：20～29，上下各有 5 项缓冲
+占位总高度：10000 × 60 = 600000px，保持不变
+```
+
+继续向下滚动一行到 `1260px`，窗口变为索引 16～35：第 15 项卸载，第 35 项挂载，其余项通过稳定的 `key` 保留身份。窗口偏移同步变为 `960px`，所以内容仍处于完整列表中应有的位置。滚动触发状态更新、重新计算窗口，再由 React 更新 DOM，这就是固定高度虚拟列表的完整过程。
+
+这里有三个关键量：`totalHeight` 保住滚动范围，`start/end` 决定实际挂载哪些项，`translateY` 决定各项的视觉位置。必须保证实际行高与计算行高一致（含边框与间距），否则越往下滚偏差越大。示例用于说明原理；生产中还需处理容器 resize、数据替换后的滚动位置、键盘操作等，通常优先使用成熟库。
+
+固定高度网格可以按“行”虚拟化：列数为 `columns` 时，总行数为 `Math.ceil(items.length / columns)`；先计算可见行，再渲染这些行中的卡片。容器宽度改变导致列数变化时，要重新计算行数和偏移。
+
+### 高度不固定时怎么做
+
+1. **先估算**：给每项一个预估高度，用高度前缀和计算位置。例如第 i 项的顶部偏移，等于它之前所有项的高度之和；总高度为全部项高度之和。
+2. **再测量**：挂载后通过 `ResizeObserver` 测量真实高度，按稳定的数据 ID 缓存，并更新后续项偏移和总高度。图片加载、文字换行、容器宽度变化都可能让测量失效；图片应尽量预留比例，减少修正。
+3. **定位窗口**：固定高度能直接除法得到索引；动态高度通常在前缀和中二分查找 `scrollTop` 对应的项，避免每次滚动遍历整个列表。
+4. **维护滚动锚点**：记录视口中某项的 ID 及其相对视口顶部的位置。它上方的高度变化或插入历史消息后，根据新旧偏移差修正 `scrollTop`，保持这项在屏幕上的位置。若上方累计增高 80px，就相应增加 80px；需协调浏览器原生滚动锚定，避免重复补偿。
+
+瀑布流还需维护每列的累计高度、每张卡片所属列和纵向位置，再按卡片实际位置判断可见性，不能直接套用等高网格的行号公式。宽度或列数变化时可能需要重新排布，因此实现成本更高。
+
+### 缓冲区和使用边界
+
+- `overscan`（buffer）是在可视区外额外挂载的项数或像素范围，具体单位看库的 API。太小会在快速滚动时来不及渲染而露白，太大会增加 DOM 和渲染成本；应在目标移动设备上快速滚动测试后调参。
+- 使用稳定的数据 ID 作为 `key`；离屏项会卸载，输入值、选中态等需要保留的状态应放到列表外，按 ID 管理。不能依赖行组件本地状态一直存在。
+- 虚拟化减少的是挂载、布局和绘制成本，不会自动减少已加载数据的内存、图片体积或全量筛选排序的计算量。这些问题仍需分页、缓存上限或计算优化。
+- 浏览器查找、打印、屏幕阅读器和焦点导航需要单独设计，因为离屏内容不在 DOM 中；超大列表还可能遇到浏览器滚动容器高度上限。
+
+验证时持续追加数据并快速滚动，检查 DOM 节点数量是否大致稳定、Performance 中是否仍有长任务/掉帧，以及图片加载和向顶部插入数据时是否跳动。内存应区分数据缓存和 DOM 占用，不能只看总量判断虚拟化是否生效。
+
+### 面试回答
+
+> 虚拟列表的核心是用占位元素撑起完整滚动高度，根据 scrollTop、视口高度和缓冲区算出索引范围，只挂载这一段，再按原始偏移定位。固定高度可以直接用除法计算；不等高需要预估、测量、高度前缀和与索引查找，上方高度变化时还要修正滚动锚点。图片懒加载只延后请求，虚拟列表才控制 DOM 数量；我会通过节点数量、滚动掉帧和内存数据验证收益，并调节 overscan 平衡露白与渲染开销。
 
 ## 6. React 和 Vue 层面的优化
 
@@ -151,12 +337,6 @@ PWA 与 FCM 同时接入时，同一个 scope 不能由两个 Service Worker 竞
 ### 面试回答
 
 > 我先按关键路径划分依赖：React、状态和国际化单独形成稳定包；Firebase、MUI、图标等按页面或依赖组拆分，控制单 chunk 约 500KB。PixiJS、Swiper、Axios、Lodash 则通过 CDN external 移出业务 bundle。这样重点不是单纯减少请求，而是减少首屏 JS、提高可缓存资源的复用率；上线后我会用 Bundle Analyzer 和 Network 验证实际收益，并评估 CDN 稳定性和降级。
-
-### 什么时候选虚拟列表
-
-- 只有图片多、DOM 数量有限：优先分组懒渲染 + 图片懒加载，复杂度更低。
-- 卡片达到数百/数千，滚动已出现掉帧、内存增长或长任务：上虚拟列表。固定高度网格可使用 TanStack Virtual / react-window；不等高瀑布流还需处理高度测量与滚动锚点补偿。
-- 虚拟列表的 buffer 需要调参：太小会快速滚动白屏，太大又接近全量渲染。
 
 ### 验证闭环
 

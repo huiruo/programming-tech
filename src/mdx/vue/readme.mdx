@@ -1,509 +1,509 @@
 import Mermaid from '../../components/mermaid';
 import CodeBlock from '../../components/codeBlock';
 
-## vue 特点
+# Vue 3 原理总览
 
-### 宏观流程
-1. compiler: template-->AST抽象语法树-->code render函数
+Vue 3 的核心目标是：把声明式模板转换成高效的 DOM 更新，并让状态变化能够自动找到需要重新计算的组件。
 
-2. reactivity: 响应式,effect 副作用函数
-	* 1. Vue3 用 ES6的Proxy 重构了响应式，new Proxy(target, handler)
-	* 2. Proxy 的 get handle 里 执行track() 用来收集依赖(收集 activeEffect，也就是 effect )
-	* 3. Proxy 的 set handle 里执行 trigger() 用来触发响应(执行收集的 effect)
+理解 Vue 3 可以抓住三部分：
 
-3. runtime: 运行时相关功能，虚拟DOM(即：VNode)、diff算法、真实DOM操作等
+| 模块 | 解决的问题 | 主要概念 |
+| --- | --- | --- |
+| Compiler | 模板如何变成可执行代码 | AST、Transform、Codegen、Render Function、静态提升、Patch Flag |
+| Reactivity | 状态变化时，如何找到依赖它的计算 | `reactive`、`ref`、`track`、`trigger`、`ReactiveEffect` |
+| Runtime | Render Function 的结果如何变成并更新 DOM | VNode、组件实例、Renderer、Patch、Scheduler、生命周期 |
 
-重点：`render.call(proxyToUse,..)`调用ast生成的render生成vnode
+三个模块连接起来就是：
+
+```text
+Template → Render Function → VNode → Patch → DOM
+                          ↑
+                 ReactiveEffect 追踪依赖
+                          ↑
+                 reactive / ref 状态
+```
+
+> Vue 2 主要通过 `Object.defineProperty` 拦截对象属性。本文以 Vue 3 为基线：响应式对象主要使用 Proxy，`ref` 使用带 getter/setter 的值容器。
+
+## 客户端渲染完整流程（不使用 SSR）
+
+参考 React 的“编译 → 执行渲染函数 → 虚拟节点 → 页面更新”顺序，Vue 3 的核心路径是：**模板编译为 Render Function，组件 Render Effect 执行它并收集依赖，得到 VNode，再由 Renderer 的 Patch 挂载或更新真实 DOM。** 状态变化后，Scheduler 会批量调度相关组件，重复执行渲染与 Patch。
 
 <Mermaid>
 ```mermaid
 flowchart TD
-
-template-->A1(baseCompile)-->A2(baseParse生成ast)-->A3(transform对ast进行转换)-->A4(generate根据变换后的ast生成code并返回)-->A41("render.call(proxyToUse,..)调用ast生成的render生成vnode")-->VNode-->A5("创建好vnode调用patch(prevTree,nextTree)进行渲染")
+  A[Template] --> B[Parse: 生成 AST]
+  B --> C[Transform: 转换并标记优化信息]
+  C --> D[Codegen: 生成 Render Function]
+  D -.提供组件渲染函数.-> H
+  E[createApp 创建应用] --> F[app.mount 创建根 VNode 并进入 patch]
+  F --> G[创建组件实例并执行 setup]
+  G --> H[建立并首次运行组件 Render Effect]
+  H --> I[执行 Render Function 并收集响应式依赖]
+  I --> J[生成组件 subTree: VNode Tree]
+  J --> K[patch: 挂载或比较新旧 VNode]
+  K --> L[递归创建、复用并更新真实 DOM]
+  L --> M[执行挂载或更新后的 Hook]
+  M -.后续交互修改状态.-> N[reactive / ref 触发 trigger]
+  N --> O[Scheduler: queueJob 去重入队]
+  O --> P[微任务刷新组件更新队列]
+  P --> I
 ```
 </Mermaid>
 
-拿到生成的 AST 遍历 AST 的节点进行 transform 转换操作,由于是对AST的变换，所以不会有返回值，所以在baseCompile的transform函数，只会传入ast抽象语法树和相应的变换选项,作用:
-* 比如解析 v-if、v-for 等各种指令。
-* 对源码进行优化: hoistStatic(静态提升)
->vue3 在模板的compile-time做了的优化:比如提升不变的vNode(静态提升)，以及blockTree配合patchFlag靶向更新;transform中的hoistStatic发生静态提升,hoistStatic会递归ast并发现一些不会变的节点与属性，给他们打上可以静态提升的标记。
+### 1. 编译：Template → AST → Render Function
 
-### transform中的hoistStatic发生静态提升
-hoistStatic其会递归ast并发现一些不会变的节点与属性，给他们打上可以静态提升的标记。
+模板先经过 Parse、Transform 和 Codegen，生成创建 VNode 的 JavaScript 渲染函数，同时携带 Patch Flag、Block Tree 等优化信息。常见 `.vue` 单文件组件在构建时完成模板编译；使用包含编译器的 Vue 构建时，也可以在运行时编译模板。编译不会创建 DOM，也不会收集组件渲染依赖。
 
-hoistStatic只调用了一个walk函数，这个函数是对其子节点的遍历检查，而非本节点。
-<CodeBlock>
-```js
-function hoistStatic(root, context) {
-walk(root, context,
-  // Root node is unfortunately non-hoistable due to potential parent
-  // fallthrough attributes.
-  isSingleElementRoot(root, root.children[0]));
-}
-```
-</CodeBlock>
+### 2. 首次挂载：创建组件实例与 Render Effect
 
-walk函数很长，在阅读walk之前，我们需要先铺垫一些规则。
-<CodeBlock>
-```js
-/**
- * 静态类型有几种级别。
- * 高级别兼容低级别.例如 如果一个几点可以被序列化成字符串，
- * 那也一定可以被静态提升和跳过补丁。
- */
-export const enum ConstantTypes {
-NOT_CONSTANT = 0,
-CAN_SKIP_PATCH,
-CAN_HOIST,
-CAN_STRINGIFY
-}
+`createApp(RootComponent)` 创建应用，`app.mount(container)` 创建根 VNode，并进入 `render` → `patch(null, vnode)`。遇到组件 VNode 时，Vue 创建组件实例、初始化 props 和 slots、执行 `setup`，准备渲染函数，再通过 `setupRenderEffect` 建立并首次运行组件的 Render Effect。
 
-function walk(node, context, doNotHoistNode = false) {
-const { children } = node;
-// 用于记录该子元素的数量
-const originalCount = children.length;
-// 被静态提升的子元素数量
-let hoistedCount = 0;
-// 遍历整个直接子元素
-for (let i = 0; i < children.length; i++) {
+Render Effect 执行 `renderComponentRoot`，调用组件的 Render Function，得到组件的 VNode 子树 `instance.subTree`。渲染期间读取 `reactive` 属性或 `ref.value`，会建立“响应式数据 → 当前组件 Render Effect”的依赖连接；挂载时再通过 `patch(null, subTree)` 递归生成 DOM。
 
-// ...
-... 
-// ...
+### 3. Patch：按 VNode 类型挂载或更新
 
-// 对静态节点进行变换，变换为字符串
-if (hoistedCount && context.transformHoist) {
-  context.transformHoist(children, context, node);
-}
-// all children were hoisted - the entire children array is hoistable.
-// 如果静态提升的子元素个数等于原本子元素个数，则直接提升整个children数组
-if (hoistedCount &&
-  hoistedCount === originalCount &&
-  node.type === 1 /* NodeTypes.ELEMENT */ &&
-  node.tagType === 0 /* ElementTypes.ELEMENT */ &&
-  node.codegenNode &&
-  node.codegenNode.type === 13 /* NodeTypes.VNODE_CALL */ &&
-  isArray(node.codegenNode.children)) {
-  node.codegenNode.children = context.hoist(createArrayExpression(node.codegenNode.children));
-}
-}
-```
-</CodeBlock>
-只有纯元素与纯文本可以被静态提升
+VNode 是 UI 的轻量描述，常被称为虚拟 DOM；它不是模板 AST，也不是真实 DOM。Renderer 根据 VNode 的类型和 `shapeFlag` 等信息选择处理分支：
 
-因为只有静态的内容才可以被静态提升，所以只有原生DOM元素和纯文本可以被静态提升。
+| VNode 类型 | 主要处理 | 与 DOM 的关联 |
+| --- | --- | --- |
+| 原生元素，如 `div` | `processElement`：挂载时创建元素、处理属性和子节点并插入；更新时复用元素并 Patch 差异 | 元素 VNode 的 `el` 指向对应 DOM |
+| 组件 | `processComponent`：挂载时创建实例与 Render Effect；更新时按需更新 props、slots 和组件子树 | 通过 `vnode.component` 关联组件实例，再通过 `instance.subTree` 关联渲染结果 |
+| 文本 | `processText`：创建文本节点或更新文本内容 | 文本 VNode 的 `el` 指向文本 DOM 节点 |
+| Fragment | `processFragment`：挂载或更新一组子节点，不额外创建包裹元素 | 通过起止锚点表示对应的 DOM 范围 |
 
-至于getConstantType，主要是通过节点类型来判断是否可被提升，除了元素、文本、表达式以外其他都不是静态类型，而这三种还要似具体情况辨别其静态的类型。比如元素类型，需要检查其属性，子节点以及bind指令表达式是否静态，元素类型需要将其静态类型降到最低的属性、子节点、表达式的静态类型。
+首次挂载没有旧 VNode，主要执行创建与插入；更新时则比较旧 `subTree` 与新 `subTree`，结合节点类型、`key` 和编译优化信息，复用 DOM 并执行必要的属性、文本、插入、移动和删除操作。
 
-### 扩展:hoistStatic(静态提升)为什么能提升性能？
-在 Vue 3 中，"静态提升"（Hoist Static）是一项优化技术，用于提高渲染性能。这个技术的核心思想是将模板中的静态部分提前处理，以减少渲染函数的执行时间和生成的 JavaScript 代码的大小。这带来了以下几个性能优势：
+### 4. 状态更新：trigger → Scheduler → Render → Patch
 
-1. **减少渲染函数的执行时间**：通过将静态部分提前处理，Vue 可以减少在每次重新渲染组件时需要执行的代码量。这减少了渲染函数的执行时间，提高了性能。
+修改响应式状态时，状态值立即改变，`trigger` 通知相关订阅者；组件的 scheduler 通常通过 `queueJob` 将更新任务去重入队。Scheduler 在微任务中刷新队列，重新运行组件 Render Effect，生成新 VNode，再 Patch 新旧子树。
 
-2. **减小生成的 JavaScript 代码的体积**：将静态部分提升到作用域外，使得这些静态内容不需要在每次渲染时重新生成，从而减小了生成的 JavaScript 代码的大小。这有助于加快首次加载时间和减少网络传输的开销。
+因此，同一轮同步代码连续修改多次状态，组件更新通常会合并执行。依赖追踪用于找到需要更新的组件，Patch Flag / Block Tree 用于缩小动态节点的比较范围，Diff / Patch 则负责落实 DOM 变化。
 
-3. **更好的缓存和复用**：Vue 可以更好地缓存和复用静态内容，这意味着在相同的组件多次渲染时，静态内容只需生成一次，然后可以重复使用，进一步提高性能。
+### 5. 生命周期与 DOM 更新时机
 
-4. **提高可维护性**：静态提升还可以使渲染函数更易于理解和维护，因为它将模板分为静态部分和动态部分，使代码更具结构。
+首次挂载时，`onBeforeMount` 在组件首次渲染前执行，`onMounted` 在 DOM 插入后通过 post-render 队列执行；更新时，`onBeforeUpdate` 在本次渲染与 Patch 前执行，`onUpdated` 在 DOM 更新后通过 post-render 队列执行。模板 ref 也会随挂载、更新和卸载设置或清理，不能在 `setup` 中假定 DOM 已存在。
 
-总之，静态提升是 Vue 3 中的一项重要性能优化技术，通过将静态部分从渲染函数中提取出来，减少了不必要的计算和生成代码的开销，提高了渲染性能和可维护性。这是 Vue 3 引入的一项重要变革，使其在大型应用中更具竞争力。
+需要在状态修改后读取本批次更新后的 DOM，可以使用 `await nextTick()`。它等待当前调度批次完成，不负责触发更新，也不保证浏览器已经完成绘制。
 
+### 与 React render / commit 的对应边界
 
->参考：[runtime-VNode构建之后-开始渲染](./Vue/runtime-VNode构建之后-开始渲染)
+Vue 的 VNode 在 UI 描述层面更接近 React Element。Vue 通过组件实例、Render Effect 和 VNode 子树组织更新，没有 React Fiber 的 `beginWork` / `completeWork` 流程，也没有相同的独立 commit 阶段：**Vue 在递归 Patch 时直接执行 DOM 操作。**
 
-### 继续特点
-1. Vue的template、script、style是分离的，可读性比较好,比较容易上手
+Vue 默认把组件更新调度到微任务中批处理，但一次普通组件的 Render / Patch 开始执行后，通常会同步执行完成；这种异步入队不等同于 React 并发 Render 的可中断与恢复。
 
-2. 提供了便捷的模板命令
-```
-vue 用v-if 条件渲染div
-还有v-model,v-on:click,v-for
+## 一、模板编译：Template 如何变成 Render Function
 
-react中用js，运算符去实现 v-if, array.map() 去实现 v-for
-```
-
-3. 提供了computed,watch 副作用的钩子，在react 统一使用useEffect去实现这些功能
-
-4. Vue 通过响应式依赖跟踪，在默认的情况下可以做到只进行组件树级别的更新计算，而默认下 React 是做不到
-
-5. 改变组件状态：创建回来的对象必须保持它的引用，不能重新赋值否则会失去响应式
-```js
-vue: this.data = x;
-react: setState(x);
-```
-
-6.  当父组件重新渲染时，其子组件依赖项没变化的话，子组件不会重新渲染。
-
-## 首次渲染流程
-renderComponentRoot 执行构建ast生成的render() 生成vnode
-	组件挂载前:onBeforeMount在什么时候执行?
+Vue 模板不会直接交给浏览器执行。Compiler 会先把模板解析成 AST，再对 AST 做语义转换和优化，最后生成返回 VNode 的 Render Function。
 
 <Mermaid>
 ```mermaid
-flowchart TD
-z1(createApp)-->z2("ensureRenderer()")-->z3("createRenderer(rendererOptions)")-->z4("baseCreateRenderer(options, createHydrationFns)")
-
-z4-->z6("return {render,createApp:createAppAPI(render, hydrate)}")
-
-z6-->A1("createAppAPI(render, hydrate){return app}")
-
-A1("createAppAPI")-->A1A("重点:页面上的.mount('#root')调用createAppAPI返回的mount")-->A2("mount(rootContainer")-->A3("render=(vnode,container,开始创建code等一系列流程")-->A4("patch()patch阶段")-->B1
-
-B1("processComponent()")-->B2("mountComponent(n2, container")
-
-B2--1初始化构建ast-code函数-->B31("setupComponent(instance)")-->B33("见:baseCompile生成ast-静态提升-vnode-patch.md")
-
-B2--2构建vnode等流程-->B32("setupRenderEffect(instance, initialVNode")-->C1("effect.run()触发依赖收集")-->C2("componentUpdateFn()重点函数")--1创建vnode-->C3("renderComponentRoot(instance)返回vnode")-->C4
-
-C4("render.call(proxyToUse,..)调用ast生成的render生成vnode")-->C41("执行ast render函数也会触发依赖收集")
-
-C2--2创建好vnode:nextTree-->D1("调用patch(prevTree,nextTree)进行渲染")--path之初始化:shapeFlag&6-->D12("processComponent(n1, n2")-->D2("mountElement(n2, container")
-
-%% mountComponent--1-->D21("createComponentInstance创建实例")
-%% mountComponent--2-->D22("setupComponent设置组件实例")
-%% mountComponent--3-->D23("setupRenderEffect,执行依赖收集")
-
-D2-->D3("mountChildren(vnode.children,..)进行递归")--vnode.children递归调用-->D5("patch(null,child,container")
-
-C2--3渲染完毕最后-->E1("处理生命周期函数")--1-->E21("onMounted()")
-
-E1--2-->E2(nextTick)
+flowchart LR
+  A[Template] -->|baseParse| B[AST]
+  B -->|transform| C[转换后的 AST]
+  C -->|generate| D[Render Function Code]
+  D -->|执行| E[VNode Tree]
+  C -.生成优化信息.-> F[静态提升 / Patch Flag / Block Tree]
+  F -.帮助运行时跳过静态工作.-> E
 ```
 </Mermaid>
 
-### 1阶段函数
-<CodeBlock>
-```js
-mount(rootContainer, isHydrate, isSVG) {
-	// 省略函数
-	// 未挂载执行
-	if (!isMounted) {
-		// 水合或者渲染虚拟节点
-		if (isHydrate && hydrate) {
-			hydrate(vnode, rootContainer);
-		}
-		else {
-			console.log('%c运行时==>createAppAPI--mount中调用render:渲染虚拟节点,render函数可以说是vue重点中的重点,vue的patch算法便是在这里执行：', 'color:yellow')
-			render(vnode, rootContainer, isSVG);
-		}
-	}
-	// 省略函数
-}
+### 1. Parse：生成 AST
 
-const render = (vnode, container, isSVG) => {
-	if (vnode == null) {
-		// 没有传入新的虚拟节点，当存在旧虚拟节点，则卸载旧虚拟节点
-		if (container._vnode) {
-			console.log('%crender:-->虚拟节点不存在，则销毁', 'color:red', '')
-			unmount(container._vnode, null, null, true);
-		}
-	}
-	else {
-		// 创建、或者更新节点，创建的时候这里container._vnode是不存在的
-		// 第一个参数: 旧的虚拟节点
-		// 第二个参数：新的vnode
-		// 第三个参数：vnode转化为dom，最终要挂载的dom容器
-		console.log('%crender:-->存在新虚拟节点，则执行patch算法，比较新旧虚拟节点,虚拟节点存在，创建或更新', 'color:red')
-		patch(container._vnode || null, vnode, container, null, null, null, isSVG);
-	}
-	flushPreFlushCbs();
-	flushPostFlushCbs();
-	// 缓存虚拟节点数据，作为已完成渲染的标识,容器指向新的虚拟的节点
-	container._vnode = vnode;
-};
+Parser 读取标签、属性、文本、插值表达式和指令，将模板转换为结构化节点。例如：
+
+<CodeBlock>
+```vue
+<button :class="{ active }" @click="count++">
+  {{ count }}
+</button>
 ```
 </CodeBlock>
 
-<CodeBlock>
-```js
-const patch = (n1, n2, container, anchor = null, parentComponent = null, parentSuspense = null, isSVG = false, slotScopeIds = null, optimized = isHmrUpdating ? false : !!n2.dynamicChildren) => {
-	// 省略函数
-	// 根据vNode类型，执行不同的算法
-	switch (type) {
-			default:
-			if (shapeFlag & 1 /* ShapeFlags.ELEMENT */) {
-				console.log(`%c运行时==>patch-->较为重点的1:ELEMENT类型:调用processElement处理DOM元素:`, 'color:red')
-				processElement(n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized);
-			}
-			else if (shapeFlag & 6 /* ShapeFlags.COMPONENT */) {
-				console.log(`%c运行时==>patch-->较为重点的2:COMPONENT:调用processComponent处理组件元素:`, 'color:red')
-				processComponent(n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized);
-			}
-	}
-}
-```
-</CodeBlock>
+AST 会表达：这是一个 `button` 元素，它有动态 `class`、事件指令和动态文本子节点。此时还没有创建 DOM，也没有执行响应式依赖收集。
+
+### 2. Transform：转换并标记优化信息
+
+Transform 会遍历 AST，处理 `v-if`、`v-for`、`v-bind`、`v-on` 等语义，同时识别静态和动态部分。典型优化包括：
+
+- **静态提升（Static Hoisting）**：把不会变化的节点或属性提到 Render Function 外，避免每次渲染都重新创建。
+- **Patch Flag**：标记节点中会变化的部分，例如文本、class 或 style，让 Patch 不必逐项盲目比较。
+- **Block Tree**：每个 Block 只收集动态后代，组件更新时可以直接遍历动态节点列表，而不是扫描完整 VNode Tree。
+
+静态程度并不是简单的“静态 / 动态”二选一。编译器内部会根据节点、属性、子节点和表达式综合判断它能否跳过 Patch、能否提升或能否直接字符串化。
+
+### 3. Codegen：生成 Render Function
+
+以下是概念化结果，不对应某个 Vue 小版本的精确输出：
 
 <CodeBlock>
 ```js
-const processComponent = (n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized) => {
-	n2.slotScopeIds = slotScopeIds;
-	if (n1 == null) {
-		if (n2.shapeFlag & 512 /* ShapeFlags.COMPONENT_KEPT_ALIVE */) {
-			parentComponent.ctx.activate(n2, container, anchor, isSVG, optimized);
-		}
-		else {
-			console.log(`%cpath之processComponent:1调用mountComponent:`, 'color:magenta')
-			mountComponent(n2, container, anchor, parentComponent, parentSuspense, isSVG, optimized);
-		}
-	}
-	else {
-		console.log(`%cpath之processComponent:2调用updateComponent:`, 'color:magenta')
-		updateComponent(n1, n2, optimized);
-	}
-};
-
-const mountComponent = (initialVNode, container, anchor, parentComponent, parentSuspense, isSVG, optimized) => {
-	const instance = (initialVNode.component = createComponentInstance(initialVNode, parentComponent, parentSuspense));
-	console.log(`%c组件挂载：mountComponent:1调用createComponentInstance创建组件实例:`, 'color:magenta', instance)
-	if (instance.type.__hmrId) {
-		registerHMR(instance);
-	}
-	{
-		pushWarningContext(initialVNode);
-		startMeasure(instance, `mount`);
-	}
-	// inject renderer internals for keepAlive
-	// 将keepAlive注入渲染器内部
-	if (isKeepAlive(initialVNode)) {
-		instance.ctx.renderer = internals;
-	}
-	// resolve props and slots for setup context
-	{
-		{
-			startMeasure(instance, `init`);
-		}
-
-		console.log(`%c组件挂载：mountComponent:2调用setupComponent设置组件实例:`, 'color:magenta')
-		console.log('test:定义在data的响应式start==>mountComponent调用setupComponent')
-		setupComponent(instance);
-		{
-			endMeasure(instance, `init`);
-		}
-	}
-	// setup() is async. This component relies on async logic to be resolved
-	// before proceeding
-	if (instance.asyncDep) {
-		parentSuspense && parentSuspense.registerDep(instance, setupRenderEffect);
-		// Give it a placeholder if this is not hydration
-		// TODO handle self-defined fallback
-		if (!initialVNode.el) {
-			const placeholder = (instance.subTree = createVNode(Comment));
-			processCommentNode(null, placeholder, container, anchor);
-		}
-		return;
-	}
-	console.log(`%c组件挂载：==end mountComponent:3调用setupRenderEffect 执行带副作用的渲染函数setupRenderEffect:`, 'color:magenta')
-	setupRenderEffect(instance, initialVNode, container, anchor, parentSuspense, isSVG, optimized);
-	{
-		popWarningContext();
-		endMeasure(instance, `mount`);
-	}
-};
-```
-</CodeBlock>
-
-renderComponentRoot 创建好vnode -->patch
-<CodeBlock>
-```js
-const componentUpdateFn = () => {
-	console.log('effect.run==>:调用componentUpdateFn组件的初始挂载和更新')
-  if (!instance.isMounted) {
-		  if (el && hydrateNode) {
-						// 省略函数
-			}
-			else {
-				{
-					startMeasure(instance, `render`);
-				}
-				console.log('$ceffect.run==>调用renderComponentRoot，获取组件当前的 VNode', 'color:chartreuse')
-				console.log('$ceffect.run==>调用renderComponentRoot，ast 创建render函数执行时会读取组件的响应式数据，这会触发依赖收集', 'color:chartreuse')
-				const subTree = (instance.subTree = renderComponentRoot(instance));
-				{
-					endMeasure(instance, `render`);
-				}
-				{
-					startMeasure(instance, `patch`);
-				}
-				console.log("effect.run==>创建好vnode,调用patch进行组件内容的渲染,把子树挂载到container上")
-				patch(null, subTree, container, anchor, instance, parentSuspense, isSVG);
-				{
-					endMeasure(instance, `patch`);
-				}
-				initialVNode.el = subTree.el;
-			}
-	}
-}
-```
-</CodeBlock>
-
-<CodeBlock>
-```js
-const setupRenderEffect = (instance, initialVNode, container, anchor, parentSuspense, isSVG, optimized) => {
-	// 省略函数
-	console.log('依赖收集==>setupRenderEffect:3调用ReactiveEffect 创建一个副作用:', { componentUpdateFn })
-	const effect = (instance.effect = new ReactiveEffect(componentUpdateFn, () => queueJob(update), instance.scope // track it in component's effect scope
-	));
-	console.log('依赖收集==>a,关键：调用effect.run()为了触发一下依赖收集')
-	const update = (instance.update = () => effect.run());
-	// 省略函数
-}
-```
-</CodeBlock>
-
-
-
-<CodeBlock>
-```js
-function renderComponentRoot(instance) {
-    const { type: Component, vnode, proxy, withProxy, props, propsOptions: [propsOptions], slots, attrs, emit, render, renderCache, data, setupState, ctx, inheritAttrs } = instance;
-    let result;
-    let fallthroughAttrs;
-    const prev = setCurrentRenderingInstance(instance);
+function render(ctx, cache) {
+  return openBlock(), createElementBlock(
+    'button',
     {
-      accessedAttrs = false;
+      class: normalizeClass({ active: ctx.active }),
+      onClick: () => ctx.count++
+    },
+    toDisplayString(ctx.count),
+    TEXT | CLASS
+  );
+}
+```
+</CodeBlock>
+
+Render Function 的本质是普通函数：读取当前组件状态并返回 VNode。模板只是编写 Render Function 的声明式方式。
+
+详细编译流程：
+
+- [baseCompile 与 AST 转换](/vue/compiler-baseCompile)
+- [Template 编译为 Render Function](/vue/compiler-render)
+- [Codegen 生成代码](/vue/compiler-genCodeFn)
+
+## 二、响应式：状态如何找到依赖它的组件
+
+Vue 3 的响应式系统可以概括为“读取时订阅，修改时通知”：
+
+1. 响应式数据被读取时执行 `track`，把当前正在运行的 Effect 记录为订阅者。
+2. 响应式数据被修改时执行 `trigger`，找到订阅者并通知它们重新执行或进入调度队列。
+3. 每个组件的渲染过程本身就是一个 Reactive Effect，因此 Render Function 读取的数据会成为该组件的渲染依赖。
+
+### 1. `reactive`、`ref`、`track` 与 `trigger`
+
+下面是省略边界处理后的概念伪代码：
+
+<CodeBlock>
+```js
+let activeEffect;
+
+function reactive(target) {
+  return new Proxy(target, {
+    get(target, key, receiver) {
+      track(target, key, activeEffect);
+      return Reflect.get(target, key, receiver);
+    },
+    set(target, key, value, receiver) {
+      const result = Reflect.set(target, key, value, receiver);
+      trigger(target, key);
+      return result;
     }
-    try {
-      if (vnode.shapeFlag & 4 /* ShapeFlags.STATEFUL_COMPONENT */) {
-        // withProxy is a proxy with a different `has` trap only for
-        // runtime-compiled render functions using `with` block.
-        const proxyToUse = withProxy || proxy;
-        console.log('vnode-构建:start-->调用Ast生成render函数', { render })
-        result = normalizeVNode(render.call(proxyToUse, proxyToUse, renderCache, props, setupState, data, ctx));
-        console.log('vnode-构建:end-->调用Ast生成render函数render返回vnode:', { result })
-        fallthroughAttrs = attrs;
-      }
-		// 省略函数
+  });
+}
 
+class ReactiveEffect {
+  run() {
+    activeEffect = this;
+    const result = this.fn();
+    activeEffect = undefined;
+    return result;
+  }
 }
 ```
 </CodeBlock>
 
-### 2阶段函数
-初始化：path-->processComponent(n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized);
-<CodeBlock>
-```js
-const patch = (n1, n2, container, anchor = null, parentComponent = null, parentSuspense = null, isSVG = false, slotScopeIds = null, optimized = isHmrUpdating ? false : !!n2.dynamicChildren) => {
-	/*
-	n1,旧节点
-	n2,新节点
-	container,DOM容器，vNode渲染成dom会挂载到该节点下 
-	*/
+实际依赖通常可以抽象为：
 
-	// 省略函数
-
-	const { type, ref, shapeFlag } = n2;
-
-	console.log(`%c运行时==>patch开启,n1旧节点、n2新节点:`, 'color:yellow', { type, n1, n2 })
-	// 根据vNode类型，执行不同的算法
-	switch (type) {
-
-		// 省略函数
-
-		default:
-			if (shapeFlag & 1 /* ShapeFlags.ELEMENT */) {
-				console.log(`%c运行时==>patch-->较为重点的1:ELEMENT类型:调用processElement处理DOM元素:`, 'color:red')
-				processElement(n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized);
-			}
-			else if (shapeFlag & 6 /* ShapeFlags.COMPONENT */) {
-				console.log(`%c运行时==>patch-->较为重点的2:COMPONENT:调用processComponent处理组件元素:`, 'color:red')
-				processComponent(n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized);
-			}
-			else if (shapeFlag & 64 /* ShapeFlags.TELEPORT */) {
-				console.log(`%c运行时==>patch处理TELEPORT:`, 'color:red')
-				type.process(n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized, internals);
-			}
-			else if (shapeFlag & 128 /* ShapeFlags.SUSPENSE */) {
-				console.log(`%c运行时==>patch处理SUSPENSE:`, 'color:red')
-				type.process(n1, n2, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized, internals);
-			}
-			else {
-				warn$1('Invalid VNode type:', type, `(${typeof type})`);
-			}
-	}
-	// set ref
-	if (ref != null && parentComponent) {
-		setRef(ref, n1 && n1.ref, parentSuspense, n2 || n1, !n2);
-	}
+```text
+WeakMap<target, Map<key, Set<ReactiveEffect>>>
 ```
-</CodeBlock>
 
-mountElement-->mountChildren
+这张依赖图与 VNode Tree 不同：依赖图回答“哪个 Effect 读取了哪个属性”，VNode Tree 回答“这一轮 UI 应该是什么结构”。
+
+### 2. `computed`、`watch` 和 `watchEffect`
+
+| API | 定位 | 依赖来源 | 是否应产生副作用 |
+| --- | --- | --- | --- |
+| `computed` | 缓存的派生状态 | 自动追踪 getter 中读取的响应式值 | 否，getter 应保持纯粹 |
+| `watch` | 观察指定数据源并执行副作用 | 显式传入 ref、getter、reactive 对象或数据源数组 | 是 |
+| `watchEffect` | 立即执行并自动追踪依赖的副作用 | 自动追踪同步执行期间读取的响应式值 | 是 |
+
+`computed` 不等同于副作用：它描述“这个值如何由其他状态计算出来”。`watch` 和 `watchEffect` 才用于请求、日志、存储同步等外部操作。
+
+详细响应式原理：
+
+- [reactive 与 ReactiveEffect](/vue/reactiveAndEffect)
+- [首次 track 与状态改变后的 trigger](/vue/trackDataTrigger)
+- [computed 与 watch](/vue/computed)
+
+## 三、首次挂载：从 `createApp` 到 DOM
+
+首次挂载会创建根 VNode、组件实例和组件的 Render Effect，然后递归挂载 VNode Tree。
+
+<Mermaid>
+```mermaid
+flowchart TD
+  A[createApp RootComponent] --> B[app.mount container]
+  B --> C[创建根 VNode]
+  C --> D[render vnode container]
+  D --> E[patch null vnode]
+  E --> F[processComponent]
+  F --> G[mountComponent]
+  G --> H[创建组件实例并执行 setup]
+  H --> I[setupRenderEffect]
+  I --> J[ReactiveEffect.run]
+  J --> K[renderComponentRoot 生成 subTree]
+  K --> L[patch null subTree]
+  L --> M[递归创建并插入 DOM]
+  M --> N[队列刷新 mounted 回调]
+```
+</Mermaid>
+
+### 1. 根 Render 与 Patch
+
+入口可以压缩成下面的概念代码：
+
 <CodeBlock>
 ```js
-const mountElement = (vnode, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized) => {
-	let el;
-	let vnodeHook;
-	const { type, props, shapeFlag, transition, dirs } = vnode;
+function render(vnode, container) {
+  if (vnode == null) {
+    if (container._vnode) unmount(container._vnode);
+  } else {
+    patch(container._vnode || null, vnode, container);
+  }
 
-	el = vnode.el = hostCreateElement(vnode.type, isSVG, props && props.is, props);
-	console.log('%c挂载dom元素mountElement调用hostCreateElement创建新元素', 'color:magenta', el)
-	// mount children first, since some props may rely on child content
-	// being already rendered, e.g. `<select value>`
-	if (shapeFlag & 8 /* ShapeFlags.TEXT_CHILDREN */) {
-		console.log('挂载dom元素mountElement:处理子节点是文本内容的情况')
-		hostSetElementText(el, vnode.children);
-	}
-	else if (shapeFlag & 16 /* ShapeFlags.ARRAY_CHILDREN */) {
-		console.log('%c挂载dom元素mountElement:处理子节点是数组的情况,调用mountChildren对vnode.children进行递归', 'color:magenta', vnode.children)
-		mountChildren(vnode.children, el, null, parentComponent, parentSuspense, isSVG && type !== 'foreignObject', slotScopeIds, optimized);
-	}
-	// 省略函数
+  container._vnode = vnode;
+}
+
+function patch(oldVNode, newVNode, container) {
+  if (isElement(newVNode)) processElement(oldVNode, newVNode, container);
+  else if (isComponent(newVNode)) processComponent(oldVNode, newVNode, container);
+  else if (isText(newVNode)) processText(oldVNode, newVNode, container);
+  // Fragment、Teleport、Suspense 等类型有各自的处理分支。
 }
 ```
 </CodeBlock>
 
-mountChildren开始递归
+`patch(null, vnode)` 表示挂载；`patch(oldVNode, newVNode)` 表示更新；新 VNode 为 `null` 时则进入卸载流程。
+
+### 2. 组件 Render Effect
+
+组件的渲染函数被包装成 Reactive Effect。首次 `run()` 既生成组件 SubTree，也会在读取响应式数据时完成依赖收集。
+
 <CodeBlock>
 ```js
-const mountChildren = (children, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized, start = 0) => {
-	for (let i = start; i < children.length; i++) {
-		const child = (children[i] = optimized
-			? cloneIfMounted(children[i])
-			: normalizeVNode(children[i]));
-		console.log('%c调用mountChildren递归调用patch', 'color:cyan')
-		patch(null, child, container, anchor, parentComponent, parentSuspense, isSVG, slotScopeIds, optimized);
-	}
-};
-```
-</CodeBlock>
+function setupRenderEffect(instance, container) {
+  const componentUpdateFn = () => {
+    if (!instance.isMounted) {
+      const subTree = renderComponentRoot(instance);
+      patch(null, subTree, container);
+      instance.subTree = subTree;
+      instance.isMounted = true;
+    } else {
+      const prevTree = instance.subTree;
+      const nextTree = renderComponentRoot(instance);
+      instance.subTree = nextTree;
+      patch(prevTree, nextTree, container);
+    }
+  };
 
-处理生命周期
-<CodeBlock>
-```js
-const componentUpdateFn = () => {
-
-	// 省略
-
-	else {
-		console.log("effect.run==>创建好vnode,调用patch进行组件内容的渲染,把子树挂载到container上")
-		patch(null, subTree, container, anchor, instance, parentSuspense, isSVG);
-	}
-
-	// 省略
-
-	console.log('%ceffect.run==>:调用patch进行组件渲染结束,开始处理生命周期函数', 'color:yellow')
-	// mounted hook
-	if (m) {
-		console.log('effect.run==>:生命周期mounted')
-		queuePostRenderEffect(m, parentSuspense);
-	}
-	// onVnodeMounted
-	if (!isAsyncWrapperVNode &&
-		(vnodeHook = props && props.onVnodeMounted)) {
-		const scopedInitialVNode = initialVNode;
-		queuePostRenderEffect(() => invokeVNodeHook(vnodeHook, parent, scopedInitialVNode), parentSuspense);
-	}
+  const effect = new ReactiveEffect(componentUpdateFn);
+  instance.update = () => effect.run();
+  effect.scheduler = () => queueJob(instance.update);
+  instance.update();
 }
 ```
 </CodeBlock>
 
-<br />
+这段代码同时解释了两个关键点：
 
-## 响应时和data发生改变dom更新流程
-参考：[首次渲染的track和data改变的trigger](./Vue/首次渲染的track和data改变的trigger)
+- Render Function 执行期间读取状态，建立“状态 → 组件 Render Effect”的订阅。
+- 后续状态变化不会直接反复操作 DOM，而是通过 Scheduler 把组件更新任务放入队列。
 
-## v-for的`:key`
-参考：[v-for的key](./Vue/v-for的key)
+详细 Runtime 流程：
 
+- [Render Function 执行与 VNode 构建](/vue/runtimeGenVnode)
+- [VNode 创建后进入 Renderer](/vue/runtimeRender)
 
+## 四、组件更新：从 `trigger` 到 Patch
+
+<Mermaid>
+```mermaid
+flowchart LR
+  A[修改 reactive / ref] --> B[Proxy set / ref setter]
+  B --> C[trigger 查找依赖]
+  C --> D[调用 Effect scheduler]
+  D --> E[queueJob 去重入队]
+  E --> F[Microtask 刷新队列]
+  F --> G[执行组件 update]
+  G --> H[Render Function 生成新 VNode]
+  H --> I[patch 旧 VNode 与新 VNode]
+  I --> J[提交必要 DOM 更新]
+  J --> K[刷新 post 回调与 nextTick]
+```
+</Mermaid>
+
+### 为什么状态修改后不能立即读取最新 DOM？
+
+Vue 会缓冲同一轮事件循环里的更新，并对组件任务去重。连续修改多次状态，通常只会触发一次组件更新：
+
+<CodeBlock>
+```js
+count.value++;
+count.value++;
+count.value++;
+
+// 此时响应式状态已经是新值，但 DOM 通常还没有刷新。
+await nextTick();
+// 当前批次的 DOM 更新已经完成。
+```
+</CodeBlock>
+
+`nextTick` 不负责触发更新，也不等于 `setTimeout`。它返回与当前 Scheduler flush 相关的 Promise，用于等待本轮缓冲的 DOM 更新完成。
+
+### 调度队列与执行时机
+
+可以把一轮更新简化为三个阶段：
+
+| 阶段 | 常见任务 | 访问 DOM 的含义 |
+| --- | --- | --- |
+| Pre Flush | 默认 `watch` 回调、组件更新前任务 | 当前组件 DOM 仍是更新前状态 |
+| Component Jobs | 父子组件更新、Render 与 Patch | 计算并提交 DOM 变化 |
+| Post Flush | `onUpdated`、`flush: 'post'` 的 watcher | 可以读取更新后的 DOM |
+
+`flush: 'sync'` 会同步执行 watcher，应谨慎使用：它跳过批处理，频繁修改数组或状态时可能造成大量重复工作。
+
+## 五、Diff 与编译器优化如何配合
+
+响应式依赖追踪、编译优化和 Diff 分别处理不同层级的问题：
+
+1. **依赖追踪**：决定哪些组件需要进入更新队列。
+2. **Patch Flag / Block Tree**：帮助更新中的组件快速定位动态 VNode。
+3. **Diff / Patch**：比较新旧 VNode，决定真实 DOM 如何复用、插入、移动或删除。
+
+### 1. 普通节点 Patch
+
+当新旧 VNode 类型和 `key` 一致时，Vue 会尽量复用对应 DOM，再根据 Patch Flag 或完整 props 对比更新属性和子节点。类型或 `key` 不一致时，旧节点会被卸载并挂载新节点。
+
+### 2. Keyed Children
+
+Vue 3 更新带 `key` 的列表时会先处理相同的头部和尾部，再处理未知中间区间。中间区间通过 key 建立新索引映射，并使用最长递增子序列减少不必要的 DOM 移动。
+
+```vue
+<li v-for="item in items" :key="item.id">
+  {{ item.name }}
+</li>
+```
+
+`key` 表示节点身份，而不只是消除警告。它应满足：
+
+- 在兄弟节点中唯一。
+- 在同一个业务项的多次渲染之间保持稳定。
+- 优先使用数据 ID，避免随机数。
+- 列表会插入、删除或重排时，避免使用数组下标作为 key。
+
+详细 Diff：[Patch 与 Diff](/vue/patch-diff)，列表与 nextTick：[v-for、key 与 nextTick](/vue/v-for)。
+
+## 六、生命周期与渲染时机
+
+生命周期 Hook 不是独立于渲染流程的魔法，它们被安排在组件挂载、更新和卸载的特定位置：
+
+| 阶段 | Composition API | 执行时机 |
+| --- | --- | --- |
+| 创建 | `setup` | 创建组件实例并初始化 props、slots 后执行；此时 DOM 尚未挂载 |
+| 挂载前 | `onBeforeMount` | 首次 Render Effect 即将提交 DOM 前 |
+| 挂载后 | `onMounted` | 组件 DOM 已创建并插入后，通过 post-render 队列执行 |
+| 更新前 | `onBeforeUpdate` | 响应式依赖触发组件更新，Patch 旧 SubTree 前 |
+| 更新后 | `onUpdated` | 新 SubTree 已 Patch 到 DOM 后，通过 post-render 队列执行 |
+| 卸载前 | `onBeforeUnmount` | 组件仍可正常访问，准备停止其 Effect 前 |
+| 卸载后 | `onUnmounted` | DOM、Render Effect 及组件相关 Effect 已停止后 |
+
+父子组件的 Hook 还受递归 Patch 和调度顺序影响。业务代码不应依赖多个无关组件之间的偶然执行顺序；需要读取更新后 DOM 时优先选择 `onUpdated`、`flush: 'post'` 或 `await nextTick()`。
+
+## 七、贯穿全流程的最小示例
+
+<CodeBlock>
+```vue
+<script setup lang="ts">
+import { computed, nextTick, ref, watchEffect } from 'vue';
+
+const count = ref(0);
+const doubled = computed(() => count.value * 2);
+
+watchEffect(() => {
+  console.log('当前 doubled：', doubled.value);
+});
+
+async function incrementThreeTimes() {
+  count.value++;
+  count.value++;
+  count.value++;
+
+  console.log('状态已更新，DOM 仍在等待 Scheduler 刷新');
+  await nextTick();
+  console.log('DOM 已完成本批次更新');
+}
+</script>
+
+<template>
+  <button @click="incrementThreeTimes">
+    count: {{ count }}, doubled: {{ doubled }}
+  </button>
+</template>
+```
+</CodeBlock>
+
+这个示例的完整执行链是：
+
+1. Template 被编译成 Render Function，并为动态文本生成优化信息。
+2. 首次执行 Render Function 时读取 `count` 和 `doubled`，组件 Render Effect 因此订阅它们。
+3. `computed` 自己也有 Effect，并缓存 `count * 2` 的结果；`count` 不变时不会重复计算。
+4. 连续三次修改 `count.value` 会触发依赖，但组件更新任务会去重。
+5. Scheduler 在微任务中执行组件更新，生成新 VNode 并 Patch 动态文本。
+6. `await nextTick()` 在本轮 DOM flush 完成后继续执行。
+
+## 八、常见误区
+
+### 1. “Vue 会监控所有 JavaScript 变量”
+
+不会。只有通过 `reactive`、`ref` 等建立的响应式访问才能被追踪，普通局部变量的读写无法被 Proxy 或 getter/setter 拦截。
+
+### 2. “reactive 对象不能重新赋值”
+
+更准确地说：变量重新指向一个普通对象时，后续读取不会经过原 Proxy；旧 Proxy 的依赖关系也不会自动转移到新对象。
+
+<CodeBlock>
+```js
+let state = reactive({ count: 0 });
+state = { count: 1 }; // 新对象不是 reactive 返回的 Proxy
+
+const stateRef = ref({ count: 0 });
+stateRef.value = { count: 1 }; // ref setter 可以捕获整体替换
+```
+</CodeBlock>
+
+从 reactive 对象直接解构基本类型也可能失去属性访问层面的响应式连接；需要保持连接时可使用 `toRef` 或 `toRefs`。
+
+### 3. “computed、watch、watchEffect 都是副作用”
+
+`computed` 是派生值，应该保持纯粹；`watch` 和 `watchEffect` 才用于副作用。能由现有状态计算出的值，不要再通过 watcher 复制成另一份 state。
+
+### 4. “状态每改一次，DOM 就同步更新一次”
+
+响应式状态会立即改变，但组件 DOM 更新默认会被调度和批处理。需要读取本批次更新后的 DOM 时使用 `nextTick` 或 post-flush API。
+
+### 5. “有虚拟 DOM 就不需要考虑性能”
+
+VNode Diff 仍然需要 CPU 和内存。错误的 key、超大的响应式对象、在模板中执行昂贵计算、无边界的大组件和不必要的深层 watcher 都会增加工作量。
+
+## 九、性能与可维护性建议
+
+- 使用 `computed` 缓存派生值，不要在模板中反复执行昂贵函数。
+- 把更新频率和职责不同的 UI 拆成合理组件，使依赖追踪能缩小更新范围；不要为了拆分而制造过深层级。
+- 大型不可变数据或外部状态可考虑 `shallowRef`、`shallowReactive` 或 `markRaw`，避免不需要的深层代理。
+- 列表使用稳定业务 key；展示超大列表时还需要虚拟滚动，Diff 不能消除大量 DOM 本身的成本。
+- 谨慎使用深层 `watch` 和 `flush: 'sync'`；副作用需要清理时使用 watcher cleanup 或作用域销毁机制。
+- 先用 Vue DevTools、浏览器 Performance 和真实指标定位瓶颈，再使用 `v-memo`、浅响应式等针对性优化。
+- SSR 时保证服务端和客户端首屏输出一致，避免随机值、时区差异和无效 HTML 造成 Hydration mismatch。
+
+## 十、专题阅读顺序
+
+1. [Compiler：baseCompile 与 AST](/vue/compiler-baseCompile)
+2. [Compiler：生成 Render Function](/vue/compiler-render)
+3. [Compiler：Codegen](/vue/compiler-genCodeFn)
+4. [Reactivity：reactive 与 Effect](/vue/reactiveAndEffect)
+5. [Reactivity：track 与 trigger](/vue/trackDataTrigger)
+6. [Runtime：Render Function 与 VNode](/vue/runtimeGenVnode)
+7. [Runtime：Renderer 与首次挂载](/vue/runtimeRender)
+8. [Runtime：Patch 与 Diff](/vue/patch-diff)
+9. [调度：v-for、key 与 nextTick](/vue/v-for)
+10. [派生状态与副作用：computed、watch](/vue/computed)
