@@ -286,6 +286,9 @@ export const sidebar: ISidebar[] = [
     items: [
       { href: "/golang/development", label: "Golang 开发" },
       { href: "/golang/development-2", label: "Golang 开发 2" },
+      { href: "/golang/backend", label: "后端" },
+      { href: "/golang/queue", label: "队列实现" },
+      { href: "/golang/mcp", label: "MCP 实现" },
     ],
   },
   {
