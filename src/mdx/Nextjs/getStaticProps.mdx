@@ -1,48 +1,423 @@
-## getStaticProps 只在构建时 (next build) 运行，不会在服务器或浏览器端运行
-```js
-export const getStaticPaths: GetStaticPaths = async () => ({
-  paths: getI18nPaths(),
-  fallback: false,
-});
+# Next.js 核心面试题：渲染、路由、缓存与部署
 
-/**
- * getStaticProps 只在构建时 (next build) 运行，不会在服务器或浏览器端运行
- */
-export async function getStaticProps(ctx: GetStaticPropsContext) {
-  const locale = ctx.params?.locale || defaultLocale;
+本文以项目使用的 Next.js 14.2.5 为基准，同时覆盖 Pages Router 和 App Router。
 
-  try {
-    const response = await fetch(
-      `http://localhost:3010/messages/${locale}.json`
-    );
-    const messages = await response.json();
+> 面试时先说明项目使用哪套路由。getStaticProps、getServerSideProps 属于 Pages Router；App Router 使用 Server Component、扩展后的 fetch 和路由段配置，两套 API 不能直接混用。
 
-    return {
-      props: {
-        messages,
-      },
-    };
-  } catch (error) {
-    console.error("Error loading locale messages:", error);
-    return {
-      props: {
-        messages: {},
-      },
-    };
+## 一、getStaticProps 与静态生成
+
+### 1. getStaticProps 是什么？什么时候执行？
+
+**简短回答：** getStaticProps 是 Pages Router 的静态生成 API。普通 SSG 在 next build 时执行；配置 ISR 后，还可能在服务端按需重新生成页面，但永远不会在浏览器中执行。
+
+**深入解释：**
+
+- 返回的数据会作为页面组件的 props。
+- 页面 HTML 和 JSON 数据可以被 CDN 缓存，适合所有用户看到相同内容的页面。
+- 可以直接访问数据库、文件系统或服务端密钥，但传给 props 的内容会发送到客户端，因此不能把密钥放进 props。
+- 开发环境中，为了便于调试，每次请求页面时都可能执行，不能用开发环境的日志次数判断生产行为。
+
+```tsx
+// pages/posts/[id].tsx
+import type { GetStaticProps, InferGetStaticPropsType } from 'next'
+
+type Post = { id: string; title: string }
+
+export const getStaticProps: GetStaticProps<
+  { post: Post },
+  { id: string }
+> = async ({ params }) => {
+  const response = await fetch(`https://example.com/api/posts/${params!.id}`)
+
+  if (response.status === 404) return { notFound: true }
+  if (!response.ok) throw new Error('Failed to fetch post')
+
+  return {
+    props: { post: await response.json() },
+    revalidate: 60,
   }
 }
 
+export default function PostPage({
+  post,
+}: InferGetStaticPropsType<typeof getStaticProps>) {
+  return <h1>{post.title}</h1>
+}
+```
 
-// 组件
+**常见追问：为什么不能读取请求头或 Cookie？**
 
-import { getStaticPaths, getStaticProps } from "@/common/getStaticProps";
+因为构建页面时通常不存在具体用户请求。需要根据 Cookie、请求头或用户身份返回内容时，应选择 getServerSideProps、Middleware，或把个性化部分放到客户端请求中。
 
-export default function ProfilePage() {
+### 2. getStaticProps 可以返回什么？
 
-  return <div>
-    profile
-  </div>
+**简短回答：** 返回对象只能选择 props、notFound 或 redirect 作为主要结果；使用 props 时还可以增加 revalidate 开启 ISR。
+
+```tsx
+return { props: { post }, revalidate: 60 }
+
+return { notFound: true, revalidate: 60 }
+
+return {
+  redirect: {
+    destination: '/login',
+    permanent: false,
+  },
+}
+```
+
+props 必须可以序列化。Date、Map、Set、类实例和函数不适合直接返回，应先转换成字符串、数组或普通对象。
+
+### 3. getStaticPaths 与 getStaticProps 是什么关系？
+
+**简短回答：** 动态路由使用 getStaticProps 时必须同时导出 getStaticPaths。前者决定“页面有什么数据”，后者决定“构建时先生成哪些路径”。
+
+```tsx
+// pages/posts/[id].tsx
+import type { GetStaticPaths } from 'next'
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  const posts = await fetch('https://example.com/api/posts').then((res) =>
+    res.json()
+  )
+
+  return {
+    paths: posts.map((post: { id: string }) => ({
+      params: { id: post.id },
+    })),
+    fallback: 'blocking',
+  }
+}
+```
+
+路径参数必须与文件名一致。例如 [id].tsx 对应 params.id，捕获所有路由 [...slug].tsx 对应字符串数组。
+
+### 4. fallback: false、true、blocking 有什么区别？
+
+| 配置 | 未在 paths 中的地址 | 首次访问体验 | 适用场景 |
+| --- | --- | --- | --- |
+| false | 直接返回 404 | 最稳定 | 路径较少且构建时已知 |
+| true | 先显示 fallback，再补齐内容 | 需要处理加载态 | 页面很多、允许骨架屏 |
+| blocking | 首次请求等待服务端生成完整 HTML | 首次较慢，无骨架屏 | 页面很多且要求首屏完整 |
+
+使用 fallback: true 时，可以通过 router.isFallback 渲染加载状态：
+
+```tsx
+import { useRouter } from 'next/router'
+
+export default function PostPage({ post }: { post: Post }) {
+  const router = useRouter()
+  if (router.isFallback) return <p>Loading...</p>
+  return <h1>{post.title}</h1>
+}
+```
+
+**常见追问：静态导出支持哪一种？**
+
+output: 'export' 没有运行中的 Next.js 服务端，不能在首次访问时生成新页面，因此动态路径必须在构建期确定，不能依赖 fallback: true 或 blocking。
+
+### 5. ISR 是什么？revalidate 如何工作？
+
+**简短回答：** ISR 允许静态页面在部署后更新，不必重建整个站点。revalidate: 60 表示缓存至少 60 秒后才具备重新验证资格，不等于每 60 秒定时执行。
+
+典型流程：
+
+1. 有效期内直接返回缓存页面。
+2. 超过有效期后的某次请求触发重新生成。
+3. 生成成功后更新缓存；失败时保留上一个成功版本。
+
+ISR 需要 Next.js 服务端或支持该能力的平台。纯静态文件托管无法在部署后重新生成页面。
+
+### 6. 构建时接口失败应该返回空数据吗？
+
+**简短回答：** 应根据业务含义处理，不应统一吞掉错误。
+
+- 资源确实不存在：返回 notFound。
+- 地址已迁移：返回 redirect。
+- 临时故障且页面不能缺少数据：抛出异常，让构建失败并暴露问题。
+- 空数据本身合法：返回空数组或空对象，并展示明确的空状态。
+
+所有异常都返回空对象，可能让构建成功，却发布一个内容损坏的页面。
+
+## 二、SSG、SSR、ISR 与 CSR
+
+### 7. 四种渲染策略有什么区别？
+
+| 策略 | 生成时机 | 首屏与 SEO | 个性化 | 典型场景 |
+| --- | --- | --- | --- | --- |
+| SSG | 构建时 | 好 | 弱 | 文档、官网、稳定内容 |
+| ISR | 构建时 + 部署后重新生成 | 好 | 弱 | 商品详情、新闻 |
+| SSR | 每次请求时 | 好 | 强 | 用户相关、实时页面 |
+| CSR | 浏览器运行后请求 | 依赖加载态 | 强 | 后台、强交互模块 |
+
+**面试回答原则：** 不要说哪一种永远最好，应从更新频率、是否依赖用户请求、SEO、首屏速度、服务端成本和部署环境共同判断。
+
+### 8. getStaticProps 和 getServerSideProps 如何选择？
+
+**简短回答：** 所有用户可共享且允许短暂过期的数据优先 SSG/ISR；依赖每次请求的 Cookie、鉴权、请求头或强实时数据时使用 SSR。
+
+```tsx
+// pages/account.tsx
+import type { GetServerSideProps } from 'next'
+
+export const getServerSideProps: GetServerSideProps = async ({ req }) => {
+  const user = await getUserBySession(req.cookies.session)
+
+  if (!user) {
+    return {
+      redirect: { destination: '/login', permanent: false },
+    }
+  }
+
+  return { props: { user } }
+}
+```
+
+getServerSideProps 每次请求都会运行，服务端成本通常高于静态页面。
+
+## 三、App Router 中的对应方案
+
+### 9. App Router 可以使用 getStaticProps 吗？
+
+**简短回答：** 不可以。getStaticProps、getStaticPaths 和 getServerSideProps 只属于 Pages Router。App Router 在 Server Component 中直接获取数据，并用缓存和路由段配置决定渲染方式。
+
+```tsx
+// app/posts/page.tsx
+type Post = { id: string; title: string }
+
+export default async function PostsPage() {
+  const posts: Post[] = await fetch('https://example.com/api/posts', {
+    next: { revalidate: 60 },
+  }).then((res) => {
+    if (!res.ok) throw new Error('Failed to fetch posts')
+    return res.json()
+  })
+
+  return posts.map((post) => <h2 key={post.id}>{post.title}</h2>)
+}
+```
+
+Next.js 14 服务端 fetch 的常见缓存配置：
+
+```tsx
+fetch(url, { next: { revalidate: 60 } }) // 定时重新验证
+fetch(url, { cache: 'no-store' })        // 每次请求重新获取
+fetch(url, { cache: 'force-cache' })     // 使用缓存
+```
+
+### 10. generateStaticParams 对应什么？
+
+**简短回答：** 它主要对应 Pages Router 的 getStaticPaths，用于在构建时为动态路由生成参数；页面数据仍由 Server Component 获取。
+
+```tsx
+// app/posts/[id]/page.tsx
+export async function generateStaticParams() {
+  const posts: Array<{ id: string }> = await fetch(
+    'https://example.com/api/posts'
+  ).then((res) => res.json())
+
+  return posts.map((post) => ({ id: post.id }))
 }
 
-export { getStaticProps, getStaticPaths }
+export const dynamicParams = false
+export const revalidate = 60
+
+export default async function PostPage({
+  params,
+}: {
+  params: { id: string }
+}) {
+  const post = await fetch(`https://example.com/api/posts/${params.id}`).then(
+    (res) => res.json()
+  )
+
+  return <h1>{post.title}</h1>
+}
 ```
+
+dynamicParams = false 表示未生成的参数返回 404；默认值 true 允许其他参数在首次请求时生成。
+
+### 11. App Router 如何控制静态或动态渲染？
+
+```tsx
+export const dynamic = 'force-dynamic' // 始终动态
+export const dynamic = 'force-static'  // 强制静态
+export const revalidate = 60            // 路由级重新验证
+```
+
+优先通过数据访问方式表达缓存需求，只在需要控制整个路由段时使用 dynamic。读取 cookies()、headers() 等请求信息通常意味着需要动态处理。
+
+## 四、路由系统与组件模型
+
+### 12. Pages Router 与 App Router 的主要区别是什么？
+
+| 对比项 | Pages Router | App Router |
+| --- | --- | --- |
+| 目录 | pages/ | app/ |
+| 组件模型 | 传统 React 页面 | 默认 Server Component |
+| 数据获取 | getStaticProps、getServerSideProps | Server Component 中直接获取 |
+| 布局 | _app.tsx 或手动嵌套 | 嵌套 layout.tsx |
+| API | pages/api | route.ts |
+| 路由 Hook | next/router | next/navigation |
+| Metadata | next/head | metadata、generateMetadata |
+
+两者都能实现静态生成、动态渲染和客户端交互，不能概括为“Pages Router 是 CSR、App Router 是 SSR”。
+
+### 13. Server Component 与 Client Component 有什么区别？
+
+**简短回答：** App Router 的组件默认是 Server Component，适合取数、访问服务端资源并减少客户端 JavaScript；需要状态、事件、Effect 或浏览器 API 时使用 Client Component。
+
+```tsx
+'use client'
+
+import { useState } from 'react'
+
+export function Counter() {
+  const [count, setCount] = useState(0)
+  return <button onClick={() => setCount(count + 1)}>{count}</button>
+}
+```
+
+'use client' 定义的是客户端边界，不代表整个应用变成 CSR。传入客户端边界的 props 必须可序列化。
+
+### 14. 两个 useRouter 的 API 有什么区别？
+
+**简短回答：** next/router 把导航和路由状态集中在一个对象中；next/navigation 的 useRouter 主要负责导航，参数和路径由其他 Hook 分别读取。
+
+| 功能 | Pages Router | App Router |
+| --- | --- | --- |
+| 导入 | next/router | next/navigation |
+| 导航 | push、replace、back、prefetch | push、replace、back、forward、prefetch、refresh |
+| 动态参数 | router.query | useParams() |
+| 查询字符串 | router.query | useSearchParams() |
+| 当前路径 | router.pathname、router.asPath | usePathname() |
+| 就绪状态 | router.isReady | 无，直接依赖具体参数 |
+| 路由事件 | router.events | 组合监听路径和查询参数 |
+
+```tsx
+'use client'
+
+import { useParams, usePathname, useRouter } from 'next/navigation'
+
+export function NavigationExample() {
+  const router = useRouter()
+  const params = useParams<{ id: string }>()
+  const pathname = usePathname()
+
+  return (
+    <button onClick={() => router.push(`/posts/${params.id}?from=${pathname}`)}>
+      查看文章
+    </button>
+  )
+}
+```
+
+### 15. Route Handler 与 Middleware 分别适合什么？
+
+**Route Handler：** 位于 app 下的 route.ts，用于实现 HTTP 接口，可导出 GET、POST、PUT、PATCH、DELETE 等方法。
+
+```tsx
+// app/api/posts/route.ts
+import { NextResponse } from 'next/server'
+
+export async function GET() {
+  return NextResponse.json({ posts: [] })
+}
+```
+
+**Middleware：** 在请求进入路由前执行，适合重定向、重写、国际化和轻量鉴权判断，不适合耗时业务或重型数据库查询。
+
+真正的数据权限校验仍应放在服务端数据访问层或接口内部，不能只靠 Middleware 隐藏页面入口。
+
+## 五、缓存、性能与 SEO
+
+### 16. Next.js 有哪些容易混淆的缓存？
+
+**简短回答：** 至少要区分服务端数据缓存、页面输出缓存、客户端 Router Cache 和浏览器/CDN HTTP 缓存。
+
+- 数据缓存解决“是否重复请求同一份数据”。
+- 页面缓存解决“是否重复渲染整条路由”。
+- Router Cache 让客户端切换已访问或预取的路由更快。
+- 浏览器/CDN 缓存由 HTTP 缓存头控制。
+
+修改数据库不会自动让所有缓存失效。App Router 可以按时间重新验证，也可以用 revalidatePath 或 revalidateTag 按需失效。
+
+### 17. router.refresh、浏览器刷新和 revalidatePath 有什么区别？
+
+- router.refresh：重新请求当前 App Router 路由并合并 Server Component 结果，尽量保留客户端状态。
+- 浏览器刷新：重新加载整个文档和客户端运行时。
+- revalidatePath：在服务端使指定路径的缓存失效，不是浏览器导航 API。
+
+如果底层数据缓存仍有效，单独调用 router.refresh 不保证取得新数据；更新数据后应配合正确的缓存失效策略。
+
+### 18. Next.js 常见性能优化手段有哪些？
+
+- 尽量使用 Server Component，缩小 'use client' 边界。
+- 使用 next/dynamic 延迟加载重型客户端组件。
+- 使用 next/image 提供尺寸、现代格式和懒加载；首屏关键图片按需设置 priority。
+- 使用 next/font 优化字体，减少布局偏移。
+- 使用 Link 的预取能力，但不要无差别预取大量低概率页面。
+- 按数据新鲜度设置缓存，避免所有请求都 no-store。
+- 使用 Bundle Analyzer、Web Vitals 和真实监控定位问题。
+
+### 19. Next.js 为什么有利于 SEO？
+
+**简短回答：** 服务端或构建期可以输出完整 HTML，并提供 Metadata、站点地图和结构化数据支持。但使用 Next.js 不等于 SEO 自动优秀。
+
+仍需保证正文在初始 HTML 中可见，正确设置 title、description、canonical、状态码、重定向、robots.txt 和 sitemap，并控制 Core Web Vitals。
+
+## 六、Hydration、构建与部署
+
+### 20. 什么是 Hydration mismatch？
+
+**简短回答：** 服务端生成的初始 HTML 与客户端第一次渲染结果不一致，React 无法正确复用 DOM。
+
+常见原因：
+
+- 渲染阶段直接使用 window、localStorage。
+- 使用 Date.now()、Math.random() 或受时区影响的格式。
+- 服务端与客户端读取到不同的登录态。
+- HTML 标签嵌套非法，浏览器自动修正 DOM。
+
+应让首次渲染保持确定性，把浏览器专属逻辑放入 useEffect。suppressHydrationWarning 只适合明确的局部差异，不是通用修复。
+
+### 21. output: 'export' 与标准 Next.js 部署有什么区别？
+
+| 对比项 | 静态导出 | 标准 Next.js 运行模式 |
+| --- | --- | --- |
+| 产物 | HTML、JS、CSS 等静态文件 | 静态资源 + 服务端运行时 |
+| 托管 | 任意静态服务器/CDN | Node.js 或兼容平台 |
+| SSR | 不支持 | 支持 |
+| ISR | 部署后不能重新生成 | 支持，取决于平台 |
+| 动态路由 | 构建时必须可枚举 | 可在请求时处理 |
+
+静态导出不代表不能客户端导航。使用 Link 或 router.push 且目标路由已导出时，仍可客户端切换；真正的限制是没有 Next.js 服务端运行时。
+
+### 22. 为什么本地正常，构建时却失败？
+
+检查顺序：
+
+1. 构建期是否访问了 window、document 或 localStorage。
+2. 数据接口在构建环境是否可访问。
+3. 环境变量是否存在，服务端变量与 NEXT_PUBLIC_ 变量是否混淆。
+4. 动态参数是否完整，接口是否 404、超时或限流。
+5. TypeScript、ESLint 或 MDX 是否在生产构建中执行更严格检查。
+6. 平台是否支持使用的 Node.js API、Edge Runtime、ISR 和图片优化方式。
+
+不要用空 catch 或伪造数据让构建强行通过。日志应包含失败页面、参数和上游状态，同时避免输出密钥和隐私数据。
+
+## 七、面试快速场景题
+
+### 24. 商品页很多，每几分钟更新一次怎么做？
+
+优先 ISR。构建热门路径，冷门路径按需生成，再通过时间或事件触发缓存失效。
+
+### 25. 用户账户页怎么做？
+
+根据 Cookie 在服务端动态渲染，或先输出页面框架再从受保护接口获取数据。不能把用户信息作为公共静态缓存共享。
+
+### 27. 面试时如何总结渲染策略？
+
+可以这样回答：
+
+> 我会先判断数据能否跨用户共享、更新频率、是否依赖请求上下文、SEO 和部署环境。稳定公共内容用 SSG，允许短暂过期的公共内容用 ISR，依赖 Cookie 或强实时性的页面用动态渲染，强交互且不要求首屏内容的模块可以放到客户端。使用 App Router 时，我还会控制 Server/Client Component 边界以及数据缓存的失效方式。

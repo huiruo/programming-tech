@@ -1,94 +1,299 @@
+# Next.js 两套路由：Pages Router 与 App Router
 
-## 
-```js
-// Next.js 13+（App Router）用 next/navigation
-import { useRouter } from "next/navigation" 
+Next.js 目前有两套路由系统，API 不能混用：
 
-// Next.js 12 / Pages Router 用 next/router
-import { useRouter } from "next/router"
+```ts
+// app/ 目录：App Router
+import { useRouter } from 'next/navigation'
+
+// pages/ 目录：Pages Router
+import { useRouter } from 'next/router'
 ```
 
-### 🆕 next/navigation
+简单判断：页面文件位于 `app/` 就使用 `next/navigation`；位于 `pages/` 就使用 `next/router`。
 
-App Router（/app 目录）专用
+> 新项目通常优先使用 App Router。Pages Router 仍受支持，已有项目不必只为“新”而立即迁移。
 
-Next.js 13 / 14 / 15
+## 1. 核心区别
 
-React Server Components 体系
+| 对比项 | Pages Router | App Router |
+| --- | --- | --- |
+| 目录 | `pages/` | `app/` |
+| 路由 Hook | `next/router` | `next/navigation` |
+| 默认组件类型 | Client Component | Server Component |
+| 动态参数 | `router.query` | `params` / `useParams()` |
+| 查询字符串 | `router.query` | `searchParams` / `useSearchParams()` |
+| 当前路径 | `router.pathname`、`router.asPath` | `usePathname()` |
+| 数据获取 | `getServerSideProps`、`getStaticProps` | Server Component 中直接请求数据 |
+| 布局 | `_app.tsx` 或手动嵌套 | `layout.tsx` 嵌套布局 |
+| API | `pages/api/*` | `app/**/route.ts` Route Handlers |
+| 页面元数据 | `next/head` | `metadata` / `generateMetadata` |
+| React Server Components | 不支持 | 支持 |
 
-推荐 & 官方主线
+两者都能实现静态生成、服务端渲染和客户端交互，区别主要是架构和 API，而不是“Pages Router 只能 CSR、App Router 只能 SSR”。
 
-### next/router
-Pages Router（/pages 目录）
+## 2. 两个 `useRouter` 的 API 区别
 
-Next.js 12 及以前
+一句话总结：`next/router` 的 `useRouter` 把“导航”和“读取路由状态”集中在一个对象中；`next/navigation` 的 `useRouter` 只负责导航，路径和参数由其他 Hook 分别读取。
 
-老体系（维护中，但不是未来）
+| 功能 | Pages Router：`next/router` | App Router：`next/navigation` |
+| --- | --- | --- |
+| 使用目录 | `pages/` | `app/` |
+| 跳转并新增历史记录 | `router.push()` | `router.push()` |
+| 跳转并替换当前记录 | `router.replace()` | `router.replace()` |
+| 返回上一页 | `router.back()` | `router.back()` |
+| 前进下一页 | 使用浏览器 History API | `router.forward()` |
+| 预加载页面 | `router.prefetch()` | `router.prefetch()` |
+| 刷新 | `router.reload()`，重新加载整个页面 | `router.refresh()`，重新请求并合并 Server Component 数据 |
+| 动态路由参数 | `router.query` | `useParams()` |
+| 查询字符串 | `router.query` | `useSearchParams()` |
+| 当前路径 | `router.pathname` / `router.asPath` | `usePathname()` |
+| 路由是否就绪 | `router.isReady` | 没有该属性，通常不需要 |
+| locale | `router.locale` | `useParams()` 或国际化库提供的 Hook |
+| 路由事件 | `router.events` | 监听 `usePathname()`、`useSearchParams()` 的变化 |
 
-## 问题
-router.isReady 只存在于 next/router（Pages Router）
-next/navigation（App Router）里压根没有这个概念
-```
+因此，迁移时不能只把导入路径由 `next/router` 改成 `next/navigation`：
 
-  }, [router.isReady]) 我用的是page  navigation 没有 isReady 
-```
+```tsx
+// Pages Router
+const router = useRouter()
+const id = router.query.id
 
-## 为什么 App Router 不需要 isReady？
-
-在 Pages Router 里：
-
-路由参数是 异步注入
-
-刷新时 query 可能是 {}
-👉 所以才需要 router.isReady
-
-而 App Router：
-
-路由状态在组件 render 前就已就绪
-
-useSearchParams / useParams 天然 ready
-
-不会出现 “第一次 render 是空参数” 的问题
-
-👉 所以官方直接把 isReady 删了
-
-## 旧写法（Pages Router）
-```js
-useEffect(() => {
-  if (!router.isReady) return
-  doSomething(router.query.id)
-}, [router.isReady])
-```
-## ✅ 新写法（App Router）
-```js
-import { useSearchParams } from "next/navigation"
-
+// App Router
+const router = useRouter() // 只用于跳转、返回、刷新等操作
+const { id } = useParams<{ id: string }>()
+const pathname = usePathname()
 const searchParams = useSearchParams()
-const id = searchParams.get("id")
-
-useEffect(() => {
-  if (!id) return
-  doSomething(id)
-}, [id])
 ```
 
-## ✅ 场景 2：等动态路由参数 `/user/[id]`
-```js
-import { useParams } from "next/navigation"
+## 3. App Router 中怎样获取参数
 
-const { id } = useParams()
+假设地址为 `/user/42?tab=profile`，路由文件为 `app/user/[id]/page.tsx`。
 
-useEffect(() => {
-  if (!id) return
-  doSomething(id)
-}, [id])
+### Server Component：优先使用页面参数
+
+```tsx
+type Props = {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ tab?: string }>
+}
+
+export default async function UserPage({ params, searchParams }: Props) {
+  const { id } = await params
+  const { tab } = await searchParams
+
+  return <div>id={id}, tab={tab}</div>
+}
 ```
 
-## ✅ 场景 3：只是想等 router 可用（其实不需要）
+> 在较早的 Next.js 版本中，`params` 和 `searchParams` 是普通对象；新版本中是 Promise。应以当前项目使用的 Next.js 版本为准。
+
+### ssg-useRouter-获取locale
 ```js
+import { LinkItem } from './LinkItem'
+import { useRouter } from 'next/router'
+import { usePathname } from 'next/navigation'
+
+export const SiteFooter = () => {
+  const pathname = usePathname() || ''
+  const router = useRouter()
+  const locale = router.query.locale
+
+  return (
+    <div className="h-14 fixed bottom-0 left-0 w-full flex justify-center items-center border-t border-foreground/5 bg-amber-300">
+      <LinkItem
+        href={`/${locale}/`}
+        icon={null}
+        text="Home"
+        isActive={pathname === `/`}
+      />
+
+      <LinkItem
+        href={`/${locale}/promotion`}
+        icon={null}
+        text="Promotion"
+        isActive={pathname === `/promotion`}
+      />
+
+      <LinkItem
+        href={`/${locale}/deposit`}
+        icon={null}
+        text="Deposit"
+        isActive={pathname === `/deposit`}
+      // isActive={pathname.startsWith(`/deposit`)}
+      />
+
+      <LinkItem
+        href={`/${locale}/withdrawal`}
+        icon={null}
+        text="Withdrawal"
+        isActive={pathname === `/withdrawal`}
+      />
+
+      <LinkItem
+        href={`/${locale}/profile`}
+        icon={null}
+        text="Profile"
+        isActive={pathname === `/profile`}
+      />
+    </div>
+  )
+}
+```
+
+
+### Client Component：使用路由 Hook
+
+```tsx
+'use client'
+
+import { useParams, useSearchParams } from 'next/navigation'
+
+export function UserPanel() {
+  const { id } = useParams<{ id: string }>()
+  const searchParams = useSearchParams()
+  const tab = searchParams.get('tab')
+
+  return <div>id={id}, tab={tab}</div>
+}
+```
+
+`searchParams.get()` 返回 `string | null`。捕获所有动态段（如 `[...slug]`）则可能得到字符串数组。
+
+## 4. `router.isReady` 如何迁移
+
+`router.isReady` 属于 Pages Router。静态优化页面在客户端首次渲染时，`router.query` 可能尚未填充，因此旧代码常这样写：
+
+```tsx
+import { useRouter } from 'next/router'
+
 const router = useRouter()
 
 useEffect(() => {
-  router.push("/login")
-}, [])
+  if (!router.isReady) return
+
+  const id = router.query.id
+  if (typeof id !== 'string') return
+  doSomething(id)
+}, [router.isReady, router.query.id])
 ```
+
+App Router 没有 `isReady`。应直接依赖真正需要的参数，而不是等待整个 router。
+
+### 查询字符串：`?id=42`
+
+```tsx
+'use client'
+
+import { useSearchParams } from 'next/navigation'
+
+const searchParams = useSearchParams()
+const id = searchParams.get('id')
+
+useEffect(() => {
+  if (!id) return
+  doSomething(id)
+}, [id])
+```
+
+### 动态路由：`/user/[id]`
+
+```tsx
+'use client'
+
+import { useParams } from 'next/navigation'
+
+const { id } = useParams<{ id: string }>()
+
+useEffect(() => {
+  if (!id) return
+  doSomething(id)
+}, [id])
+```
+
+如果只是调用导航方法，也不需要等待 router：
+
+```tsx
+const router = useRouter()
+
+useEffect(() => {
+  router.replace('/login')
+}, [router])
+```
+
+## 5. locale 的获取方式
+
+不要默认认为 `router.query.locale` 一定是当前语言。只有路由中确实存在 `[locale]` 动态段时，它才来自 `query`。
+
+### Pages Router
+
+使用 Next.js 内置 i18n 路由时，可以读取 `router.locale`：
+
+```tsx
+import { useRouter } from 'next/router'
+
+const router = useRouter()
+const locale = router.locale
+```
+
+如果目录结构是 `pages/[locale]/...`，则读取动态参数：
+
+```tsx
+const locale = router.query.locale
+```
+
+### App Router
+
+目录结构为 `app/[locale]/...` 时，在客户端读取动态参数：
+
+```tsx
+'use client'
+
+import { useParams } from 'next/navigation'
+
+const { locale } = useParams<{ locale: string }>()
+```
+
+在页面或布局的 Server Component 中，直接读取 `params.locale`。如果项目使用 `next-intl`，客户端组件也可以使用它提供的 `useLocale()`，避免手动解析路径。
+
+## 6. 客户端导航建议
+
+普通链接优先使用 `<Link>`，它支持预取、可访问性和浏览器原生行为：
+
+```tsx
+import Link from 'next/link'
+
+<Link href="/about">About</Link>
+```
+
+只有在提交表单、鉴权判断等命令式场景中，才使用 `router.push()` 或 `router.replace()`：
+
+```tsx
+'use client'
+
+import { useRouter } from 'next/navigation'
+
+export function LoginButton() {
+  const router = useRouter()
+
+  async function handleLogin() {
+    await login()
+    router.replace('/dashboard')
+    router.refresh()
+  }
+
+  return <button onClick={handleLogin}>登录</button>
+}
+```
+
+不要把未经校验的外部输入直接传给 `router.push()` 或 `router.replace()`，否则可能造成不安全的脚本 URL 跳转。
+
+## 7. 选型建议
+
+- 新项目：通常选择 App Router。
+- 已有 `pages/` 项目：可以继续维护 Pages Router，并按页面逐步迁移。
+- 纯客户端交互较多：两者都可以，App Router 中只需给交互组件添加 `'use client'`。
+- 需要 Server Components、嵌套布局、流式渲染：选择 App Router。
+- 不要在同一个路由组件中混用 `next/router` 与 `next/navigation`。
+
+迁移期间如果某个共享 Client Component 必须同时兼容两套路由，可以使用 `next/compat/router`；长期方案仍应将它改造成分别接收明确的 `params`、`pathname` 或 `searchParams`。
