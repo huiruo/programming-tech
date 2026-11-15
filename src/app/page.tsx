@@ -1,4 +1,7 @@
+import { pageMetadata } from "@/generated/pageMetadata";
 import { Resume } from "@/components/resume";
+
+export const metadata = pageMetadata["/"];
 
 export default function Home() {
   return (

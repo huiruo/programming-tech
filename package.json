@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "generate:page-metadata": "node scripts/generate-page-metadata.mjs",
+    "predev": "pnpm generate:page-metadata",
+    "prebuild": "pnpm generate:page-metadata",
+    "prepages:build": "pnpm generate:page-metadata",
     "dev": "PORT=3003 next dev",
     "build": "next build",
     "start": "next start",
@@ -46,7 +50,11 @@
     "@types/react-dom": "^18",
     "eslint": "^8",
     "eslint-config-next": "14.2.5",
+    "mdast-util-to-string": "^4.0.0",
+    "remark-mdx": "^3.1.0",
+    "remark-parse": "^11.0.0",
     "typescript": "^5",
+    "unified": "^11.0.5",
     "vercel": "^37.8.0",
     "wrangler": "^3.80.4"
   }

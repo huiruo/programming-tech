@@ -1,4 +1,7 @@
+import { pageMetadata } from "@/generated/pageMetadata";
 import React from 'react';
+
+export const metadata = pageMetadata["/nextjs/nextConfig202404"];
 
 const nextConfigCode = `import type { NextConfig } from "next";
 

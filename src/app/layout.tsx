@@ -6,7 +6,10 @@ import { NavWrapper } from "@/components/nav";
 import { ArticleToc } from "@/components/articleToc";
 
 export const metadata: Metadata = {
-  title: "Programming Tech",
+  title: {
+    default: "Programming Tech",
+    template: "%s | Programming Tech",
+  },
   description: "前端、工程化与技术实践知识库",
   manifest: "/manifest.webmanifest",
   icons: {

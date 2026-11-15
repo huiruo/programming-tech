@@ -1,5 +1,8 @@
+import { pageMetadata } from "@/generated/pageMetadata";
 import React from 'react';
 import MdxComponent from '../../../mdx/ts/3-使用keyof解决对象ts限定.mdx';
+
+export const metadata = pageMetadata["/ts/keyof"];
 
 const Page: React.FC = () => {
   return <MdxComponent />

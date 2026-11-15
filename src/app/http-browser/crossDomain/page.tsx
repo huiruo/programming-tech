@@ -1,5 +1,8 @@
+import { pageMetadata } from "@/generated/pageMetadata";
 import React from 'react';
 import MdxComponent from '../../../mdx/http-browser/05-跨域-反向代理-正向代理.mdx';
+
+export const metadata = pageMetadata["/http-browser/crossDomain"];
 
 const Page: React.FC = () => {
   return <MdxComponent />
