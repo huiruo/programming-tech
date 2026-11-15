@@ -1,96 +1,152 @@
+import CodeBlock from '../../components/codeBlock';
+import ImageRender from '../ImageRender';
+
 # Webpack 面试总结
-重点放在拆包、缓存、构建加速和包分析。
 
-Webpack 优化要先区分两个方向；它们服务的人不同、看的是不同指标，也不能混为一谈。
+以 **Webpack 5** 为主线。先看优化和高频原理，后面的源码附录用于深入追问。优化题统一按“现象 → 定位 → 改法 → 为什么有效 → 代价 → 验证”回答，不把配置名当结论。
 
-| 优化方向 | 为谁优化 | 重点指标 | 最常用手段 |
+## 1. 60 秒开场：Webpack 做什么，优化看什么
+
+> Webpack 从 entry 出发，解析模块依赖，匹配 loader 转换源码，再分析转换后的依赖并递归构建 ModuleGraph；随后按入口、异步边界和优化规则组织 ChunkGraph，生成 JS、CSS 等 assets，由输出文件系统写出。Plugin 通过 Tapable hooks 介入这些阶段，浏览器端 runtime 负责模块执行缓存和异步 chunk 加载。
+
+优化分两条线：
+- 开发者侧看冷构建、缓存构建、HMR 和 CI 耗时；
+- 用户侧看首屏实际传输量、主线程执行、请求瀑布和跨版本缓存。先定位瓶颈，再改配置，最后用同口径数据验证。
+
+| 方向 | 先测什么 | 优先动作 | 常见误区 |
 | --- | --- | --- | --- |
-| **构建性能（开发者体验）** | 本地开发和 CI/CD | 冷启动、二次构建、HMR、CI 耗时 | filesystem cache、缩小 loader 范围、SWC/esbuild、减少无效解析 |
-| **产物与加载性能（用户体验）** | 线上访问用户 | 初始 JS、请求瀑布、缓存命中、LCP/INP | 包分析、动态导入、`splitChunks`、Tree Shaking、`contenthash` + CDN 缓存 |
+| 构建速度 | 冷构建、独立进程缓存构建、watch 更新、CI 耗时分开测 | filesystem cache、loader 范围、转译与检查分离、合理 source map | 拆包不等于编译少做工作 |
+| 产物体积 | stats 中的模块归属、重复版本、生产压缩后字节 | 移除无用依赖、Tree Shaking、按需导入、压缩 | analyzer 的面积不等于网络传输量 |
+| 首次加载 | 冷缓存 Network、LCP、长任务、INP | 路由/交互懒加载，避免重依赖进入初始链路 | 拆出一个文件不等于延迟请求 |
+| 重复访问 | 响应头、发布前后 hash、实际请求 | 内容指纹、runtime 分离、稳定 ID、正确缓存与发布 | CDN external 不会消除下载和执行 |
 
-下面四类高频优化的归属是：**包分析**用于定位用户侧产物问题；**代码分割**减少用户首屏下载和解析；**浏览器缓存**改善用户重复访问；**构建加速**缩短本地和 CI 等待。构建变快不等于首屏变快，包变小也不一定能提升构建速度；面试时先按这两条线说明，再讲具体方案。
+## 2. 优化一：先用 stats 找到问题，而不是盲目拆包
 
-Webpack 是一个模块打包器：从 `entry` 出发建立依赖图，把 JavaScript、CSS、图片等资源转换、组织为可被浏览器加载的静态文件。面试中不要只说“打包成一个 bundle”；现代 Webpack 会根据同步入口、动态 `import()` 与 `splitChunks` 输出多个 chunk，并注入运行时代码完成模块加载。
+```bash
+# 在独立 Webpack 项目根目录执行；stats 可能较大，不提交仓库
+npx webpack --mode production --profile --json=stats.json
+```
 
-## 实战
-项目实战：游戏 H5 的 CDN external 与分层分包
-基于项目实际配置总结了：
-- PixiJS、Swiper、Axios、Lodash external 到 jsDelivr CDN
-- React、首屏基础依赖、Firebase/MUI、图标/UI、低频功能等分层 splitChunks
-- maxSize: 500KB 的作用与不能机械套用的边界
-- PWA 图片与字体的 TTL/数量受控缓存
-- 静态导出下 images.unoptimized 的真实含义与图片优化缺口
-- CDN external 的同步脚本阻塞、稳定性、降级、CSP/SRI、注释与实现不一致等风险
-- 可直接用于面试的项目回答
-
-## 1. 性能优化：面试先讲这一套
-
-### 1）包分析（用户侧产物与加载性能）：不看产物就不要盲目拆包
-
-先生成 `stats.json` 或接入 `webpack-bundle-analyzer`，依次找出：最大的依赖、重复安装的依赖、进入初始 chunk 的低频模块、没有被 Tree Shaking 移除的代码。再结合浏览器 Network 确认它是否真的阻塞首屏。
+用 `webpack-bundle-analyzer` 打开 stats，或接入下面的插件生成静态报告；框架项目使用框架支持的分析方式，不直接套用独立 CLI。
 
 ```js
-// webpack.config.js：构建后查看模块归属、gzip 体积和重复依赖
 const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer');
 
 module.exports = {
-  plugins: [new BundleAnalyzerPlugin({ analyzerMode: 'static' })],
+  mode: 'production',
+  plugins: [
+    new BundleAnalyzerPlugin({
+      analyzerMode: 'static',
+      openAnalyzer: false,
+    }),
+  ],
 };
 ```
 
-常见发现和处理：
+| 发现 | 进一步确认 | 改法与验证 |
+| --- | --- | --- |
+| 图表/编辑器在 initial chunk | stats 的 entrypoint、chunks、模块引入链，Network 的 Initiator | 移到路由或交互边界；冷缓存首屏不再下载它 |
+| lodash、UI 库出现多版本 | lockfile、包管理器依赖树、不同版本的调用方 | 在兼容前提下升级/收敛；stats 验证重复模块减少 |
+| 一个工具函数引入整个库 | 包实际使用 CJS 还是 ESM，是否有顶层副作用 | ESM 入口或子路径导入；生产产物确认未用代码消失 |
+| 包已小但页面仍卡 | Performance 中脚本执行、长任务和第三方 SDK | 减少启动期执行、延迟初始化；拆文件本身不减少计算 |
 
-| 发现 | 常用处理 |
-| --- | --- |
-| 图表、富文本、编辑器进入首屏包 | 改为路由级或点击后 `import()` |
-| 同时出现多个 lodash、moment、UI 库版本 | 收敛依赖版本，检查 lockfile 与包的 transitive dependency |
-| `lodash` / icon 库被整包引入 | 使用 ESM 版本、按需导入，或替换为更小的工具函数 |
-| 某个业务 chunk 巨大 | 看它是否混入公共依赖；按路由/功能边界拆出，而不是按文件数量硬拆 |
+对比条件必须一致：同一 Node/依赖版本、构建模式、设备与网络。分别记录原始字节、实际 gzip/Brotli 传输量与耗时；没有真实基线，就写“待验证”，不编造提升百分比。
 
-### 2）代码分割（用户侧加载性能）：优先拆“非首屏、低频、重”的能力
+## 3. 优化二：代码分割——import() 决定异步边界，splitChunks 优化复用
 
-最实用的是路由懒加载、弹窗/抽屉懒加载，以及图表、编辑器、地图、客服 SDK、推送 SDK 等重依赖懒加载。`import()` 是异步边界，用户真正触发时 Webpack 才下载对应 chunk。
+### 3.1 真正的懒加载：把调用放到需要它的时候
 
 ```tsx
-// React：只在打开编辑器时请求其代码；Suspense 需要提供加载态
-const RichEditor = React.lazy(() => import('./RichEditor'));
+import { lazy, Suspense } from 'react';
 
-function EditDialog({ open }: { open: boolean }) {
+const RichEditor = lazy(() => import('./RichEditor'));
+
+export function EditDialog({ open }: { open: boolean }) {
   if (!open) return null;
   return (
-    <React.Suspense fallback={<div>编辑器加载中…</div>}>
+    <Suspense fallback={<div>编辑器加载中…</div>}>
       <RichEditor />
-    </React.Suspense>
+    </Suspense>
   );
 }
 ```
 
-`splitChunks` 用于把多个入口/异步 chunk 重复使用的依赖抽成公共包。比较常见的分法是：React 这种全站稳定基础包独立；业务首屏依赖独立；图表、Firebase、MUI 等重型低频依赖单独拆出。不要把每一个 npm 包都拆开，否则 HTTP 请求、JS 解析和调度开销会反过来变大。
+首次渲染编辑器时才执行导入；仅写了 `import()`，却在应用启动时立刻调用，仍会马上请求。模块若同时被首屏同步路径引用，也不能靠另一处动态导入实现真正延后。框架预取、preload/prefetch 和 Service Worker 也可能提前下载，最终以 Network 为准。Suspense 处理等待，下载失败仍需 Error Boundary 与重试/刷新策略。
+
+### 3.2 splitChunks 参数：不能只背 chunks: 'all'
 
 ```js
-// webpack.config.js：示例，具体阈值需根据产物分析调整
-optimization: {
-  splitChunks: {
-    chunks: 'all',
-    cacheGroups: {
-      react: {
-        test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
-        name: 'react',
-        priority: 30,
-      },
-      charts: {
-        test: /[\\/]node_modules[\\/](echarts|chart\.js)[\\/]/,
-        name: 'charts',
-        priority: 20,
+// 独立 Webpack 5 示例；不是 Next.js 配置覆盖模板
+module.exports = {
+  mode: 'production',
+  optimization: {
+    splitChunks: {
+      chunks: 'all',
+      minSize: 20 * 1024,
+      minChunks: 2,
+      cacheGroups: {
+        framework: {
+          test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+          name: 'framework',
+          priority: 30,
+          minChunks: 1,
+          reuseExistingChunk: true,
+        },
+        shared: {
+          minChunks: 2,
+          priority: 10,
+          reuseExistingChunk: true,
+        },
       },
     },
   },
+};
+```
+
+| 参数 | 实际意义 | 追问要点 |
+| --- | --- | --- |
+| `chunks` | 选择 initial、async 或 all 的候选 chunk | 默认 async；all 让同步 chunk 也参与优化，不代表全异步 |
+| `minSize` | 抽取 chunk 的最小尺寸条件，受其他规则共同约束 | 不是 gzip 大小，也不是超过它就一定拆 |
+| `minChunks` | 模块被多少个候选 chunk 使用才参与抽取 | 是 chunk 数，不是源码里的 import 次数 |
+| `priority` | 模块命中多个缓存组时的选择优先级 | 高优先级优先；缓存组用于分组，不是浏览器缓存 |
+| `reuseExistingChunk` | 存在可复用 chunk 时尽量复用 | 不能替代 lockfile 的依赖版本治理 |
+| `maxSize` | 提示 Webpack 尝试进一步拆分大 chunk | 是软目标；单个大模块不能任意切碎，且受其他限制影响 |
+| `enforce` | 忽略 minSize、minChunks 和最大请求数等抽取条件 | 不是无视所有规则，也不保证一定生成单个指定大小的文件 |
+
+拆包策略优先考虑“首屏必要性、访问频率、复用程度、变更频率”，而不是一个 npm 包一个文件。把只被一个异步页面使用的图表库抽到公共包，并不会凭空减少字节；把首屏依赖抽到独立包，首屏通常仍要请求它。独立文件的收益可能是缓存隔离，而非延迟加载。
+
+**验收**：stats 确认模块归属与重复量，冷缓存瀑布确认请求时机，再测关键路径与长任务。过度拆分会增加请求调度、依赖瀑布和运行时开销，HTTP/2 也不能免除这些成本。
+
+## 4. 优化三：Tree Shaking——为什么生产环境还有无用代码
+
+Webpack 利用 ESM 的静态导入导出分析使用情况；`usedExports` 记录哪些导出被使用，`sideEffects` 帮助判断整个模块及其依赖子树能否安全跳过，压缩器再删除可证明无用的代码。生产模式默认启用相关优化，但不保证任意写法都能被删除。
+
+```js
+// Babel 转译语法时保留 ESM，交给 Webpack 分析
+module.exports = {
+  presets: [['@babel/preset-env', { modules: false }]],
+};
+```
+
+```json
+{
+  "sideEffects": ["**/*.css", "**/*.scss", "./src/polyfills.ts"]
 }
 ```
 
-### 3）浏览器缓存（用户侧重复访问性能）：让没变的代码不重复下载
+这里的白名单是包作者对“有副作用文件”的承诺，其他文件被声明为可安全跳过；必须覆盖实际发布路径。不能为减小包而盲目写 `false`：全局 CSS、polyfill、注册插件等即使没有被使用的导出，也需要执行。
 
-产物文件名用 `contenthash`。只要文件内容没变化，文件名就不变，CDN/浏览器就可以长期复用旧缓存；业务代码变化只会让对应 chunk 更新。`runtimeChunk: 'single'` 将 runtime 分开，避免业务 chunk 改动时公共包因 runtime 映射变化而频繁改 hash。
+| 没摇掉的原因 | 如何处理 |
+| --- | --- |
+| Babel 提前把 ESM 转成 CommonJS | 检查 Babel/库入口与实际转译结果，保留静态 ESM |
+| CJS 包或运行时计算访问使分析受限 | 优先 ESM 入口或受支持的子路径导入，不能承诺 CJS 一概无法优化 |
+| 模块顶层调用可能有副作用 | 移除不必要初始化，按需执行；仅在确实纯函数时标注 PURE |
+| 未用导出被标记，但没有生产压缩 | 检查 mode、minimize 与最终产物，而非只看开发包 |
+| barrel re-export 拉入有副作用文件 | 检查重导出链与 sideEffects，不把所有 index.ts 都当作问题 |
+
+Tree Shaking 与按需加载不同：前者删除可证明无用的代码，后者延后加载仍然需要的代码；压缩则还包含变量改名、表达式简化等。
+
+## 5. 优化四：长期缓存与发布——业务改一行，为什么 vendor 也变了
 
 ```js
 module.exports = {
@@ -102,15 +158,20 @@ module.exports = {
   optimization: {
     runtimeChunk: 'single',
     moduleIds: 'deterministic',
+    chunkIds: 'deterministic',
   },
 };
 ```
 
-部署侧再给带 hash 的 JS/CSS/图片配置 `Cache-Control: public, max-age=31536000, immutable`；HTML 不能长期强缓存，因为它负责引用新版本的 hash 文件。发布后在 Network 中验证：改一个业务模块时，React 等稳定包应仍是 `from disk cache` / `304`，而不是全部重新下载。
+- `fullhash` 面向整个 compilation；`chunkhash` 面向 chunk；`contenthash` 面向具体资源内容，更适合 JS/CSS 分别缓存。相同 chunk 抽出的 JS 与 CSS 是不同 assets。
+- runtime 包含 chunk 文件名映射等易变信息；分离后可减少业务更新对稳定依赖包的连带影响。确定性 ID 减少模块增删造成的编号抖动，但这些配置不保证 vendor 的 hash 永远不变。
+- 带内容 hash 的资源可配置 `Cache-Control: public, max-age=31536000, immutable`；HTML 通常用 `no-cache` 允许存储但每次重新验证。304 是协商结果，长期新鲜的强缓存通常不发请求。
+- 发布先上传新资源，再切换 HTML；保留旧版本资源一段兼容窗口。旧页面执行动态导入时仍会使用旧 runtime 的路径，立即删除旧 chunk 会导致 `ChunkLoadError`。
+- 发生加载失败还应排查 publicPath、CDN 路径、网络和缓存；避免无条件无限刷新。CDN external 与浏览器分区缓存也不能保证不同站点之间共享命中。
 
-### 4）构建速度（开发者体验）：Webpack 5 最常用的是持久化缓存
+**验收实验**：连续生产构建 A/B，只改一个业务模块，比较产物清单和 hash；再带着 A 的已打开页面发布 B，触发尚未加载的旧异步功能，确认旧资源仍可用。用浏览器分别验证冷缓存、热缓存和重新验证，而非强制要求每次都出现 304。
 
-本地二次构建慢时，首先开启文件系统缓存；然后缩小 Babel 等 loader 的处理范围。绝大多数 `node_modules` 已经编译过，不应再次经过 Babel；但个别未转译的第三方包要加入白名单。
+## 6. 优化五：构建加速——把冷构建、缓存构建、HMR 分开
 
 ```js
 const path = require('path');
@@ -118,7 +179,10 @@ const path = require('path');
 module.exports = {
   cache: {
     type: 'filesystem',
-    buildDependencies: { config: [__filename] },
+    buildDependencies: {
+      config: [__filename],
+      // 独立的 Babel/PostCSS 等配置按项目实际补充
+    },
   },
   module: {
     rules: [{
@@ -128,28 +192,221 @@ module.exports = {
     }],
   },
   resolve: {
-    // 只保留项目实际使用的扩展名，减少无效文件探测
-    extensions: ['.ts', '.tsx', '.js'],
+    extensions: ['.tsx', '.ts', '.jsx', '.js'],
   },
 };
 ```
 
-大型项目还可评估用 SWC/esbuild 替换 Babel 的纯转译工作；但 Babel plugin、polyfill、装饰器等兼容要求必须先验证，不能为了提速直接替换。
+这是缓存与匹配范围示例；Babel 是否支持 TS/JSX 仍由相应 preset 决定。少数发布未转译语法的依赖需要单独加入处理范围，不能一律排除。
 
-### 一张实战检查表
-
-| 优化方向 | 排查对象 | 怎么看 | 达标后的验证 |
+| 瓶颈 | 实施动作 | 代价与验证 |
 | --- | --- | --- |
-| 用户侧 | 首屏 JS 与 LCP | Network waterfall、Lighthouse、Web Vitals | 首屏只请求必要 chunk；重模块不再阻塞 LCP |
-| 用户侧 | 包体与重复依赖 | `stats.json`、Bundle Analyzer | 压缩后体积下降，且没有把公共包拆得过碎 |
-| 用户侧 | 缓存命中 | 文件名、响应头、发布后的 Network | 小改业务代码后，稳定公共 chunk 不重新下载 |
-| 开发者侧 | 构建耗时 | 构建日志、cache 命中率、loader 耗时 | 冷启动与二次构建分开对比，二次构建明显受益 |
+| 新进程重复构建慢 | filesystem cache；CI 恢复缓存目录 | 不加速首次空缓存构建；测缓存命中后新进程耗时 |
+| 缓存失效不正确 | 跟踪配置依赖；环境差异用 cache.version/name 区分 | CI key 纳入 OS、Node、lockfile、构建配置等；改配置验证确实失效 |
+| Babel/TS 转译慢 | include 缩小范围；评估 SWC/esbuild | 验证装饰器、Babel 插件、polyfill、目标浏览器与 source map |
+| 类型检查阻塞打包 | 转译与类型检查分离，独立 tsc --noEmit 或 checker 进程 | Babel/SWC/esbuild 不替代完整类型检查；CI 必须把检查作为门禁 |
+| 压缩或转换 CPU 重 | 评估压缩器并行，必要时再评估 thread-loader | worker 启动、序列化、内存有成本；小项目可能更慢 |
+| 解析/监听范围过大 | 收紧 extensions、loader 范围与 watch 排除项 | 不监听生成目录，但不能漏掉业务文件或 workspace 依赖 |
+| source map 占时高 | dev/prod 分开选择映射精度 | 比较构建耗时与实际报错定位能力，不能只关掉调试能力 |
 
-## 2. 项目实战：游戏 H5 的 CDN external 与分层分包
+不要把 DLLPlugin 和 Module Federation 当成通用提速开关。DLL 是历史上的预构建方案；Webpack 5 通常先用持久缓存。Module Federation 解决独立部署下的运行时模块共享，有自己的版本与可用性成本。
 
-项目：`bfun-game-a`（Next.js 15 静态导出）。其 `next.config.ts` 在浏览器构建中扩展了 Webpack 配置，重点不是泛泛“拆包”，而是按首屏必要性和依赖稳定性划分下载与缓存边界。
+`--profile` 与 stats 可辅助定位模块构建成本，但 loader、插件、压缩、I/O 和并行耗时不能简单相加。一次只改一类变量，用多次同口径结果确认瓶颈是否真的移动。
 
-### 已落地 1：将超大通用库 external 到 CDN（用户侧首屏包）
+## 7. 优化六：CSS、资源与压缩的具体边界
+
+- 开发环境通常用 `style-loader` 注入 style；生产用 `MiniCssExtractPlugin.loader` 配合插件抽离 CSS，以便独立缓存。两者不要在同一条规则同时使用；抽离后首屏 CSS 仍可能阻塞渲染。
+- Webpack 5 生产模式默认使用 Terser 压缩 JS；CSS 压缩通常另配 `css-minimizer-webpack-plugin`。自定义 `optimization.minimizer` 时，用 `'...'` 保留默认 JS minimizer。
+- Asset Modules 的 `asset/resource` 输出文件并导出 URL，`asset/inline` 内联 data URL，`asset` 按阈值选择。内联会省请求但增大所属文件，也失去独立缓存，大图不宜随意内联。
+- Brotli/gzip 是传输压缩，需要服务器/CDN 正确协商与响应；仅生成 .br/.gz 文件而未配置服务端，不会自动产生收益。图片压缩、响应式尺寸与 AVIF/WebP 也不是拆包自动完成的。
+
+```js
+// 生产 CSS 示例，省略项目其他规则；需安装相应插件与 loader
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+const CssMinimizerPlugin = require('css-minimizer-webpack-plugin');
+
+module.exports = {
+  mode: 'production',
+  module: {
+    rules: [{
+      test: /\.css$/i,
+      use: [MiniCssExtractPlugin.loader, 'css-loader'],
+    }],
+  },
+  plugins: [new MiniCssExtractPlugin({ filename: '[name].[contenthash:8].css' })],
+  optimization: {
+    minimizer: ['...', new CssMinimizerPlugin()],
+  },
+};
+```
+
+## 8. 原理一：一次构建里，哪些对象发生了什么
+
+| 对象 | 负责什么 | 易错点 |
+| --- | --- | --- |
+| Compiler | 配置、插件、输出文件系统和构建生命周期 | 单配置 watch 中长期存在；多配置可有多个 Compiler |
+| Compilation | 本轮构建的模块、chunk、assets 与错误 | watch 每轮会创建新实例，不能当全局单例 |
+| Module / ModuleGraph | 模块内容、模块间依赖与引用关系 | 不等于磁盘文件的一对一映射 |
+| Chunk / ChunkGraph | 模块如何组成加载单元，以及关联关系 | 一个模块可归属多个 chunk，一个 chunk 可有 JS/CSS 等多个 assets |
+| Asset | 最终输出的具体资源 | 不只有 JS，还可以是 CSS、图片、map、HTML |
+
+```text
+配置与插件注册
+  → 创建本轮 Compilation
+  → make：解析入口、resolve 请求、匹配 loader、转换、解析依赖、递归构建
+  → finish / seal：模块与 chunk 优化、代码生成、hash、资源处理
+  → emit：写出 assets
+  → done：得到 Stats
+```
+
+上面是理解主线，不是所有内部 hook 的完整严格次序。Tree Shaking 的分析与删除跨越多个优化步骤，不能归结为 seal 中某一次函数调用。
+
+对于常规 JS 模块，loader 先把 TS/JSX 等转换成 Webpack 可解析的代码；Webpack 再解析 AST，识别依赖并生成依赖对象。Babel 自己也有 parse → transform → generate，因此同一源码可能先后被两个工具解析，二者职责不同。Asset Modules、Wasm 等使用对应的模块类型/解析生成机制，不要求所有资源都经 loader 变成 JS。
+
+依赖构建存在异步和并发，不是整个项目逐文件串行执行；watch 会利用依赖信息和缓存复用未变化的工作。
+
+## 9. 原理二：浏览器如何执行 bundle 和加载异步 chunk
+
+下面只模拟默认 web 目标常见的模块 runtime；真实输出会因 ESM 输出、scope hoisting、目标平台与配置而变化，并非所有模块都保留独立包装函数。
+
+```js
+// 示意代码：工厂表 + 模块缓存；不是 Webpack 完整源码
+const factories = {
+  './math.js': (module) => { module.exports = { add: (a, b) => a + b }; },
+};
+const cache = {};
+
+function requireModule(id) {
+  if (cache[id]) return cache[id].exports;
+  const module = cache[id] = { exports: {} };
+  factories[id](module, module.exports, requireModule);
+  return module.exports;
+}
+
+requireModule('./math.js').add(1, 2);
+```
+
+先放缓存再执行工厂函数，能使循环依赖拿到已创建的模块对象；普通同步模块通常只执行一次，后续引用复用 exports。ESM 还涉及导出的 getter/live binding，不能把上面的 CJS 简化模型当作全部语义。
+
+默认 web JSONP chunk loading 的典型异步流程：
+
+1. 执行 `import('./editor')`，生成代码先请求对应 chunk 加载 Promise。
+2. runtime 根据 chunk ID、文件名映射与 publicPath 生成 URL；同一 chunk 的并发加载复用状态。
+3. 通过 script 下载异步 JS；chunk 执行时向全局 chunk 队列注册模块工厂，runtime 标记 chunk 已就绪并 resolve。
+4. 导入链继续执行目标模块并取得模块 namespace；网络失败、超时等使 Promise reject。
+
+因此只下载不代表所有模块都立即执行；异步 chunk 404 也不一定是业务代码报错。CSS 等关联资源可能另有加载逻辑。Node、原生 ESM 等目标的 chunk 加载机制不同。
+
+## 10. 高频题：Loader、Plugin、Tapable
+
+### 10.1 Loader 执行顺序与如何手写
+
+普通 normal loader 按配置从右到左执行：`['style-loader', 'css-loader', 'sass-loader']` 先 Sass → CSS，再解析 CSS 依赖，最后注入页面。pitch 阶段则从左到右，某个 pitch 返回结果时会短路剩余链路，转入它左侧 loader 的 normal 阶段；还存在 pre/post/inline 分类，不能把“右到左”套到所有场景。
+
+```js
+// banner-loader.cjs：同步 loader 示例
+module.exports = function bannerLoader(source, map, meta) {
+  this.cacheable();
+  const { text = 'built by webpack' } = this.getOptions();
+  const banner = JSON.stringify(String(text));
+  // 只追加代码，避免前置代码改变原有行号；复杂变换应生成更新后的 map
+  this.callback(null, source + '\n;console.info(' + banner + ');\n', map, meta);
+};
+```
+
+这里演示 options、缓存与 callback；无可观察副作用要求的项目不应添加日志。异步 loader 用 `const callback = this.async()`，完成后调用 callback；外部文件依赖用 `this.addDependency(file)` 告知 watch 和缓存，不能只读取文件而不登记。
+
+### 10.2 Plugin 如何处理最终资源
+
+Loader 面向模块转换；Plugin 在 Compiler / Compilation hooks 中介入构建、依赖、优化与资源。下面是 Webpack 5 插件的最小完整示例：
+
+```js
+class AssetListPlugin {
+  apply(compiler) {
+    const name = 'AssetListPlugin';
+    const { Compilation, sources } = compiler.webpack;
+    compiler.hooks.thisCompilation.tap(name, (compilation) => {
+      compilation.hooks.processAssets.tap(
+        { name, stage: Compilation.PROCESS_ASSETS_STAGE_REPORT },
+        () => {
+          const names = Object.keys(compilation.assets).sort();
+          compilation.emitAsset(
+            'asset-list.json',
+            new sources.RawSource(JSON.stringify(names, null, 2)),
+          );
+        },
+      );
+    });
+  }
+}
+module.exports = AssetListPlugin;
+```
+
+该列表记录此阶段已存在的资源，不包含它自己，也不承诺包含之后插件新增的资源。资源加工优先在 `processAssets` 的适当 stage 完成，不再推荐废弃的 `optimizeChunkAssets`。
+
+### 10.3 Tapable 与生命周期追问
+
+- `tap` 注册同步回调，`tapAsync` 注册 callback 风格异步回调，`tapPromise` 注册返回 Promise 的回调；具体可用方式取决于 hook 类型。
+- `SyncHook` 顺序调用；`SyncBailHook` 遇到任何 **非 undefined** 返回值就停止；`SyncWaterfallHook` 将前一个返回值传给下一个。
+- `AsyncSeriesHook` 串行等待异步回调；`AsyncParallelHook` 启动多个回调并等待全部完成。异步 hook 不等于自动用多线程计算。
+- `thisCompilation` 获取本次 Compilation；`make` 构建依赖图；`processAssets` 处理资源；`emit` 输出前；`done` 得到 Stats。不要在每轮 compilation 内重复注册全局 Compiler 监听。
+
+## 11. 高频题：HMR 与 React Fast Refresh
+
+```text
+文件变化 → watch 发现失效依赖 → 增量编译
+  → 开发服务器通过 WebSocket 通知
+  → 浏览器获取 hot-update manifest / chunk
+  → HMR runtime 寻找 accept 边界、dispose 旧模块、执行并应用更新
+  → 无法安全接受时，根据开发服务器配置回退整页刷新
+```
+
+HMR 不只是“用 WebSocket 替换文件”：WebSocket 主要传通知，浏览器还需要获取更新、更新模块工厂与执行接受逻辑。模块的父级依赖链中找不到 accept 边界，更新就不能安全应用。
+
+React Fast Refresh 是框架与编译插件在 HMR 上构建的组件更新机制，判断导出和 Hook 签名是否可安全保留状态。改变 Hook 顺序、修改某些混合导出或组件类型等可能导致重挂载/刷新；“HMR 一定保留状态”是错的。原生 Webpack 也不会自行启动 HTTP 服务器，服务由 webpack-dev-server 等配套工具提供。
+
+## 12. 高频题：Babel、source map、externals、模块联邦、Vite
+
+### Babel 能自动补齐所有兼容性吗？
+
+Webpack 负责依赖组织与打包，Babel/SWC 等负责语法转换；箭头函数能转成普通函数，但 Promise、Array.from 等运行时 API 是否可用，还要看目标环境和 polyfill 配置。Babel preset-env 的 targets、core-js 注入策略与 transform-runtime 各有职责，不能说“加 babel-loader 就兼容所有浏览器”。
+
+### source map 如何选？hidden-source-map 安全吗？
+
+| 配置 | 常用场景与限制 |
+| --- | --- |
+| `eval-cheap-module-source-map` | 开发时偏重重构建速度，能映射 loader 前源码，但没有列级精度；eval 受 CSP 约束 |
+| `source-map` | 独立完整 map，定位精细，生成成本与暴露源码风险需要评估 |
+| `hidden-source-map` | 生成 map 但不写 sourceMappingURL，适合上传监控后从公开部署中移除 |
+| `nosources-source-map` | 不内嵌源码内容，仍可能暴露文件路径与结构，并非零信息泄露 |
+
+hidden 仅隐藏引用：若 .map 仍公开可下载，不等于安全。应匹配发布版本上传错误监控，验证还原堆栈，并限制 map 的分发。
+
+### externals、alias、ProvidePlugin 有什么区别？
+
+`externals` 将依赖排除出 bundle，改由运行环境提供；`alias` 修改解析目标，解析后的模块仍可能被打包；`ProvidePlugin` 遇到特定标识符时自动注入模块引用，不等于加载 CDN 全局变量，也不等于自动给 window 挂值。
+
+external 的收益要连同外部脚本一起计算。需要管理固定版本、加载顺序、CSP、SRI、故障降级与服务端/客户端差异；不能用“应用包小了”直接推导首屏快了。
+
+### Module Federation 能解决什么？singleton 保证不冲突吗？
+
+Host 在运行时加载 Remote 暴露的模块，share scope 协商共享依赖；`singleton` 用于同一共享作用域内的单实例选择，但版本兼容、requiredVersion/strictVersion、初始化顺序与异步边界仍需治理。它适合独立部署的多团队模块组合，不是通用压缩或构建提速手段。
+
+必须准备 Remote 失败降级、兼容性与发布回滚；它不自带完整的 JS/CSS 隔离，与关注应用生命周期和隔离的微前端框架职责不同。
+
+### Webpack 与 Vite 原理区别？
+
+Webpack 的传统开发流程先构建可服务的模块/chunk，Vite 开发阶段以浏览器原生 ESM 为基础，按请求转换业务模块并维护模块图。两者都要做解析、转换、依赖管理与 HMR；Vite 不是完全不构建，也不保证任意项目的所有指标都更快。
+
+第三方依赖优化解决 CJS 兼容与模块请求过碎问题；生产仍需生成适合传输、缓存和部署的产物。**常见的 Vite 5/6 链路**是 esbuild 依赖预构建/转换、Rollup 生产打包；更新版本或 Rolldown 实现的底层选择应按实际版本核实，不能把工具名当永久原理。
+
+选型看既有 loader/plugin、目标环境、构建定制与真实冷启动/HMR 数据。本文不展开 Vite 源码，避免抢占 Webpack 主线。
+
+## 13. 项目实战：游戏 H5 的 external 与分层分包
+
+下面保留原文对 `bfun-game-a`（Next.js 15 静态导出）的配置记录；本次整理未重新检查该外部项目源码，也没有性能基线。应把“记录中的配置”“预期收益”“待验证结果”分开。Next.js 自己管理入口、runtime 和页面拆包，不能直接覆盖其 optimization 为独立 Webpack 示例。
+
+### 13.1 配置记录：将超大通用库 external 到 CDN（用户侧首屏包）
 
 客户端构建将 `pixi.js`、`swiper`、`axios`、`lodash` 标记为 external；这些库不会被打进应用 JS，而是在 `src/pages/_document.tsx` 通过 jsDelivr 固定版本脚本加载，并映射为全局变量 `PIXI`、`Swiper`、`axios`、`_`。
 
@@ -162,10 +419,12 @@ config.externals = [
 ]
 ```
 
-**收益**：降低应用 bundle 体积，依赖可借助 CDN 就近分发和缓存复用。
+这段保留原配置记录的形式，不作为框架通用模板：若既有 externals 是函数或对象，上面的数组判断会丢掉原配置，需要按真实配置类型合并；仅 external 包根路径也不会自动覆盖所有子路径导入。
+
+**预期收益**：降低应用 bundle 体积，依赖由 CDN 分发；总传输、阻塞与执行成本仍需实测。
 **面试中必须说明的边界**：external 只是把下载责任从应用包转移到第三方网络，不会凭空消除下载；当前脚本以普通 `<script>` 写在 `<Head>`，需要重点验证其是否阻塞解析、CDN 不可用时的降级、CSP/SRI 与版本兼容。且代码仅判断 `!isServer`，实际没有按 `NODE_ENV` 限制，注释中“开发环境本地包”的说法和实现不完全一致，应以运行结果为准。
 
-### 已落地 2：按依赖性质分层 `splitChunks`（用户侧加载与缓存）
+### 13.2 配置记录：按依赖性质分层 `splitChunks`（用户侧加载与缓存）
 
 项目设置 `maxSize: 500 * 1024`，并使用优先级缓存组拆出以下 chunk：
 
@@ -178,13 +437,13 @@ config.externals = [
 | `lib/firebase`、`lib/mui` | Firebase、MUI/Emotion | 重型、非所有页面都需要的依赖 |
 | `lib/vendor`、`lib/lazy` | 其他依赖、二维码/全屏等低频能力 | 兜底隔离，避免污染关键包 |
 
-这里的关键能力是按**稳定公共依赖、首屏基础能力、重型低频能力**拆分，而不是按 npm 包名机械拆分。`enforce: true` 的组会强制成块，`lib/icons`、`lib/ui` 等未强制的组仍可被 `maxSize` 拆开；上线后应通过 Bundle Analyzer 和弱网瀑布图检查 500KB 是否符合实际，而不是把它当成固定最佳值。
+这里的关键能力是按**稳定公共依赖、首屏基础能力、重型低频能力**拆分，而不是按 npm 包名机械拆分。`enforce: true` 会绕过部分抽取条件，但不保证单块或硬性尺寸上限；各组是否继续拆分取决于实际 maxSize、模块大小与其余限制。上线后应通过 Bundle Analyzer 和弱网瀑布图检查 500KB 是否符合实际，而不是把它当成固定最佳值。
 
-### 已落地 3：静态资源运行时缓存（用户侧重复访问）
+### 13.3 配置记录：静态资源运行时缓存（用户侧重复访问）
 
 项目用 `@ducanh2912/next-pwa` 配置 Workbox：图片为 `CacheFirst`，上限 200 条、30 天；Google Fonts / gstatic 字体上限 10 条、一年；单个预缓存资源不超过 10MB，并清理旧缓存。它不是 Webpack 的 `splitChunks` 优化，但与构建产物和 CDN 配合，改善重复访问和弱网体验。
 
-要点是它给缓存设置了 TTL、数量和资源边界，避免无限占用存储。实时接口没有被这个通用规则缓存；余额、订单等数据仍应按一致性需求单独设计。
+要点是它给缓存设置了 TTL、数量和资源边界，避免无限占用存储。按这份记录，实时接口不属于所述图片/字体规则；余额、订单等数据仍应按一致性需求单独设计。
 
 ### 现有配置的边界：不能误说成“图片已被构建优化”
 
@@ -192,177 +451,562 @@ config.externals = [
 
 ### 项目实战面试回答
 
-> 在游戏 H5 项目里，我把 Webpack 优化分成两层：第一层是把 PixiJS、Swiper、Axios、Lodash external 到固定版本 CDN，减少应用 bundle；第二层在 `splitChunks` 中按 React 核心、首屏基础能力、Firebase/MUI 等重型低频依赖分层拆包，并把单 chunk 控制在约 500KB。静态资源侧再由 PWA 对图片和字体做有 TTL、数量上限的运行时缓存。上线后我会通过 Bundle Analyzer、Network 瀑布和弱网 LCP 验证首屏收益，同时验证 CDN 阻塞、版本和降级风险；不会只看“包变小”。
+> 在游戏 H5 项目里，我把 Webpack 优化分成两层：第一层是把 PixiJS、Swiper、Axios、Lodash external 到固定版本 CDN，减少应用 bundle；第二层在 `splitChunks` 中按 React 核心、首屏基础能力、Firebase/MUI 等重型低频依赖分层拆包，并用 maxSize: 500KB 提示进一步拆分较大的 chunk（它不是硬上限）。静态资源侧再由 PWA 对图片和字体做有 TTL、数量上限的运行时缓存。上线后我会通过 Bundle Analyzer、Network 瀑布和弱网 LCP 验证首屏收益，同时验证 CDN 阻塞、版本和降级风险；不会只看“包变小”。
 
-## 3. 60 秒回答：Webpack 的工作过程
+## 14. 面试收尾：给出可验证的结论
 
-> Webpack 从 entry 开始递归解析 `import` / `require`，建立模块依赖图。匹配到资源后，先由 loader 把源码转换成 JavaScript 可处理的模块，例如 Babel 转译 JS、css-loader 解析 CSS；再由 plugin 在构建生命周期的钩子中介入，例如生成 HTML、压缩资源、定义环境变量。随后根据同步依赖、动态 import 和 `splitChunks` 把 module 组织成多个 chunk，最后生成带 content hash 的 JS、CSS 等 asset 并写入 output。运行时负责按需加载异步 chunk、维护模块缓存。
+> 我先确认是构建耗时还是用户加载慢。构建侧用冷/热构建与模块耗时找瓶颈，优先缓存和缩小转换范围；用户侧用 stats 与 Network 找首屏重依赖，通过真正延后调用的 import()、合理公共拆包和 Tree Shaking 减少关键路径，再配合内容 hash 与版本兼容发布提升复用。每次同时检查压缩后字节、请求时机、主线程开销和缓存变化，不把拆出文件或某个配置值当作性能结果。
 
-## 4. 核心概念：要能说清各自负责什么
+## 附录 A：构建流程与源码阅读笔记
 
-| 概念 | 职责 | 面试易错点 |
-| --- | --- | --- |
-| `entry` | 构建入口，可配置单入口或多入口 | 入口不是最终只有一个文件的保证 |
-| `module` | 依赖图中的资源单位，JS、CSS、图片都可成为模块 | 模块不等于最终文件 |
-| `loader` | 按文件匹配规则，从右到左转换模块内容 | loader 是“转换内容”，不是在生命周期里任意扩展能力 |
-| `plugin` | 监听 Webpack hooks，介入整个构建过程 | Plugin 能影响构建、产物、优化，范围比 loader 更广 |
-| `chunk` | Webpack 按加载/拆分规则组织的一组 module | 一个 chunk 可生成多个 asset，例如 JS 和抽出的 CSS |
-| `asset` | 最终输出到 `output` 的文件 | 浏览器实际请求的是 asset |
-| `Compiler` | 整个构建生命周期的管理者，watch 模式下长期存在 | 不要和单次构建混淆 |
-| `Compilation` | 一次构建的上下文，包含 module、chunk、asset | 每次重新编译会创建新的 Compilation |
+保留原有源码阅读主题与流程图片。下列内部调用名、顺序与节选来自原文记录，不绑定某个已核验的 Webpack commit；阅读具体版本时应对照其源码。省略内容的片段只用于说明流程，不能作为完整可运行类直接复制。Webpack 4 的历史 API 会单独标注；正文以 Webpack 5 为准。
 
-## 5. 构建流程：初始化 → make → seal → emit
+### A.1 初始化阶段
+从创建 Compiler 到 make，需要先完成配置归一化、环境与插件注册。下面按职责梳理，不把固定文件数量或跳转次数当作跨版本保证。
 
-1. **初始化**：读取配置与 CLI 参数，创建 `Compiler`，注册内置插件和用户插件，解析 entry。
-2. **make / build**：从入口递归构建模块。先匹配 `module.rules` 并执行 loader，解析模块中的依赖，再继续构建依赖，最终得到 Module Graph。
-3. **seal**：按入口、动态 import 与优化规则将 module 分配为 chunk，运行 `splitChunks`、Tree Shaking、压缩等优化，生成 Chunk Graph 和 asset 内容。
-4. **emit**：触发输出相关 hooks，将 asset 写到文件系统；开发模式通常由 dev server 保存在内存中提供服务。
+* 启动 webpack ，触发 lib/webpack.js 文件中 createCompiler 方法
+* createCompiler 方法内部调用 WebpackOptionsApply 插件
+* WebpackOptionsApply 定义在 lib/WebpackOptionsApply.js 文件，内部根据 entry 配置决定注入 entry 相关的插件，例如由 EntryOptionPlugin 处理入口并注册 EntryPlugin；其他插件按配置启用，不都属于入口插件
+* Entry 相关插件，如 lib/EntryPlugin.js 的 EntryPlugin 监听 compiler.make 钩子
+* lib/Compiler.js 的 compile 函数内调用 this.hooks.make.callAsync
+* 触发 EntryPlugin 的 make 回调，在回调中执行 compilation.addEntry 函数
+* compilation.addEntry 将入口依赖交给依赖工厂与模块创建流程，再进入具体模块构建
 
-`Compiler` 的 hooks 适合处理全局生命周期；`Compilation` 的 hooks 面向本次构建中的模块、chunk、asset。编写插件时不要在每次 compilation 都重复注册全局监听。
+<ImageRender alt='test' path='/img-build/流程1.jpg' />
 
-## 6. Loader 与 Plugin 的区别
+1. 将 CLI 参数（process.argv 经 CLI 解析）与 webpack.config.js 合并成用户配置
+2. 调用 validateSchema 校验配置
+3. 调用 getNormalizedWebpackOptions + applyWebpackOptionsBaseDefaults 合并出最终配置
+4. 创建 compiler 对象
+5. 遍历用户定义的 plugins 集合，执行插件的 apply 方法
+6. 调用 new WebpackOptionsApply().process 方法，加载各种内置插件
 
-| 对比项 | Loader | Plugin |
-| --- | --- | --- |
-| 工作对象 | 单个匹配到的模块内容 | 整个构建过程、依赖图和产物 |
-| 典型用途 | `babel-loader`、`css-loader`、`sass-loader` | `HtmlWebpackPlugin`、`DefinePlugin`、`MiniCssExtractPlugin` |
-| 执行方式 | 在 `module.rules` 中按规则匹配，可串联 | 在 `plugins` 中实例化，通过 Tapable hooks 注册 |
-| 记忆方式 | 把“文件变成模块” | 在“构建的某个阶段做事” |
+主要逻辑集中在 WebpackOptionsApply 类，webpack 内置了数百个插件，这些插件并不需要我们手动配置，WebpackOptionsApply 会在初始化阶段根据配置内容动态注入对应的插件，包括：
+1. 注入 EntryOptionPlugin 插件，处理 entry 配置
+2. 根据 devtool 值判断后续用那个插件处理 sourcemap，可选值：EvalSourceMapDevToolPlugin、SourceMapDevToolPlugin、EvalDevToolModulePlugin
+3. 注入 RuntimePlugin ，用于根据代码内容动态注入 webpack 运行时
 
-Loader 的执行顺序是从右到左（或从下到上）。例如 `style-loader`、`css-loader`、`sass-loader` 中，Sass 先被编译为 CSS，再解析 CSS，最后开发环境注入页面。生产环境通常用 `MiniCssExtractPlugin` 提取 CSS 文件，而非 `style-loader`。
-
-## 7. 代码分割与缓存：为什么、怎么拆、不能怎么拆
-
-代码分割的目标是缩小初始下载与解析量，并让稳定依赖跨版本复用缓存。
-
-```ts
-// 命中时才下载该 chunk；适合路由、图表、编辑器等非首屏能力
-const ChartPanel = React.lazy(() => import('./ChartPanel'));
+到这里，compiler 实例就被创建出来了，相应的环境参数也预设好了，紧接着开始调用 compiler.compile 函数：
+```js
+// webpack-helloworld\node_modules\webpack\lib\Compiler.js
+compile(callback) {
+  console.log('compile=====>',callback)
+  const params = this.newCompilationParams();
+  this.hooks.beforeCompile.callAsync(params, err => {
+    // ...
+    const compilation = this.newCompilation(params);
+    this.hooks.make.callAsync(compilation, err => {
+      // ...
+      this.hooks.finishMake.callAsync(compilation, err => {
+        // ...
+        process.nextTick(() => {
+          compilation.finish(err => {
+            compilation.seal(err => { /* 回到后续编译流程 */ });
+          });
+        });
+      });
+    });
+  });
+}
 ```
 
+### A.2 构建阶段
+从 entry 开始递归解析资源与资源的依赖，在 compilation 对象内逐步构建出 module 集合以及 module 之间的依赖关系，核心流程：
+<ImageRender alt='test' path='/img-build/流程2.jpg' />
+
+解释一下，构建阶段从入口文件开始：
+1. 调用 handleModuleCreate ，根据文件类型构建 module 子类
+2. 调用 loader-runner 仓库的 runLoaders 转译 module 内容，通常是从各类资源类型转译为 JavaScript 文本
+3. 调用 acorn 将 JS 文本解析为AST
+4. 遍历 AST，触发各种钩子
+```
+1. 在 HarmonyExportDependencyParserPlugin 插件监听 exportImportSpecifier 钩子，解读 JS 文本对应的资源依赖
+2. 调用 module 对象的 addDependency 将依赖对象加入到 module 依赖列表中
+```
+5. AST 遍历完毕后，调用 module.handleParseResult 处理模块依赖
+6. 对于 module 新增的依赖，调用 handleModuleCreate ，控制流回到第一步
+7. 所有依赖都解析完毕后，构建阶段结束
+
+
+常规 JS 模块的数据流是 module → loader 输出 → AST → dependencies → 依赖 module。旧式 file-loader/url-loader 可以把资源转成导出 URL 的 JS；Webpack 5 的 Asset Modules 则由相应模块类型处理原始资源，不要求所有资源先变成可被 Acorn 解析的 JS。
+
+
+compilation 按这个流程递归处理，逐步解析出每个模块的内容以及 module 依赖关系，后续就可以根据这些内容打包输出。
+#### 示例：层级递进
+假如有如下图所示的文件依赖树：
+
+<ImageRender alt='入口与模块依赖树' path='/img-build/流程2-1.png' />
+
+其中 index.js 为 entry 文件，依赖于 a/b 文件；a 依赖于 c/d 文件。初始化编译环境之后，EntryPlugin 根据 entry 配置找到 index.js 文件，调用 compilation.addEntry 函数触发构建流程，构建完毕后内部会生成这样的数据结构：
+
+<ImageRender alt='入口模块的依赖对象' path='/img-build/流程2-2.jpg' />
+
+此时得到 module[index.js] 的内容以及对应的依赖对象 dependence[a.js] 、dependence[b.js] 。OK，这就得到下一步的线索：a.js、b.js，根据上面流程图的逻辑继续调用 module[index.js] 的 handleParseResult 函数，继续处理 a.js、b.js 文件，递归上述流程，进一步得到 a、b 模块：
+<ImageRender alt='递归构建下一层模块' path='/img-build/流程2-3.jpg' />
+
+从 a.js 模块中又解析到 c.js/d.js 依赖，于是再再继续调用 module[a.js] 的 handleParseResult ，再再递归上述流程：
+
+<ImageRender alt='完整模块依赖关系' path='/img-build/流程2-4.jpg' />
+到这里解析完所有模块后，发现没有更多新的依赖，就可以继续推进，进入下一步。
+
+*  Webpack 编译过程会将源码解析为 AST 吗？webpack 与 babel 分别实现了什么？
+```
+构建阶段会读取源码，解析为 AST 集合。
+Webpack 解析 AST 主要用于依赖、导出、静态表达式等分析，并结合依赖模板与代码生成输出模块；Babel 主要进行语法转换。两者都不只是简单遍历。
+```
+
+* Webpack 编译过程中，如何识别资源对其他资源的依赖？
+```
+Webpack 遍历 AST 集合过程中，识别 require/ import 之类的导入语句，确定模块对其他资源的依赖关系
+```
+
+* 相对于 Grunt、Gulp 等流式构建工具，为什么 webpack 会被认为是新一代的构建工具？
+```
+Grunt/Gulp 以任务编排为核心，也可调用转换或打包插件；Webpack 以模块依赖图为核心。两者抽象不同，不能简单归结为功能强弱。
+```
+
+### A.3 生成阶段
+这一步的关键逻辑是将 module 按规则组织成 chunks ，webpack 内置的 chunk 封装规则比较简单：
+* 基础情况下，入口及其同步依赖构成入口 chunk；异步依赖另建加载边界
+* 动态 import 形成异步 chunk group；最终 chunk 数量仍受复用和优化规则影响
+```
+chunk 是模块组织与加载单元，不保证与 asset 一一对应。一个 chunk 可输出 JS 与抽离的 CSS；多个入口或异步组也可能共享 chunk。下例只说明未额外抽取公共依赖的基础情形。
+```
+
+构建阶段围绕 module 展开，生成阶段则围绕 chunks 展开。经过构建阶段之后，webpack 得到足够的模块内容与模块关系信息，接下来开始生成最终资源了。代码层面，就是开始执行 compilation.seal 函数：
 ```js
-// webpack.config.js
+// 节选自 webpack/lib/Compiler.js；方法体上下文，非独立脚本
+	compile(callback) {
+
+		console.log('compile=====>', callback)
+
+		const params = this.newCompilationParams();
+		this.hooks.beforeCompile.callAsync(params, err => {
+			if (err) return callback(err);
+
+			this.hooks.compile.call(params);
+
+			const compilation = this.newCompilation(params);
+
+			const logger = compilation.getLogger("webpack.Compiler");
+
+			logger.time("make hook");
+			this.hooks.make.callAsync(compilation, err => {
+				logger.timeEnd("make hook");
+				if (err) return callback(err);
+
+				logger.time("finish make hook");
+				this.hooks.finishMake.callAsync(compilation, err => {
+					logger.timeEnd("finish make hook");
+					if (err) return callback(err);
+
+					process.nextTick(() => {
+						logger.time("finish compilation");
+						compilation.finish(err => {
+							logger.timeEnd("finish compilation");
+							if (err) return callback(err);
+
+							logger.time("seal compilation");
+							compilation.seal(err => {
+								logger.timeEnd("seal compilation");
+								if (err) return callback(err);
+
+								logger.time("afterCompile hook");
+								this.hooks.afterCompile.callAsync(compilation, err => {
+									logger.timeEnd("afterCompile hook");
+									if (err) return callback(err);
+
+									return callback(null, compilation);
+								});
+							});
+						});
+					});
+				});
+			});
+		});
+	}
+```
+
+seal 原意密封、上锁，我个人理解在 webpack 语境下接近于 “将模块装进蜜罐” 。seal 函数主要完成从 module 到 chunks 的转化，核心流程：
+简单梳理一下：
+1. 构建本次编译的 ChunkGraph 对象；
+2. 遍历 compilation.modules 集合，将 module 按 entry/动态引入 的规则分配给不同的 Chunk 对象；
+3. compilation.modules 集合遍历完毕后，得到完整的 chunks 集合对象，调用 createXxxAssets 方法
+4. 代码生成与资源创建过程中，通过 compilation.emitAsset(name, source, info) 等接口登记资源，再由 processAssets 等钩子加工；这不是写磁盘
+5. 触发 seal 回调，控制流回到 compiler 对象
+
+
+### A.4 示例：多入口打包
+假如有这样的配置：
+```js
+const path = require("path");
+
 module.exports = {
-  optimization: {
-    runtimeChunk: 'single',
-    splitChunks: {
-      chunks: 'all',
-      cacheGroups: {
-        react: {
-          test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
-          name: 'react',
-          priority: 20,
-        },
-      },
-    },
+  mode: "development",
+  context: path.join(__dirname),
+  entry: {
+    a: "./src/index-a.js",
+    b: "./src/index-b.js",
   },
   output: {
-    filename: '[name].[contenthash:8].js',
-    chunkFilename: '[name].[contenthash:8].chunk.js',
+    filename: "[name].js",
+    path: path.join(__dirname, "./dist"),
   },
+  devtool: false,
+  target: "web",
+  plugins: [],
 };
 ```
 
-- `import()` 会形成异步边界；`splitChunks` 负责提取公共依赖、避免多入口重复打包。
-- `contenthash` 让内容未变的 asset 保持文件名不变，可以配合 CDN 长期强缓存；HTML 不宜长期缓存，因为它需要引用最新 hash 文件。
-- `runtimeChunk: 'single'` 可把 Webpack runtime 与业务 chunk 分离，减少业务改动导致公共 chunk hash 一起变化的概率。
-- 不要机械按每个 npm 包拆 chunk。过度拆分会增加请求调度、解析与缓存管理成本；应以首屏关键路径、依赖复用度、路由访问方式和真实网络瀑布图决定。
+实例配置中有两个入口，对应的文件结构：
+<ImageRender alt='多入口示例的文件结构' path='/img-build/流程2-5.jpg' />
 
-## 8. Tree Shaking：生效条件与失效原因
+index-a 依赖于c，且动态引入了 e；index-b 依赖于 c/d 。根据上面说的规则：
+* 入口及其同步可达依赖，在本示例中组成入口 chunk
+* 动态 import 形成异步 chunk group；最终 chunk 数量仍受复用和优化规则影响
 
-Tree Shaking 指在生产构建中，基于 ES Module 的静态结构标记未使用导出，并由压缩器删除无用代码。
+生成的 chunks 结构为：
+<ImageRender alt='多入口与异步模块的 chunk 结构' path='/img-build/流程2-6.jpg' />
 
-要点：
+也就是根据依赖关系，chunk[a] 包含了 index-a/c 两个模块；chunk[b] 包含了 c/index-b/d 三个模块；chunk[e-hash] 为动态引入 e 对应的 chunk。
 
-- 使用静态 `import` / `export`，避免用 CommonJS `require` 作为可摇树优化的主要入口。
-- 生产模式默认开启相关优化；最终删除通常由压缩器完成，不是只靠 Webpack “分析”即可。
-- `package.json` 的 `sideEffects` 用来声明哪些文件有副作用。错误写成 `false` 可能把全局 CSS、polyfill 等必要文件删除；可白名单保留：`["*.css", "./src/polyfills.ts"]`。
-- `import { debounce } from 'lodash'` 是否能有效摇树取决于包的模块格式与构建链路；对 CJS 大包，优先换 ESM 版本或使用按模块路径导入，并用产物分析验证。
+这里 chunk[a] 与 chunk[b] 同时包含 c，多页面共享基础库时可能重复打包。Webpack 4/5 使用 SplitChunksPlugin（通过 optimization.splitChunks 配置）进一步优化 chunk 结构；CommonsChunkPlugin 属于 Webpack 3 时代，已移除。本例没有设置 chunks: 'all'，不能据此推断所有多入口配置都会产生同样的重复。
 
-## 9. 构建速度优化：先量化再下手
+#### SplitChunksPlugin 的作用
+SplitChunksPlugin 是 webpack 架构高扩展的一个绝好的示例，我们上面说了 webpack 主流程里面是按 entry / 动态引入 两种情况组织 chunks 的，这必然会引发一些不必要的重复打包，webpack 通过插件的形式解决这个问题
 
-| 瓶颈 | 手段 | 注意点 |
-| --- | --- | --- |
-| 二次构建慢 | Webpack 5 `cache: { type: 'filesystem' }` | 缓存依赖配置、lockfile 与环境；CI 注意缓存命中与失效 |
-| JS 转译慢 | 缩小 `babel-loader` 范围，排除多数 `node_modules`；可评估 SWC/esbuild | 少数未转译第三方包仍可能需要纳入规则 |
-| 模块解析慢 | 配置 `resolve.extensions`、`alias`，避免不必要的解析尝试 | 不要为了快而滥用 alias，需保证路径边界清晰 |
-| 大型依赖重复处理 | 合理拆包、升级依赖、检查重复版本 | DLL 是旧方案；新项目通常优先持久缓存和合理 splitChunks |
-| 生产压缩慢 | 开发与生产配置分离，按需 source map | 不能为了构建速度关闭生产压缩而不评估传输成本 |
-
-构建优化与运行时性能不同：构建耗时看 cache、loader 与解析范围；用户侧性能看产物体积、关键请求、缓存和运行时执行。两者都要用数据验证。
-
-## 10. HMR 的原理与边界
-
-开发服务器监听文件变化，重新编译受影响模块并通过 WebSocket 通知浏览器。浏览器下载 hot-update 文件；若模块或其父模块通过 `module.hot.accept` 接受更新，则替换模块并执行回调，尽量保留页面状态；没有可接受边界时才回退整页刷新。
-
-React Fast Refresh 是框架层对 HMR 的增强：它会判断组件导出与 Hook 是否可安全保留状态。不是所有修改都能保留状态，例如模块副作用、非组件导出变化或运行时错误都可能触发刷新。
-
-## 11. Module Federation：适用场景和风险
-
-Module Federation 是 Webpack 5 的运行时模块共享机制。Host 可以异步加载 Remote 暴露的模块，双方可将 React 等依赖配置为 `shared` / `singleton`，减少重复下载和多实例问题。
-
-```js
-new ModuleFederationPlugin({
-  name: 'host',
-  remotes: { design: 'design@https://cdn.example.com/remoteEntry.js' },
-  shared: { react: { singleton: true }, 'react-dom': { singleton: true } },
-});
+回顾 compilation.seal 函数的代码，大致上可以梳理成这么4个步骤：
+```
+1.遍历 compilation.modules ，记录下模块与 chunk 关系
+2.触发各种模块优化钩子，这一步优化的主要是模块依赖关系
+3.遍历 module 构建 chunk 集合
+4.触发各种优化钩子
 ```
 
-它适合多团队独立部署、需要运行时组合模块的场景；不等于“所有项目都应微前端化”。需要治理 Remote 版本兼容、加载失败降级、共享依赖版本、样式隔离、监控与发布顺序。它与 qiankun 等微前端框架不冲突：前者解决模块加载/共享，后者更关注应用生命周期与隔离。
+webpack 插件架构的高扩展性，使得整个编译的主流程是可以固化下来的，分支逻辑和细节需求“外包”出去由第三方实现，这套规则架设起了庞大的 webpack 生态，关于插件架构的更多细节，下面 plugin 部分有详细介绍，这里先跳过。
 
-## 12. 常见追问
+### A.5 写入文件系统
+经过构建阶段后，compilation 会获知资源模块的内容与依赖关系，也就知道“输入”是什么；而经过 seal 阶段处理后， compilation 则获知资源输出的图谱，也就是知道怎么“输出”：哪些模块跟那些模块“绑定”在一起输出到哪里。seal 后大致的数据结构：
+```js
+compilation = {
+  // ...
+  modules: [
+    /* ... */
+  ],
+  chunks: [
+    {
+      id: "entry name",
+      files: ["output file name"],
+      hash: "xxx",
+      runtime: "xxx",
+      // 示意对象，省略其他属性
+      // ...
+    },
+    // ...
+  ],
+};
+```
+seal 完成并经过 afterCompile 等后续流程后，由 Compiler 调用 emitAssets，函数内部调用 compiler.outputFileSystem.writeFile 方法将 assets 集合写入文件系统，实现逻辑比较曲折，但是与主流程没有太多关系，所以这里就不展开讲了。
 
-### source map 如何选择？
+### A.6 总结：资源形态流转
+上面已经梳理构建主流程，这里从资源形态流转的角度重新考察：
 
-开发环境优先调试速度和定位体验，可使用较快的 eval 类 source map；生产环境在错误监控与源码泄露风险之间取舍，常上传隐藏 source map 到监控平台而不公开给浏览器。具体值应按项目调试与安全要求选择，不能照搬一种配置。
+<ImageRender alt='构建过程中资源形态的流转' path='/img-build/流程总结.jpg' />
 
-### 如何分析包体积？
+* compiler.make 阶段：
+```
+entry 文件以 dependence 对象形式加入 compilation 的依赖列表，dependence 对象记录有 entry 的类型、路径等信息
 
-先生成 `stats.json` 或使用 `webpack-bundle-analyzer` 看体积最大的 module、重复依赖和入口归属；再结合 Network 判断它是否处于首屏关键链路。优化后比较 gzip/brotli 大小、请求瀑布和 Web Vitals，避免只看未压缩的 bundle 数字。
+根据 dependence 调用对应的工厂函数创建 module 对象，之后读入 module 对应的文件内容，调用 loader-runner 对内容做转化，转化结果若有其它依赖则继续读入依赖资源，重复此过程直到所有依赖均被转化为 module
+```
 
-### 为什么开发环境不用生产配置？
+* compilation.seal 阶段：
+```
+遍历 module 集合，根据 entry 配置及引入资源的方式，将 module 分配到不同的 chunk
 
-开发优先增量构建与调试体验，通常需要 HMR、较快 source map，避免完整压缩；生产优先产物体积、缓存和稳定性，会启用压缩、内容 hash、抽离 CSS 等。使用 `webpack-merge` 维护 common、dev、prod 配置，减少重复但不要混淆目标。
+遍历 chunk 集合，调用 compilation.emitAsset 方法标记 chunk 的输出规则，即转化为 assets 集合
+```
 
-## 13. 面试收尾表达
+* compiler.emitAssets 阶段：将 assets 写入文件系统
 
-> 我不会只把 Webpack 当成“把文件合并起来”的工具。实际优化时，我先通过 stats 和 Bundle Analyzer 找到首屏大依赖与重复依赖，再用动态 import、splitChunks、contenthash 和 CDN 缓存缩短关键路径；构建慢则优先启用 filesystem cache、缩小 loader 处理范围。每次改动都会同时看构建时间、压缩后产物、Network 瀑布和 LCP，避免为了拆包而制造更多请求与解析开销。
 
-## 14. Webpack 与 Vite：区别与 Vite 原理（放在最后的追问）
+### A.7 插件架构
+从形态上看，插件通常是一个带有 apply 函数的类：
+```js
+class SomePlugin {
+    apply(compiler) {
+    }
+}
+```
 
-Vite 是一套开发服务器与构建工具，不是“完全不打包的 Webpack 替代品”。它把开发和生产拆成两套更适合各自目标的流程：开发阶段优先让页面尽快启动和按需加载；生产阶段仍需要把代码处理成可高效缓存、可部署的静态产物。
+apply 函数运行时会得到参数 compiler ，以此为起点可以调用 hook 对象注册各种钩子回调，例如： compiler.hooks.make.tapAsync ，这里面 make 是钩子名称，tapAsync 定义了钩子的调用方式，webpack 的插件架构基于这种模式构建而成，插件开发者可以使用这种模式在钩子回调中，插入特定代码。webpack 各种内置对象都带有 hooks 属性，比如 compilation 对象：
+```js
+class SomePlugin {
+    apply(compiler) {
+        compiler.hooks.thisCompilation.tap('SomePlugin', (compilation) => {
+            compilation.hooks.processAssets.tap(
+                { name: 'SomePlugin', stage: compiler.webpack.Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE },
+                (assets) => { /* 同步检查或处理本轮资源 */ }
+            );
+        })
+    }
+}
+```
+钩子的核心逻辑定义在 Tapable 仓库，内部定义了如下类型的钩子：
+```js
+const {
+        SyncHook,
+        SyncBailHook,
+        SyncWaterfallHook,
+        SyncLoopHook,
+        AsyncParallelHook,
+        AsyncParallelBailHook,
+        AsyncSeriesHook,
+        AsyncSeriesBailHook,
+        AsyncSeriesWaterfallHook
+ } = require("tapable");
+```
 
-| 对比项 | Webpack | Vite |
-| --- | --- | --- |
-| 开发时的源码服务方式 | 通常先由 Webpack 构建并维护模块依赖图，再提供模块/chunk | 主要利用浏览器原生 ESM；浏览器请求哪个源码模块，服务端就转换并返回哪个模块 |
-| 冷启动体验 | 项目很大时，首次编译的依赖图处理成本更明显 | 不必先打完整业务包，通常能更快启动服务 |
-| 第三方依赖处理 | 由打包流程统一处理 | 首次启动时预构建依赖，减少浏览器对大量依赖文件的请求与 CommonJS 兼容问题 |
-| 文件更新 | 重新构建受影响模块，并通过 HMR 推送更新 | 基于模块依赖边界精确失效并推送更新；修改范围小的时候反馈通常更快 |
-| 生产构建 | Webpack 负责模块打包、压缩、拆包与产物优化 | 默认使用 Rollup 进行打包和产物优化，也可按需要接入其他构建器 |
-| 适配与生态 | 配置能力和历史生态非常成熟，适合复杂遗留链路 | 开发体验更轻量，插件需遵循 Vite/Rollup 的转换与打包模型 |
+不同类型的钩子根据其并行度、熔断方式、同步异步，调用方式会略有不同，插件开发者需要根据这些的特性，编写不同的交互逻辑，这部分内容也特别多，回头展开聊聊。
 
-### Vite 开发阶段的原理
+#### Webpack 常用插件与内置配置
 
-1. **浏览器请求 HTML**：开发服务器返回 HTML，并注入 Vite 客户端脚本；源码中的模块引用保留为 ESM `import`。
-2. **浏览器按需请求模块**：页面执行到 `import '/src/main.tsx'` 时，浏览器再请求该模块。Vite 按请求对 TypeScript、JSX、CSS 等源码做即时转换后返回，不需要为了展示首页先构建所有业务页面。
-3. **依赖预构建**：`react`、`lodash` 等第三方依赖往往包含大量内部模块或 CommonJS 格式。Vite 会用 esbuild 将依赖预构建为浏览器更容易加载的 ESM 依赖，并缓存结果；这样既减少请求数量，也解决部分 CJS/UMD 兼容问题。依赖或锁文件变化时，预构建缓存会失效并重建。
-4. **HMR 精确更新**：文件变化后，Vite 根据模块图找出受影响的模块与可接受更新的边界，经 WebSocket 通知浏览器。CSS 通常可直接替换；框架插件（例如 React Fast Refresh）负责判断组件状态能否保留。找不到接受边界时，才回退为页面刷新。
+1. html-webpack-plugin: 这个插件用于自动生成HTML文件，并自动将打包后的JavaScript文件引入HTML中。这样可以减少手动操作，确保HTML文件与生成的资源一致。
+2. Webpack 5 可用 output.clean 清理本地输出目录；不要把构建目录清理直接等同于删除线上旧版本资源。
+3. MiniCssExtractPlugin: 用于将CSS文件从JavaScript代码中分离出来，以提高性能并允许更好的缓存。这在生产构建中特别有用。
+4. css-minimizer-webpack-plugin：Webpack 5 常用的 CSS 压缩插件；OptimizeCSSAssetsPlugin 属于历史方案。
+5. CopyWebpackPlugin: 用于复制静态文件或目录到输出目录，例如，复制字体文件、图片等。
+6. DefinePlugin: 允许您在编译时创建全局常量，这对于在开发和生产构建之间切换不同的配置非常有用。
+7. HotModuleReplacementPlugin: 启用热模块替换，使在开发过程中可以在无需刷新整个页面的情况下更新应用程序。
+8. ProvidePlugin：遇到指定自由变量时注入模块引用，不等于提供 CDN 或 window 全局变量。
+9. BundleAnalyzerPlugin: 用于分析构建结果，可视化输出文件的大小和依赖关系，以帮助优化构建。
+10. SplitChunksPlugin: 用于拆分公共代码块，以减小生成的文件大小，同时提高缓存效果。
 
-可以把两者在开发阶段的关键差异记成：**Webpack 倾向于先组织构建图再服务；Vite 倾向于让浏览器按 ESM 依赖图按需取源码模块。** 两者都会维护依赖关系、处理转换和支持 HMR，只是工作发生的时机与粒度不同。
+#### 什么时候会触发钩子
+理解插件后，应按具体版本查看 hook 的定义与调用点，而非背诵固定钩子数量。以下是常用时机：
 
-### Vite 生产阶段为什么仍要打包？
+compiler.hooks.compilation ：
+时机：启动编译创建出 compilation 对象后触发
+参数：当前编译的 compilation 对象
+示例：很多插件基于此事件获取 compilation 实例
 
-线上不能只把开发时的源码 ESM 原样交给用户。生产构建仍要做 Tree Shaking、压缩、CSS 提取、资源指纹、代码分割、预加载提示和兼容性处理，并把大量细碎模块合并为适合网络传输与长期缓存的 chunk。Vite 默认在这一步用 Rollup 分析静态 ESM 依赖图并生成产物；`import()` 仍会形成异步 chunk。
+compiler.hooks.make：
+时机：正式开始编译时触发
+参数：同样是当前编译的 compilation 对象
+示例：webpack 内置的 EntryPlugin 基于此钩子实现 entry 模块的初始化
 
-因此，“Vite 开发不需要先打完整业务包”与“Vite 生产完全不打包”是两件事。面试中也不要把 esbuild、Rollup 和 Vite 混为一谈：Vite 主要使用 esbuild 完成开发期的依赖预构建与高性能转换，使用 Rollup 完成默认生产打包；具体插件和配置会影响实际链路。
+compilation.hooks.optimizeChunks ：
+时机： seal 函数中，chunk 集合构建完毕后触发
+参数：Webpack 5 中为 chunks 集合；其他版本以 hook 定义为准
+示例： SplitChunksPlugin 插件基于此钩子实现 chunk 拆分优化
 
-### 如何选择
+compiler.hooks.done：
+时机：编译完成后触发
+参数： stats 对象，包含编译过程中的各类统计信息
+示例： webpack-bundle-analyzer 插件基于此钩子实现打包分析
 
-- 新项目、以现代浏览器为目标、希望获得快速启动和反馈时，Vite 往往是更省心的默认选择。
-- 已有大量 Webpack loader/plugin、Module Federation 或高度定制构建流程时，继续使用 Webpack 的迁移成本可能更低。
-- 最终不要以工具名称下结论：仍应比较真实的冷启动、HMR、生产包体、缓存命中、兼容性和团队维护成本。
+### A.8 补充源码与模块发布格式
 
-### 60 秒面试回答
+#### 常用的组件库打包后分lib,es,dist 3 个目录
+lib、es、dist 是常见发布目录约定，不是强制标准。main、module、exports、type 与消费工具的解析条件共同决定实际入口；不能简单认定 import 一定取 es，require 一定取 lib。下面只是入口声明示例：
+<CodeBlock>
+```json
+{
+  "main": "./index.js",
+  "module": "./esm/index.js",
+  "types": "./index.d.ts"
+}
+```
+</CodeBlock>
+* es 通常存放 ESM 产物；可用 tsc/Babel 保留模块逐文件编译，也可使用打包器生成 ESM。是否打包与是否 ESM 是两回事。
+* lib 常用于 CommonJS 产物，但目录名本身不决定模块格式，需查看扩展名与包声明。
+* dist 可存放 UMD/IIFE，也可存放 ESM 等产物；UMD 可由 Webpack、Rollup 等生成。unpkg 是分发服务，不是模块格式。
 
-> Webpack 和 Vite 最大的区别在开发阶段。Webpack 通常需要先处理较多模块依赖再提供服务；Vite 利用浏览器原生 ESM，浏览器请求到哪个源码模块，开发服务器就即时转换并返回哪个模块，所以大项目冷启动和局部更新通常更快。Vite 会先用 esbuild 预构建第三方依赖，解决 CommonJS 兼容和依赖请求过碎的问题；文件变更后根据模块图经 WebSocket 推送 HMR。到了生产环境，Vite 仍需要打包，默认通过 Rollup 做 Tree Shaking、压缩、代码分割和带 hash 的静态产物。选型要看现有构建生态、兼容性和实际指标，而不是认为 Vite 天然在所有场景都更快。
+#### webpack的编译分为3个阶段：make,seal,emit
+
+##### 01. make
+
+从入口模块开始构建依赖图 ModuleGraph，按模块类型与规则执行相应解析和 loader 处理。
+
+* 历史 file-loader：输出文件并导出 URL；Webpack 5 新配置优先用 asset/resource
+* 历史 url-loader：小资源内联，大资源走文件输出；Webpack 5 优先用 asset 与 parser.dataUrlCondition.maxSize
+* css-loader：把 css 文件的内容变为 js 的变量导出,css-loader 可以实现css模块化
+<CodeBlock>
+```js
+rules: [
+  {
+    test: /\.css$/i,
+    use: [
+      'style-loader',
+      {
+        loader: "css-loader",
+          options: {
+            modules: true, // 关键代码，使css模块化
+          },
+      }
+    ],
+  },
+]
+```
+</CodeBlock>
+* style-loader：把 css 设置到 html 的 style 标签
+* ts-loader
+* babel-loader
+* postcss-loader
+
+##### 02. seal：组织模块、chunk 并生成资源
+
+基于模块图与入口/异步边界建立 ChunkGraph，再通过 splitChunks 等优化模块与 chunk 的归属关系，并生成和处理资源。
+
+##### 03. emit：输出已生成的资源
+
+代码生成、hash 与资源创建主要在 seal 及其相关流程完成；emit 阶段负责输出已生成的 assets。
+
+#### Compiler 与 Compilation 的 hook 节选
+
+* 比如 compiler 的 hook：
+不同阶段的 hook就可以拿到不同阶段的资源。
+<CodeBlock>
+```js
+// webpack/lib/Compiler.js
+class Compiler {
+	constructor(context, options = /** @type {WebpackOptions} */ ({})) {
+		// 节选：省略其余初始化
+		this.hooks = Object.freeze({
+			/** @type {SyncHook<[]>} */
+			initialize: new SyncHook([]),
+
+			/** @type {SyncBailHook<[Compilation], boolean | undefined>} */
+			shouldEmit: new SyncBailHook(["compilation"]),
+			/** @type {AsyncSeriesHook<[Stats]>} */
+			done: new AsyncSeriesHook(["stats"]),
+			/** @type {SyncHook<[Stats]>} */
+			afterDone: new SyncHook(["stats"]),
+			/** @type {AsyncSeriesHook<[]>} */
+			additionalPass: new AsyncSeriesHook([]),
+			/** @type {AsyncSeriesHook<[Compiler]>} */
+			beforeRun: new AsyncSeriesHook(["compiler"]),
+			/** @type {AsyncSeriesHook<[Compiler]>} */
+			run: new AsyncSeriesHook(["compiler"]),
+			/** @type {AsyncSeriesHook<[Compilation]>} */
+			emit: new AsyncSeriesHook(["compilation"]),
+			/** @type {AsyncSeriesHook<[string, AssetEmittedInfo]>} */
+			assetEmitted: new AsyncSeriesHook(["file", "info"]),
+			/** @type {AsyncSeriesHook<[Compilation]>} */
+			afterEmit: new AsyncSeriesHook(["compilation"]),
+			/** @type {SyncHook<[Compilation, CompilationParams]>} */
+			thisCompilation: new SyncHook(["compilation", "params"]),
+      // 省略
+    })
+
+    // 省略
+  }
+}
+```
+</CodeBlock>
+
+* compilation 的 hook：
+<CodeBlock>
+```js
+class Compilation {
+	constructor(compiler, params) {
+		this._backCompat = compiler._backCompat;
+
+    this.hooks = Object.freeze({
+        /** @type {SyncHook<[Module]>} */
+        buildModule: new SyncHook(["module"]),
+        /** @type {SyncHook<[Module]>} */
+        rebuildModule: new SyncHook(["module"]),
+        /** @type {SyncHook<[Module, WebpackError]>} */
+        failedModule: new SyncHook(["module", "error"]),
+        /** @type {SyncHook<[Module]>} */
+        succeedModule: new SyncHook(["module"]),
+        /** @type {SyncHook<[Module]>} */
+        stillValidModule: new SyncHook(["module"]),
+
+        // 省略
+      });
+  }
+}
+```
+</CodeBlock>
+
+**Webpack 使用 Tapable 定义 hooks。同步/异步、串行/并行与返回值语义由 hook 类型决定。**
+
+* SyncHook 同步顺序执行。
+* AsyncSeriesHook 异步串行执行。
+* SyncBailHook 同步顺序执行，任一回调返回非 undefined 值（包含 false、null、0）就停止后续回调。
+
+**插件往不同对象的 hook 上添加回调函数,** 比如下面的WorkerPlugin
+<CodeBlock>
+```js
+// webpack/lib/dependencies/WorkerPlugin.js
+class WorkerPlugin {
+	constructor(chunkLoading, wasmLoading, module, workerPublicPath) {
+		this._chunkLoading = chunkLoading;
+		this._wasmLoading = wasmLoading;
+		this._module = module;
+		this._workerPublicPath = workerPublicPath;
+	}
+	apply(compiler) {
+		if (this._chunkLoading) {
+			new EnableChunkLoadingPlugin(this._chunkLoading).apply(compiler);
+		}
+		if (this._wasmLoading) {
+			new EnableWasmLoadingPlugin(this._wasmLoading).apply(compiler);
+		}
+		const cachedContextify = contextify.bindContextCache(
+			compiler.context,
+			compiler.root
+		);
+		compiler.hooks.thisCompilation.tap(
+			PLUGIN_NAME,
+			(compilation, { normalModuleFactory }) => {
+				compilation.dependencyFactories.set(
+					WorkerDependency,
+					normalModuleFactory
+				);
+				compilation.dependencyTemplates.set(
+					WorkerDependency,
+					new WorkerDependency.Template()
+				);
+        // 省略 Parser/Generator 等后续 hook 注册
+      },
+    );
+  }
+}
+```
+</CodeBlock>
+
+#### 其他 Webpack 功能补充
+
+下面保留原笔记中的示例；完整边界见正文对应章节。
+
+##### 01. Code Splitting
+
+webpack 的 code spliting 功能,文件特别大，但是它又不是马上要用到，所以我们想把它延后加载，不然会拖慢页面打开速度。
+改成这种方式，使用 import 的 api 加载：
+<CodeBlock>
+```js
+async function onCalculateClick() {
+  const { add } = await import('./App');
+  console.log(add(1, 2));
+}
+// 把 onCalculateClick 绑定到点击事件；不要在启动时立即调用。
+```
+</CodeBlock>
+webpack 打包的时候会把它分离出去。这里就涉及到了 chunk 拆分的概念,code spliting在chunk拆分阶段实现,也就是给异步加载的模块分到单独的 chunk 里，然后输出到对应的 js。
+动态 import 自身建立异步边界；optimization.splitChunks 在此基础上进一步抽取或复用模块，不是开启动态导入的必需配置。
+
+##### 02. Dev Server
+
+* webpack 核心不会自动启动静态服务器；webpack-dev-server 等配套工具提供静态资源、代理与更新通知。
+* dev server 会 watch 工作区的文件变动，自动重新 build，提供静态资源访问。
+
+##### 03. Tree Shaking
+
+production 默认开启相关分析与压缩，能否删除取决于模块格式、副作用与使用方式，详见正文 Tree Shaking。
+
+##### 04. Module Federation 模块联邦
+
+module federation 是在多个 webpack 应用之间共享模块的机制
