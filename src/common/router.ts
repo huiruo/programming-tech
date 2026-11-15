@@ -69,7 +69,6 @@ export const sidebar: ISidebar[] = [
     href: "/js",
     type: "category",
     items: [
-      { href: "/js/eventLoop", label: "Event Loop" },
       { href: "/js/vite", label: "Vite" },
       { href: "/js/nodejs", label: "Nodejs" },
       { href: "/js/webpack1", label: "webpack 基本原理" },

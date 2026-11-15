@@ -21,7 +21,6 @@ Allow: /css/animation
 Allow: /css/requestAnimationFrame
 Allow: /css/vueAnimation
 Allow: /js
-Allow: /js/eventLoop
 Allow: /js/vite
 Allow: /js/nodejs1
 Allow: /js/asyncPromise

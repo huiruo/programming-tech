@@ -1,5 +1,60 @@
 import CodeBlock from '../../components/codeBlock';
 
+# Node.js
+
+## Node.js 事件循环
+
+Node.js 中的 JavaScript 默认也在单个主线程上执行。网络、文件等异步 I/O 由操作系统和 libuv 协作处理；操作完成后，对应回调再由事件循环安排回 JavaScript 线程执行。CPU 密集型 JavaScript 仍会阻塞事件循环，这类任务可以拆分，或交给 `worker_threads`。
+
+### libuv 的主要阶段
+
+一轮事件循环会在多个阶段之间推进。面试中可以按下面的顺序理解：
+
+1. **timers**：执行已到达时间阈值的 `setTimeout` 和 `setInterval` 回调。
+2. **pending callbacks**：执行延迟到下一轮的部分系统 I/O 回调。
+3. **idle / prepare**：Node.js 内部使用。
+4. **poll**：获取新的 I/O 事件并执行相关回调；在没有其他工作时，可能在此等待 I/O。
+5. **check**：执行 `setImmediate` 回调。
+6. **close callbacks**：执行部分关闭事件回调，例如 socket 的 `close`。
+
+这是理解模型，不应将它误读为“每个阶段每轮必然都会执行回调”。某个阶段没有可执行的回调时，事件循环会继续推进；阶段的细节也可能随 Node.js 和 libuv 版本变化。
+
+### `process.nextTick` 与 Promise 微任务
+
+`process.nextTick()` 不是 libuv 的一个阶段。当当前 JavaScript 操作结束后，Node.js 会先清空 next-tick 队列，再处理 Promise 微任务队列；然后才继续事件循环。
+
+```js
+setTimeout(() => console.log('timeout'), 0);
+Promise.resolve().then(() => console.log('promise'));
+process.nextTick(() => console.log('nextTick'));
+
+// nextTick
+// promise
+// timeout
+```
+
+递归追加 `process.nextTick()` 会让队列一直无法清空，从而阻止事件循环进入 poll 等阶段。因此它不应被用来执行无边界的连续工作。
+
+### `setTimeout(fn, 0)` 与 `setImmediate`
+
+`setTimeout(fn, 0)` 会在 timers 阶段检查延迟阈值后执行；`setImmediate()` 在 check 阶段执行。如果二者在主模块中同时安排，顺序会受运行时机和环境影响，不应依赖某个固定结果。
+
+在 I/O 回调中同时安排时，当前 poll 阶段结束后会先进入 check 阶段，所以 `setImmediate()` 通常先执行：
+
+```js
+import { readFile } from 'node:fs';
+
+readFile(new URL(import.meta.url), () => {
+  setTimeout(() => console.log('timeout'), 0);
+  setImmediate(() => console.log('immediate'));
+});
+
+// immediate
+// timeout
+```
+
+> 浏览器中的任务、微任务与渲染时机见：[浏览器事件循环](/interview/browser-basics#5-浏览器事件循环event-loop)。
+
 ## worker_threads
 worker_threads 是 Node.js 中的一个模块，用于创建多线程的工作线程。在 Node.js 中，JavaScript 是单线程的，这意味着它在执行代码时只能使用一个 CPU 核心。但是，有时候需要执行一些耗时的任务，这时候就可以使用 worker_threads 模块创建额外的线程，使得这些任务可以在单独的线程中并行执行，从而提高应用程序的性能和响应性。
 
