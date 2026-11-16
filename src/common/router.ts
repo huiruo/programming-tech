@@ -71,7 +71,6 @@ export const sidebar: ISidebar[] = [
     items: [
       { href: "/js/vite", label: "Vite" },
       { href: "/js/nodejs", label: "Nodejs" },
-      { href: "/js/webpack1", label: "webpack 基本原理" },
       { href: "/js/webpack2", label: "微前端" },
       { href: "/js/throttleDebounce", label: "Throttle Debounce" },
       {
@@ -327,6 +326,7 @@ export const sidebar: ISidebar[] = [
       { href: "/interview/frontend", label: "前端", isPrivate: true },
       { href: "/interview/h5-performance", label: "H5 性能优化", isPrivate: true },
       { href: "/interview/image-performance", label: "性能优化-图片处理", isPrivate: true },
+      { href: "/interview/webpack", label: "Webpack", isPrivate: true },
       { href: "/interview/nextjs", label: "Next.js", isPrivate: true },
       { href: "/interview/promise-async", label: "Promise / Async", isPrivate: true },
       { href: "/interview/javascript", label: "JavaScript", isPrivate: true },

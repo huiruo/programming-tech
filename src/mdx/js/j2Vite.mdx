@@ -1,8 +1,6 @@
 import CodeBlock from '../../components/codeBlock';
 
 ## 介绍
-adv. 急速地；轻快地
-/viːt/
 
 vite（更准确说是 **dev 环境**）：借助浏览器原生 ES Modules 能力，浏览器按 URL 发起模块请求，Vite dev server 对源码做按需 `transform` 后以 ESM 返回；同时用 esbuild 做依赖预构建（optimizeDeps）来减少请求数并兼容 CJS。需要注意：由于 dev 下源码是 unbundle 的，首屏/懒加载会更依赖缓存与分包策略（以及依赖预构建是否阻塞）。
 
@@ -86,11 +84,64 @@ Vite dev（serve-native-ESM + deps prebundle）:
 
 
 ### 首屏、懒加载性能优化
-webpack bundle得到了一个完整的模块关系依赖包;vite由于unbundle机制，首屏、懒加载会存在一定的问题，处理时需要额外做以下工作：
-* 由于未对源文件做合并捆绑操作，导致大量的http请求；
-* 动态加载的文件需要对源文件进行转换操作：resolve、load、transform、parse；
-* 预构建、二次预构建操作也会阻塞首屏请求，直到预构建完成为止；
-* 但是由于缓存的存在，当第一次加载完成(预构建)之后，再次reload的时候性能会有较大的提升;
+需要先区分开发环境和生产环境：**unbundle、源码按需 transform、依赖预构建主要是 Vite dev 的工作方式**。生产构建会使用 Rollup 对源码做 tree-shaking、代码分割和打包，不会把项目源码原样拆成大量 ESM 请求发布到线上。
+
+#### 开发环境优化
+Vite dev 首次打开页面时，浏览器会按原生 ESM 递归请求源码模块，dev server 需要对首次访问的模块执行 `resolve`、`load`、`transform` 等操作；依赖预构建或运行时发现新依赖触发的二次预构建，也可能暂时阻塞请求。因此大型项目的第一次加载可能偏慢，但预构建产物和转换结果被缓存后，再次 reload 通常会明显加快。
+
+- 使用 `optimizeDeps.include` 提前声明静态扫描无法发现、但运行时一定会加载的依赖，避免页面运行后才触发二次预构建；
+- 仅将确实不适合预构建的依赖加入 `optimizeDeps.exclude`。无依据地大量排除会让浏览器直接请求依赖内部的多个模块，反而可能降低性能；
+- 保持 lockfile、补丁和 `vite.config` 稳定，以便复用 `node_modules/.vite` 中的依赖缓存；仅在依赖缓存异常时使用 `vite --force` 强制重新预构建；
+- 减少首屏同步导入的源码模块，将路由页面、富文本编辑器、图表等非首屏或重型模块改为动态 `import()`；
+- 避免从超大型 barrel export（如聚合了大量模块的 `index.ts`）导入少量内容，并检查重复依赖；monorepo 中的链接包则按其源码格式和依赖关系决定是否加入 `optimizeDeps.include`。
+
+<CodeBlock>
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  optimizeDeps: {
+    // 适合放置扫描不到、但开发时一定会使用的依赖
+    include: ['some-runtime-dependency'],
+    // 只排除确实需要保留原始 ESM 结构的依赖
+    exclude: ['some-esm-only-dependency'],
+  },
+});
+```
+</CodeBlock>
+
+#### 生产环境优化
+生产环境的目标不是处理 dev 的预构建阻塞，而是减少首屏必须下载、解析和执行的资源，并让后续页面按需加载：
+
+- 使用路由级动态 `import()`、框架提供的组件懒加载能力，以及依赖的按需导入方式，降低首屏 JavaScript 体积；
+- 通过 `build.rollupOptions.output.manualChunks` 拆分稳定的大型依赖和独立业务模块，使它们能够独立缓存。不要把所有依赖都塞进一个巨大的 `vendor`，也不要按每个包机械拆分而产生过多小请求；
+- 保持 `build.cssCodeSplit` 开启，让异步模块的 CSS 按需加载；同时压缩图片和字体、减少不必要的字体字重，并为带内容 hash 的静态资源配置长期强缓存；
+- 使用 bundle 可视化分析工具定位体积来源，再结合浏览器 Network 请求瀑布、Lighthouse 或真实用户的 Web Vitals 数据决定拆包方案，避免仅凭包名猜测优化；
+- 对首屏必须使用的关键资源可谨慎使用 preload/modulepreload，但应以实际请求链路为依据，避免预加载过多资源争抢带宽。
+
+<CodeBlock>
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  build: {
+    cssCodeSplit: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // 示例：仅拆分体积大、变化频率低且确实独立使用的依赖
+          framework: ['react', 'react-dom'],
+        },
+      },
+    },
+  },
+});
+```
+</CodeBlock>
+
+核心结论：**Vite dev 的优化重点是减少首次转换和二次预构建；Vite prod 的优化重点是减少首屏资源、合理分包并提高缓存命中率。**
 
 ## 服务启动速度
 webpack需要先把所有的模块建立依赖关系打包成一个大文件，速度相对较慢；
